@@ -105,6 +105,8 @@ async function ensurePersisted(): Promise<void> {
   await db.chats.put(st.chat);
   useChat.setState({ persisted: true });
   useApp.getState().update({ lastChatId: st.chat.id });
+  const r = useUI.getState().route;
+  if (r.name === 'chat' && r.chatId === 'new') useUI.getState().navigate({ name: 'chat', chatId: st.chat.id }, true);
   await useChats.getState().reload();
   const app = useApp.getState().settings;
   if (!app.persistRequested && navigator.storage?.persist) {
@@ -386,6 +388,8 @@ export const useChat = create<ChatState>((set, get) => ({
   generating: false,
   pinned: true,
   open: async (id) => {
+    if (id && get().chat?.id === id) return;                                   // already open (e.g. URL replaced after first send)
+    if (id === 'new') { if (get().chat && !get().persisted) return; await get().newChat(); return; }  // keep a fresh chat created with options
     if (abortCtl) abortCtl.abort();
     let chat: Chat | undefined;
     if (id) chat = await db.chats.get(id);

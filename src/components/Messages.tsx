@@ -23,7 +23,8 @@ function ReasoningBlock({ text, streaming, contentStarted, tokens, cost }: { tex
     else if (streaming && contentStarted && !showDefault) setOpen(false);
     else if (!streaming) setOpen(showDefault);
   }, [streaming, contentStarted, showDefault]);
-  if (!text) return null;
+  if (!text && !tokens) return null;
+  if (!text) return <div className="mb-3 text-sm text-ink2"><span className="num">Reasoned for {fmtTokens(tokens ?? 0)} tokens</span> · trace not returned by this provider</div>;
   return (
     <div className="mb-3">
       <button type="button" onClick={() => { userTouched.current = true; setOpen((v) => !v); }} className="chrome pressable inline-flex min-h-[32px] items-center gap-1.5 text-sm text-ink2">
@@ -31,7 +32,7 @@ function ReasoningBlock({ text, streaming, contentStarted, tokens, cost }: { tex
         {tokens != null && <span className="num">· {fmtTokens(tokens)} tokens{cost != null && cost > 0 ? ` · ${fmtUsd(cost)}` : ''}</span>}
         {open ? <Icons.chevronUp size={14} /> : <Icons.chevronDown size={14} />}
       </button>
-      <div className={`collapse ${open ? 'is-open' : ''}`} aria-hidden={!open}>
+      <div className={`disclosure ${open ? 'is-open' : ''}`} aria-hidden={!open}>
         <div><div className={`msg-reasoning selectable mt-1 ${streaming && !contentStarted ? 'caret' : ''}`}>{text}</div></div>
       </div>
     </div>
@@ -65,7 +66,7 @@ const MessageRow = memo(function MessageRow({ id, onMenu }: { id: string; onMenu
   if (m.role === 'user') {
     return (
       <div className="mx-auto w-full max-w-[720px] px-[var(--msg-pad)] pt-[var(--msg-gap)]" {...lp}>
-        <div className="msg-user selectable">
+        <div className="msg-user-row"><div className="msg-user selectable">
           {m.attachments?.length ? (
             <div className="chrome mb-2 flex flex-wrap gap-2">
               {m.attachments.map((a) => a.kind === 'image'
@@ -74,8 +75,8 @@ const MessageRow = memo(function MessageRow({ id, onMenu }: { id: string; onMenu
             </div>
           ) : null}
           {m.content}
-        </div>
-        {sib.count > 1 && <BranchNav index={sib.index} count={sib.count} onPrev={() => void switchBranch(id, -1)} onNext={() => void switchBranch(id, 1)} disabled={generating} />}
+        </div></div>
+        {sib.count > 1 && <div className="flex justify-end"><BranchNav index={sib.index} count={sib.count} onPrev={() => void switchBranch(id, -1)} onNext={() => void switchBranch(id, 1)} disabled={generating} /></div>}
       </div>
     );
   }

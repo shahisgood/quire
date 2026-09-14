@@ -86,3 +86,31 @@ Changes made against two bugs reported from a real iPhone and the request to reb
 ## Reasoning effort levels — where the list comes from
 
 The effort choices are a **curated table keyed on the model id**, not data from OpenRouter. `/models` only reports whether a model accepts `reasoning`; it never enumerates levels. The table (in `detectReasoningStyle`) maps o-series → low/medium/high; GPT-5 → minimal→high; GPT-5.1-class and Codex → none→xhigh; Grok → low/high; R1 → a single level; Claude and Gemini → budgets with effort converted by OpenRouter. Unknown families are offered the whole unified scale. The UI states this next to the control. OpenRouter maps an unsupported level to the nearest one the provider accepts, so a wrong guess degrades to "close enough" rather than an error. The family lists reflect June-2026 knowledge and should be checked against OpenRouter's current reasoning documentation.
+
+---
+
+# Revision 3 — new-chat routing, reasoning display, user layer, defaults (14 Sep 2026)
+
+## Bug: "New chat" stayed on the same chat
+
+**Cause.** The header's + navigated to `chatId: null`, which the router treats as "resume the last chat" (the launch behaviour). The store created a fresh chat, then the screen's effect immediately opened the last chat over it.
+
+**Fix.** `/chat/new` is an explicit route. `open('new')` keeps an unpersisted chat if one was just created with options (persona) and otherwise creates one; `open(id)` returns early when that chat is already open, which lets the URL be replaced with the real id on first send without reloading mid-stream. The harness now opens a second chat from the header, sends in it, checks the URL swap, counts two chats in the list, and confirms a cold launch resumes the newest one.
+
+## Bug: reasoning trace not displayed
+
+**Cause, two layers.** (1) The animated container was named `.collapse`, which is also a Tailwind utility — `visibility: collapse`. The trace had layout height but was invisible, so a height-only check passed while a human saw nothing. Renamed to `.disclosure`; the harness now walks up the tree and asserts computed `opacity` and `visibility`. (2) The SSE parser returned early on `reasoning: ""`, never reading `reasoning_details`; some providers send exactly that shape. It now falls through, and also accepts DeepSeek's native `reasoning_content`. When a provider reports reasoning tokens but no trace (OpenAI's encrypted reasoning), the block now says so instead of rendering nothing.
+
+**Lesson recorded twice now:** Tailwind's namespace is not free. Custom class names and custom theme keys must be checked against the generated utilities (`text-base`, `collapse`, `truncate`, `prose`…). `prose` is safe here only because the typography plugin is not installed.
+
+## Regression fixed: prose and code styles
+
+Revision 2's CSS edit replaced a block between two markers that also contained the message, prose and highlight rules, which is why R2 replies rendered as plain serif with unstyled code. Restored from the repository copy.
+
+## User message layer
+
+The user's own messages are now a raised, hairline-bordered card, right-aligned at ≤86% width (70% on wide screens), in the UI sans; the model's reply stays full-width in the reading serif with the model label. Two surfaces, two alignments, two typefaces — the separation is structural rather than decorative. A sent message enters with a 150 ms opacity + 4 px `@starting-style` transition: the gate is "tens of times a day → near-imperceptible", and it exists to bridge a jarring appearance, not to decorate. Removed under reduced motion (opacity only). The spec's "no bubbles" line is superseded by the user's request.
+
+## Default models
+
+`deepseek/deepseek-v4-flash-0731` (chat) and `z-ai/glm-5.3-flash` (extraction), both requested by name. Both post-date the build environment's knowledge and OpenRouter cannot be reached from it, so the ids are guesses. To make that safe, defaults are **hints** (`DEFAULT_MODEL_HINTS`: an id plus a name pattern) and the models store reconciles them against the live catalogue after every load: if the id is present it is used; otherwise the newest model whose name or id matches the pattern is adopted and written to settings. The same pass migrates the previous defaults (`anthropic/claude-sonnet-4`, `openai/gpt-4o-mini`) on existing installs, but only if the user still has those exact values. The harness proves the mechanism by publishing the DeepSeek model under a different id than the guess and checking the status strip and the extraction request. DeepSeek V3.1+/V4 and GLM families were added to the reasoning table as hybrid (thinking can be disabled; trace returned).

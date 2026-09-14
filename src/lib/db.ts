@@ -39,12 +39,21 @@ export const DEFAULT_GENERATION: GenerationSettings = {
   fallbackModels: [],
 };
 
+/**
+ * Default models are named by the user, but OpenRouter ids could not be verified from this build environment.
+ * Each hint carries the best-guess id plus a name pattern; the models store reconciles against the live catalogue.
+ */
+export const DEFAULT_MODEL_HINTS = {
+  chat: { id: 'deepseek/deepseek-v4-flash-0731', name: /deepseek.*v4.*flash/i, previous: ['anthropic/claude-sonnet-4'] },
+  extraction: { id: 'z-ai/glm-5.3-flash', name: /glm.*5\.3.*flash/i, previous: ['openai/gpt-4o-mini'] },
+} as const;
+
 export const DEFAULT_SETTINGS: AppSettings = {
   apiKey: null,
-  defaultModelId: 'anthropic/claude-sonnet-4',
+  defaultModelId: DEFAULT_MODEL_HINTS.chat.id,
   globalSettings: DEFAULT_GENERATION,
   globalSystemPrompt: '',
-  memory: { enabled: true, autoExtract: true, extractionModelId: 'openai/gpt-4o-mini', maxInjectedChars: 2000 },
+  memory: { enabled: true, autoExtract: true, extractionModelId: DEFAULT_MODEL_HINTS.extraction.id, maxInjectedChars: 2000 },
   ui: {
     theme: 'dark',
     fontScale: 1,

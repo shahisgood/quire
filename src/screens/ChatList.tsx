@@ -50,7 +50,7 @@ export function ChatListScreen() {
 
   const open = (id: string) => { if (sel) { setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; }); return; } navigate({ name: 'chat', chatId: id }); };
   const startSelect = (id: string) => setSel(new Set([id]));
-  const fabLp = useLongPress(() => openSheet({ kind: 'presetPick', onPick: (pid) => { void newChat({ presetId: pid }); navigate({ name: 'chat', chatId: null }); } }));
+  const fabLp = useLongPress(() => openSheet({ kind: 'presetPick', onPick: (pid) => { void newChat({ presetId: pid }); navigate({ name: 'chat', chatId: 'new' }); } }));
 
   const row = (c: Chat) => <ChatRow key={c.id} chat={c} selected={sel?.has(c.id) ?? null} active={wide && c.id === activeId} onOpen={() => open(c.id)} onLong={() => startSelect(c.id)} showCost={showCosts} />;
 
@@ -87,7 +87,7 @@ export function ChatListScreen() {
         <div className="px-4 pt-6 text-center"><button type="button" className="min-h-[44px] text-sm text-ink2" onClick={() => setShowArchived((v) => !v)}>{showArchived ? 'Show active chats' : `Archived (${chats.filter((c) => c.archived).length})`}</button></div>
       </div>
       {sel ? <BulkBar ids={[...sel]} onDone={() => setSel(null)} /> : (
-        <button type="button" {...fabLp} onClick={() => { if (!fabLp.didFire()) { void newChat(); navigate({ name: 'chat', chatId: null }); } }} className="pressable absolute right-5 flex h-14 w-14 items-center justify-center rounded-full bg-ink text-base shadow-[0_8px_24px_rgb(0_0_0/.35)]" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 20px)' }} aria-label="New chat (hold for a persona)">
+        <button type="button" {...fabLp} onClick={() => { if (!fabLp.didFire()) { void newChat(); navigate({ name: 'chat', chatId: 'new' }); } }} className="pressable absolute right-5 flex h-14 w-14 items-center justify-center rounded-full bg-ink text-base shadow-[0_8px_24px_rgb(0_0_0/.35)]" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 20px)' }} aria-label="New chat (hold for a persona)">
           <Icons.plus size={24} />
         </button>
       )}

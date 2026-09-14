@@ -46,7 +46,7 @@ function Header() {
         {chat?.title ?? 'New chat'}
         {chat && !chat.memoryEnabled && <span className="ml-2 inline-flex items-center align-middle text-ink2" title="Incognito: memory off"><Icons.incognito size={14} /></span>}
       </button>
-      <IconButton icon={Icons.plus} label="New chat" onClick={() => navigate({ name: 'chat', chatId: null }, false) } />
+      <IconButton icon={Icons.plus} label="New chat" onClick={() => { void useChat.getState().newChat(); navigate({ name: 'chat', chatId: 'new' }); }} />
       <IconButton icon={Icons.more} label="Chat options" onClick={() => setMenu(true)} />
       <ChatOverflow open={menu} onClose={() => setMenu(false)} />
     </header>
@@ -75,7 +75,7 @@ function ChatOverflow({ open, onClose }: { open: boolean; onClose: () => void })
       <Row onClick={act(() => { if (!persisted) { toast('Nothing to export yet'); return; } void exportChatMarkdown(chat, thread); })} disabled={!persisted}>Export as Markdown</Row>
       <Row onClick={act(() => { if (!persisted) { toast('Nothing to export yet'); return; } void exportChatJson(chat.id); })} disabled={!persisted}>Export as JSON</Row>
       <Row onClick={act(async () => { if (!persisted) return; const id = await chats.duplicateChat(chat.id); navigate({ name: 'chat', chatId: id }); })} disabled={!persisted}>Duplicate</Row>
-      <Row onClick={act(() => openDialog({ title: 'Delete this chat?', body: 'Every message and branch in it is removed. This cannot be undone.', confirmLabel: 'Delete', destructive: true, onConfirm: async () => { await chats.deleteChats([chat.id]); await newChat(); navigate({ name: 'chat', chatId: null }, true); } }))} className="text-accent">Delete chat</Row>
+      <Row onClick={act(() => openDialog({ title: 'Delete this chat?', body: 'Every message and branch in it is removed. This cannot be undone.', confirmLabel: 'Delete', destructive: true, onConfirm: async () => { await chats.deleteChats([chat.id]); await newChat(); navigate({ name: 'chat', chatId: 'new' }, true); } }))} className="text-accent">Delete chat</Row>
     </Sheet>
   );
 }

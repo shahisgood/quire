@@ -5,6 +5,16 @@ from playwright.sync_api import sync_playwright
 PORT = 4173
 BASE = f"http://localhost:{PORT}"
 MODELS = {"data": [
+    {"id": "deepseek/deepseek-v4-flash", "canonical_slug": "deepseek/deepseek-v4-flash", "name": "DeepSeek: DeepSeek V4 Flash 0731", "created": 9, "description": "Hybrid thinking model.", "context_length": 128000,
+     "architecture": {"modality": "text->text", "input_modalities": ["text"], "output_modalities": ["text"], "tokenizer": "DeepSeek", "instruct_type": None},
+     "pricing": {"prompt": "0.0000002", "completion": "0.0000008", "request": "0", "image": "0", "web_search": "0", "internal_reasoning": "0"},
+     "top_provider": {"context_length": 128000, "max_completion_tokens": 32000, "is_moderated": False},
+     "supported_parameters": ["temperature", "top_p", "max_tokens", "reasoning", "include_reasoning", "stop", "seed"]},
+    {"id": "z-ai/glm-5.3-flash", "canonical_slug": "z-ai/glm-5.3-flash", "name": "Z.ai: GLM 5.3 Flash", "created": 8, "description": "Fast and cheap.", "context_length": 128000,
+     "architecture": {"modality": "text->text", "input_modalities": ["text"], "output_modalities": ["text"], "tokenizer": "GLM", "instruct_type": None},
+     "pricing": {"prompt": "0.0000001", "completion": "0.0000004", "request": "0", "image": "0", "web_search": "0", "internal_reasoning": "0"},
+     "top_provider": {"context_length": 128000, "max_completion_tokens": 16000, "is_moderated": False},
+     "supported_parameters": ["temperature", "top_p", "max_tokens", "stop"]},
     {"id": "anthropic/claude-sonnet-4", "canonical_slug": "anthropic/claude-sonnet-4", "name": "Anthropic: Claude Sonnet 4", "created": 1, "description": "Balanced model with vision.", "context_length": 200000,
      "architecture": {"modality": "text+image->text", "input_modalities": ["text", "image", "file"], "output_modalities": ["text"], "tokenizer": "Claude", "instruct_type": None},
      "pricing": {"prompt": "0.000003", "completion": "0.000015", "request": "0", "image": "0.0048", "web_search": "0", "internal_reasoning": "0"},
@@ -29,7 +39,8 @@ def sse_body():
         c = {"id": gid, "model": "anthropic/claude-sonnet-4", "choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
         if extra: c.update(extra)
         return "data: " + json.dumps(c) + "\n\n"
-    for w in ["Let me ", "think about ", "the question."]:
+    parts.append(chunk({"reasoning": "", "reasoning_details": [{"type": "reasoning.text", "text": "Let me "}], "content": ""}))
+    for w in ["think about ", "the question."]:
         parts.append(chunk({"reasoning": w, "content": ""}))
     text = "Here is **markdown** with code:\n\n```python\nprint('hi')\n```\n\nAnd a list:\n- one\n- two\n\n" + "".join(f"Paragraph {i}: streaming prose that keeps arriving so the list has to scroll while it grows, which is exactly where a virtualiser used to shake.\n\n" for i in range(1, 14)) + "My name in your memory is noted."
     # split into small tokens, splitting one chunk across a line boundary to test buffering
@@ -65,6 +76,7 @@ def main():
                         route.fulfill(status=200, headers={"content-type": "text/event-stream"}, body=sse_body())
                     else:
                         sys_prompt = body["messages"][0]["content"] if body["messages"] else ""
+                        requests.append(("MODEL", body["model"] + (" extraction" if "durable facts" in sys_prompt else " title")))
                         if "durable facts" in sys_prompt:
                             out = {"operations": [{"op": "add", "text": "Is called Hasan and builds PWAs.", "category": "identity"}]}
                             content = "```json\n" + json.dumps(out) + "\n```"
@@ -94,7 +106,7 @@ def main():
 
             page.get_by_role("button", name="Back", exact=True).click(); page.wait_for_timeout(200)
             page.get_by_role("button", name="Back", exact=True).click(); page.wait_for_timeout(300)
-            page.get_by_text("Talking to Claude Sonnet 4").wait_for(timeout=3000)
+            page.get_by_text("Talking to DeepSeek V4 Flash 0731").wait_for(timeout=3000)  # default reconciled by name: guessed id was not in the catalogue
 
             # model picker
             page.get_by_role("button", name="Change model").click()
@@ -145,6 +157,12 @@ def main():
             html = page.content()
             assert "hljs" in html and "<strong>markdown</strong>" in html, "markdown not rendered"
             assert page.get_by_text("Reasoning").count() >= 1, "reasoning block missing"
+            page.get_by_role("button", name="Reasoning").first.click(); page.wait_for_timeout(350)
+            vis = page.evaluate("""() => { const el = [...document.querySelectorAll('.msg-reasoning')].find(e => e.textContent.includes('Let me think')); if (!el) return null; const r = el.getBoundingClientRect(); let node = el, opacity = 1, visibility = 'visible'; while (node && node !== document.body) { const cs = getComputedStyle(node); opacity = Math.min(opacity, parseFloat(cs.opacity)); if (cs.visibility !== 'visible') visibility = cs.visibility; if (cs.display === 'none') visibility = 'display:none'; node = node.parentElement; } return { h: r.height, opacity, visibility, color: getComputedStyle(el).color }; }""")
+            assert vis and vis["h"] > 10 and vis["opacity"] == 1 and vis["visibility"] == "visible", f"reasoning trace not actually visible after tap: {vis}"
+            assert page.locator(".disclosure.is-open").count() == 1, "disclosure did not open"
+            page.evaluate("() => { document.getElementById('messages').scrollTop = 0; }"); page.wait_for_timeout(150)
+            page.screenshot(path="/home/claude/quire/shots/06b-reasoning-open.png")
             page.wait_for_timeout(2500)  # generation reconciliation + extraction
             assert page.locator("text=/\\$0\\.001/").count() >= 1, "authoritative cost not applied: " + page.locator(".num").all_inner_texts().__repr__()
 
@@ -156,6 +174,8 @@ def main():
             page.get_by_role("button", name="Memory", exact=True).click(); page.wait_for_timeout(400)
             page.screenshot(path="/home/claude/quire/shots/08-memory.png")
             assert page.get_by_text("Is called Hasan and builds PWAs.").count() == 1, "extraction did not land"
+            used = [r[1] for r in requests if r[0] == "MODEL"]
+            assert any(u == "z-ai/glm-5.3-flash extraction" for u in used), f"extraction model wrong: {used}"
 
             # second request must include the memory block in the system message
             page.get_by_role("button", name="Back", exact=True).click(); page.wait_for_timeout(300)
@@ -177,6 +197,24 @@ def main():
             page.reload(); page.wait_for_timeout(900)
             assert page.get_by_text("Second message").count() >= 1, "persistence failed after reload"
             page.screenshot(path="/home/claude/quire/shots/10-after-reload.png")
+
+            # New chat from the header must actually open a fresh chat, and the URL must become the real id once persisted
+            page.get_by_role("button", name="New chat", exact=True).click(); page.wait_for_timeout(400)
+            assert page.get_by_text("Talking to").count() == 1, "new chat did not open an empty chat"
+            assert page.url.endswith("/chat/new"), page.url
+            page.get_by_role("textbox", name="Message").fill("Second chat here")
+            page.get_by_role("button", name="Send").click(); page.wait_for_timeout(2500)
+            assert not page.url.endswith("/chat/new") and "/chat/" in page.url, page.url
+            page.get_by_role("button", name="All chats").click(); page.wait_for_timeout(400)
+            assert page.get_by_text("Markdown and memory test").count() == 2, "second chat missing from list"
+            page.screenshot(path="/home/claude/quire/shots/07b-two-chats.png")
+            page.goto(BASE + "/"); page.wait_for_timeout(900)   # cold launch resumes the newest chat
+            assert page.get_by_text("Second chat here").count() >= 1, "did not resume the newest chat after launch"
+            page.evaluate("() => { document.getElementById('messages').scrollTop = 0; }"); page.wait_for_timeout(150)
+            page.screenshot(path="/home/claude/quire/shots/10b-user-layer.png")
+            page.evaluate("() => { document.documentElement.dataset.theme = 'light'; }"); page.wait_for_timeout(100)
+            page.screenshot(path="/home/claude/quire/shots/10c-user-layer-light.png")
+            page.evaluate("() => { document.documentElement.dataset.theme = 'dark'; }")
 
             # desktop layout
             page.set_viewport_size({"width": 1200, "height": 800}); page.wait_for_timeout(500)

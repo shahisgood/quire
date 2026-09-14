@@ -197,7 +197,8 @@ function parseUsage(u: unknown): StreamUsage | undefined {
 }
 
 function reasoningFromDelta(delta: Record<string, unknown>): string {
-  if (typeof delta.reasoning === 'string') return delta.reasoning;
+  if (typeof delta.reasoning === 'string' && delta.reasoning) return delta.reasoning;
+  if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) return delta.reasoning_content;  // DeepSeek-native field, passed through by some providers
   const details = delta.reasoning_details;
   if (Array.isArray(details)) {
     return details
