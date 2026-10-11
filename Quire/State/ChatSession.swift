@@ -1,0 +1,594 @@
+import Foundation
+import Observation
+import UIKit
+
+/// One open thread and its stream engine. Messages form a tree (`parentId`), and `path` is the
+/// branch currently shown, from the root to `chat.activeLeafId`. Regenerating adds a sibling
+/// rather than overwriting, so earlier replies are never lost.
+@Observable
+final class ChatSession {
+    unowned let app: AppModel
+
+    private(set) var chat: Chat
+    private(set) var messages: [String: Message] = [:]
+    private(set) var path: [String] = []
+    private(set) var persisted: Bool
+    private(set) var generating = false
+    /// Set when the chat is deleted, so late callbacks (cost reconciliation, a sheet closing) can't resurrect it.
+    @ObservationIgnored private(set) var deleted = false
+
+    // Live view of the streaming reply, published at most ~30 times a second so the message list
+    // doesn't re-render per token.
+    private(set) var streamingId: String? = nil
+    private(set) var streamContent = ""
+    private(set) var streamReasoning = ""
+    private(set) var streamCompletionTokens = 0
+    private(set) var streamEstCost: Double = 0
+    private(set) var retryNote: String? = nil
+
+    /// A message to scroll to when the chat opens (from a search hit).
+    var highlightId: String? = nil
+    var draft: String
+
+    @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var draftSaveTask: Task<Void, Never>?
+    @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+
+    init(app: AppModel, chat: Chat, persisted: Bool) {
+        self.app = app
+        self.chat = chat
+        self.persisted = persisted
+        self.draft = chat.draft ?? ""
+        guard persisted else { return }
+        var loaded: [String: Message] = [:]
+        var repaired = false
+        for var m in app.store.loadMessages(chat.id) {
+            // Anything left mid-stream by a killed app becomes interrupted.
+            if m.status == .streaming {
+                m.status = m.content.isEmpty ? .error : .interrupted
+                m.error = MessageError(code: "interrupted", message: "Interrupted before the reply finished")
+                repaired = true
+            }
+            loaded[m.id] = m
+        }
+        messages = loaded
+        var leaf = chat.activeLeafId
+        if leaf == nil || loaded[leaf!] == nil {
+            leaf = children(of: nil).last.map { deepest(from: $0.id) }
+        }
+        path = computePath(to: leaf)
+        if repaired { saveMessages() }
+    }
+
+    var thread: [Message] { path.compactMap { messages[$0] } }
+    var model: ORModel? { app.model(chat.modelId) }
+
+    // MARK: Tree helpers
+
+    func children(of parentId: String?) -> [Message] {
+        messages.values.filter { $0.parentId == parentId }.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    private func deepest(from id: String) -> String {
+        var cur = id
+        while let last = children(of: cur).last { cur = last.id }
+        return cur
+    }
+
+    private func computePath(to leaf: String?) -> [String] {
+        var out: [String] = []
+        var cur = leaf.flatMap { messages[$0] }
+        while let m = cur {
+            out.append(m.id)
+            cur = m.parentId.flatMap { messages[$0] }
+        }
+        return out.reversed()
+    }
+
+    func siblingInfo(_ id: String) -> (index: Int, count: Int) {
+        guard let m = messages[id] else { return (0, 1) }
+        let sibs = children(of: m.parentId)
+        return (sibs.firstIndex { $0.id == id } ?? 0, sibs.count)
+    }
+
+    // MARK: Settings resolution
+
+    var effectiveSettings: GenerationSettings {
+        app.settings.globalSettings.merged(with: app.preset(chat.systemPromptId)?.settings).merged(with: chat.settingsOverride)
+    }
+
+    var effectiveSystemPrompt: String {
+        if let inline = chat.systemPromptInline, !inline.isEmpty { return inline }
+        if let p = app.preset(chat.systemPromptId) { return p.systemPrompt }
+        return app.settings.globalSystemPrompt
+    }
+
+    var contextTokens: Int {
+        var n = Tokens.estimate(effectiveSystemPrompt)
+        for m in thread { n += Tokens.estimate(m.content) + (m.attachments ?? []).reduce(0) { $0 + Tokens.estimate($1) } + 4 }
+        return n
+    }
+
+    // MARK: Persistence
+
+    func markDeleted() {
+        deleted = true
+        stop()
+    }
+
+    private func saveMessages() {
+        guard persisted, !deleted else { return }
+        app.store.saveMessages(chat.id, Array(messages.values))
+    }
+
+    private func saveChat() {
+        guard persisted, !deleted else { return }
+        app.upsertChat(chat)
+    }
+
+    private func ensurePersisted() {
+        guard !persisted else { return }
+        persisted = true
+        app.settings.lastChatId = chat.id
+    }
+
+    /// Called by the app model when the chat was edited from the list (rename, pin, cost change).
+    func chatDidChangeExternally(_ updated: Chat) {
+        var c = updated
+        c.activeLeafId = chat.activeLeafId
+        c.draft = chat.draft
+        chat = c
+    }
+
+    func saveDraft(_ text: String) {
+        draft = text
+        draftSaveTask?.cancel()
+        draftSaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            self?.flushDraft()
+        }
+    }
+
+    func flushDraft() {
+        guard !deleted, chat.draft ?? "" != draft else { return }
+        chat.draft = draft
+        if persisted { app.upsertChat(chat) }
+    }
+
+    // MARK: Chat-level edits
+
+    func setModel(_ id: String) {
+        chat.modelId = id
+        app.touchRecent(id)
+        saveChat()
+    }
+
+    func rename(_ title: String) {
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        chat.title = t
+        chat.titleAuto = false
+        saveChat()
+    }
+
+    func setSystemPrompt(_ text: String?) {
+        chat.systemPromptInline = (text?.isEmpty ?? true) ? nil : text
+        saveChat()
+    }
+
+    // MARK: Actions
+
+    func send(_ text: String, attachments: [Attachment] = []) {
+        guard !generating else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty || !attachments.isEmpty else { return }
+        let now = nowMs()
+        let user = Message(chatId: chat.id, parentId: path.last, role: .user, content: trimmed,
+                           attachments: attachments.isEmpty ? nil : attachments, createdAt: now, status: .complete)
+        let asst = Message(chatId: chat.id, parentId: user.id, role: .assistant, content: "", modelId: chat.modelId, createdAt: now + 1, status: .streaming)
+        if path.isEmpty, chat.title == "New chat" {
+            chat.title = TextUtil.stripMarkdown(trimmed.isEmpty ? (attachments.first?.name ?? "New chat") : trimmed, max: 48)
+        }
+        messages[user.id] = user
+        messages[asst.id] = asst
+        path += [user.id, asst.id]
+        chat.updatedAt = now
+        chat.activeLeafId = asst.id
+        chat.lastPreview = TextUtil.stripMarkdown(trimmed, max: 100)
+        draft = ""
+        chat.draft = ""
+        ensurePersisted()
+        saveChat()
+        saveMessages()
+        app.touchRecent(chat.modelId)
+        startGeneration(assistantId: asst.id, modelId: chat.modelId)
+    }
+
+    func stop() { task?.cancel() }
+
+    func regenerate(_ assistantId: String, modelId: String? = nil) {
+        guard !generating, let old = messages[assistantId] else { return }
+        let mid = modelId ?? chat.modelId
+        let asst = Message(chatId: chat.id, parentId: old.parentId, role: .assistant, content: "", modelId: mid, status: .streaming)
+        messages[asst.id] = asst
+        path = computePath(to: asst.id)
+        chat.activeLeafId = asst.id
+        if modelId != nil { chat.modelId = mid; app.touchRecent(mid) }
+        saveChat()
+        saveMessages()
+        startGeneration(assistantId: asst.id, modelId: mid)
+    }
+
+    func retry(_ assistantId: String) {
+        guard !generating, var m = messages[assistantId] else { return }
+        // The failed attempt's cost stays counted: that money was spent.
+        m.content = ""
+        m.reasoning = nil
+        m.error = nil
+        m.usage = nil
+        m.status = .streaming
+        messages[assistantId] = m
+        path = computePath(to: assistantId)
+        saveMessages()
+        startGeneration(assistantId: assistantId, modelId: m.modelId ?? chat.modelId)
+    }
+
+    func continueReply(_ assistantId: String) {
+        guard !generating, let m = messages[assistantId] else { return }
+        if path.last != assistantId { path = computePath(to: assistantId) }
+        startGeneration(assistantId: assistantId, modelId: m.modelId ?? chat.modelId, continueMode: true)
+    }
+
+    func switchBranch(_ messageId: String, by dir: Int) {
+        guard let m = messages[messageId] else { return }
+        let sibs = children(of: m.parentId)
+        guard let i = sibs.firstIndex(where: { $0.id == messageId }), sibs.indices.contains(i + dir) else { return }
+        let leaf = deepest(from: sibs[i + dir].id)
+        path = computePath(to: leaf)
+        chat.activeLeafId = leaf
+        saveChat()
+    }
+
+    /// Delete a message and everything under it. If the shown branch was inside, fall back to the
+    /// nearest surviving sibling or parent.
+    func delete(_ id: String) {
+        guard let m = messages[id], streamingId != id else { return }
+        var doomed: Set<String> = []
+        var stack = [id]
+        while let cur = stack.popLast() {
+            doomed.insert(cur)
+            stack += children(of: cur).map(\.id)
+        }
+        for d in doomed { messages[d] = nil }
+        var leaf = chat.activeLeafId
+        if leaf == nil || doomed.contains(leaf!) {
+            if let parent = m.parentId { leaf = deepest(from: parent) }
+            else { leaf = children(of: nil).last.map { deepest(from: $0.id) } }
+        }
+        path = computePath(to: leaf)
+        chat.activeLeafId = leaf
+        saveChat()
+        saveMessages()
+    }
+
+    // MARK: Stream engine
+
+    private func startGeneration(assistantId: String, modelId: String, continueMode: Bool = false) {
+        generating = true
+        task = Task { [weak self] in
+            await self?.generate(assistantId: assistantId, modelId: modelId, continueMode: continueMode)
+        }
+    }
+
+    private func requestMessages(upTo assistantId: String, continueMode: Bool) -> [JSONValue] {
+        var out: [JSONValue] = []
+        let sp = effectiveSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !sp.isEmpty { out.append(["role": "system", "content": .string(sp)]) }
+        for id in path {
+            if id == assistantId { break }
+            guard let m = messages[id] else { continue }
+            if m.role == .assistant && m.content.isEmpty { continue }
+            out.append(Self.param(for: m))
+        }
+        if continueMode, let existing = messages[assistantId], !existing.content.isEmpty {
+            out.append(["role": "assistant", "content": .string(existing.content)])
+        }
+        return out
+    }
+
+    /// File attachments are sent as `{type: file, file: {filename, file_data}}`, images as `image_url`.
+    static func param(for m: Message) -> JSONValue {
+        guard let atts = m.attachments, !atts.isEmpty else {
+            return ["role": .string(m.role.rawValue), "content": .string(m.content)]
+        }
+        var parts: [JSONValue] = []
+        if !m.content.isEmpty { parts.append(["type": "text", "text": .string(m.content)]) }
+        for a in atts {
+            if a.kind == .image { parts.append(["type": "image_url", "image_url": ["url": .string(a.dataUrl)]]) }
+            else { parts.append(["type": "file", "file": ["filename": .string(a.name), "file_data": .string(a.dataUrl)]]) }
+        }
+        return ["role": .string(m.role.rawValue), "content": .array(parts)]
+    }
+
+    private func generate(assistantId: String, modelId: String, continueMode: Bool) async {
+        defer { generating = false; task = nil }
+        guard let apiKey = app.apiKey, !apiKey.isEmpty else {
+            finishWithError(assistantId, MessageError(code: "401", message: "No API key set. Add one in Settings → Connection."))
+            return
+        }
+        let client = OpenRouterClient(apiKey: apiKey, baseURL: app.settings.proxyBaseUrl)
+        let model = app.model(modelId)
+        let settings = effectiveSettings
+        let msgs = requestMessages(upTo: assistantId, continueMode: continueMode)
+        let body = RequestBuilder.body(modelId: modelId, model: model, settings: settings, messages: msgs)
+        let lastUser = thread.last(where: { $0.role == .user && $0.id != assistantId })
+
+        let promptEst = msgs.reduce(0) { (n: Int, m: JSONValue) -> Int in
+            if let s = m["content"]?.stringValue { return n + Tokens.estimate(s) + 4 }
+            let parts = m["content"]?.arrayValue ?? []
+            return n + 4 + parts.reduce(0) { (k: Int, p: JSONValue) -> Int in
+                switch p["type"]?.stringValue {
+                case "text": return k + Tokens.estimate(p["text"]?.stringValue ?? "")
+                case "image_url": return k + 1000
+                default: return k + 2000
+                }
+            }
+        }
+        let pPrompt = Pricing.parse(model?.pricing.prompt)
+        let pComp = Pricing.parse(model?.pricing.completion)
+        let pReasonRaw = Pricing.parse(model?.pricing.internalReasoning)
+        let pReason = pReasonRaw > 0 ? pReasonRaw : pComp
+
+        let existing = messages[assistantId]
+        let base = continueMode ? (existing?.content ?? "") : ""
+        let baseReason = continueMode ? (existing?.reasoning ?? "") : ""
+        var content = base
+        var reasoning = baseReason
+        var generationId = existing?.generationId
+        var usage: StreamUsage?
+        var finish: String?
+
+        update(assistantId) {
+            $0.status = .streaming
+            $0.modelId = modelId
+            $0.settingsSnapshot = settings
+            $0.requestSnapshot = Self.snapshot(body)
+        }
+        streamingId = assistantId
+        streamContent = content
+        streamReasoning = reasoning
+        streamCompletionTokens = 0
+        streamEstCost = 0
+        retryNote = nil
+
+        // A reply in flight gets the ~30 seconds iOS allows after backgrounding, instead of the PWA's
+        // immediate abort. If time runs out, the stream is cancelled and the partial reply kept.
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "quire.reply") { [weak self] in
+            self?.task?.cancel()
+            self?.endBackgroundTask()
+        }
+        defer { endBackgroundTask() }
+
+        var lastPublish = Date.distantPast
+        var lastPersist = Date()
+        func publish(force: Bool = false) {
+            let now = Date()
+            if force || now.timeIntervalSince(lastPublish) > 0.033 {
+                lastPublish = now
+                let ct = Tokens.estimate(String(content.dropFirst(base.count)))
+                let rt = Tokens.estimate(String(reasoning.dropFirst(baseReason.count)))
+                streamContent = content
+                streamReasoning = reasoning
+                streamCompletionTokens = ct
+                streamEstCost = Double(promptEst) * pPrompt + Double(ct) * pComp + Double(rt) * pReason
+            }
+            if now.timeIntervalSince(lastPersist) > 1.5 {
+                lastPersist = now
+                update(assistantId) { $0.content = content; $0.reasoning = reasoning.isEmpty ? nil : reasoning; $0.generationId = generationId }
+                saveMessages()
+            }
+        }
+
+        var attempt = 0
+        var finalError: ErrorInfo?
+        var aborted = false
+        retryLoop: while true {
+            do {
+                if settings.stream ?? true {
+                    try await client.stream(body: body) { ev in
+                        if generationId == nil, let id = ev.id { generationId = id }
+                        if let t = ev.content { content += t }
+                        if let r = ev.reasoning { reasoning += r }
+                        if let f = ev.finishReason { finish = f }
+                        if let u = ev.usage { usage = u }
+                        if ev.content != nil || ev.reasoning != nil { publish() }
+                    }
+                } else {
+                    let r = try await client.complete(body: body)
+                    if !r.id.isEmpty { generationId = r.id }
+                    content += r.content
+                    reasoning += r.reasoning
+                    finish = r.finishReason
+                    usage = r.usage
+                }
+                break retryLoop
+            } catch {
+                let info = ErrorInfo(error)
+                if info.aborted { aborted = true; break retryLoop }
+                let retriable = [429, 408, 502, 503, 504].contains(info.status) && content == base && attempt < 3
+                guard retriable else { finalError = info; break retryLoop }
+                attempt += 1
+                let wait = max((info.retryAfterMs ?? 0) / 1000, 1.5 * pow(2, Double(attempt - 1)))
+                retryNote = "\(info.message) Retrying in \(Int(wait.rounded()))s…"
+                do { try await Task.sleep(for: .seconds(wait)) } catch { aborted = true; break retryLoop }
+                retryNote = nil
+            }
+        }
+        publish(force: true)
+
+        // Final accounting: usage from the stream when present, otherwise an estimate. The
+        // authoritative /generation figure replaces it a few seconds later.
+        let completionTokens = usage?.completionTokens ?? Tokens.estimate(String(content.dropFirst(base.count)))
+        let newReasoning = String(reasoning.dropFirst(baseReason.count))
+        let reasoningTokens = usage?.reasoningTokens ?? (newReasoning.isEmpty ? nil : Tokens.estimate(newReasoning))
+        let promptTokens = usage?.promptTokens ?? promptEst
+        let est = Double(promptTokens) * pPrompt + Double(completionTokens) * pComp + Double(reasoningTokens ?? 0) * pReason
+        let cost: Double
+        if let c = usage?.cost { cost = c + (usage?.webSearchCost ?? 0) } else { cost = est }
+        let finalUsage = Usage(promptTokens: promptTokens, completionTokens: completionTokens, reasoningTokens: reasoningTokens,
+                               costUsd: cost, authoritative: false, estimated: usage?.cost == nil, webSearchCostUsd: usage?.webSearchCost)
+        let prevCost = existing?.usage?.costUsd ?? 0
+
+        let status: MessageStatus
+        var err: MessageError?
+        if let fe = finalError {
+            status = content.isEmpty ? .error : .interrupted
+            err = MessageError(code: fe.code, message: fe.message)
+        } else if aborted {
+            status = .interrupted
+            let bg = UIApplication.shared.applicationState == .background
+            err = MessageError(code: "interrupted", message: bg ? "Interrupted when the app was in the background too long" : "Stopped")
+        } else {
+            status = .complete
+            if finish == "length" { err = MessageError(code: "length", message: "Reply hit the max output token limit") }
+        }
+        update(assistantId) {
+            $0.content = content
+            $0.reasoning = reasoning.isEmpty ? nil : reasoning
+            $0.generationId = generationId
+            $0.usage = finalUsage
+            $0.status = status
+            $0.error = err
+        }
+        streamingId = nil
+        streamContent = ""
+        streamReasoning = ""
+        retryNote = nil
+
+        let now = nowMs()
+        chat.updatedAt = now
+        chat.lastPreview = TextUtil.stripMarkdown(content.isEmpty ? (err?.message ?? "") : content, max: 100)
+        chat.tokenEstimate = contextTokens
+        saveChat()
+        saveMessages()
+        app.applyCostDelta(chatId: chat.id, delta: cost - prevCost, countMessage: true)
+        app.settings.messagesSinceExport = (app.settings.messagesSinceExport ?? 0) + 2
+
+        let webSearchCost = usage?.webSearchCost
+        let finalContent = content
+        if let gid = generationId, status != .error {
+            Task { [weak self] in
+                guard let g = await client.generationWithRetry(id: gid) else { return }
+                let authoritative = Usage(
+                    promptTokens: g.nativeTokensPrompt > 0 ? g.nativeTokensPrompt : (g.tokensPrompt > 0 ? g.tokensPrompt : promptTokens),
+                    completionTokens: g.nativeTokensCompletion > 0 ? g.nativeTokensCompletion : (g.tokensCompletion > 0 ? g.tokensCompletion : completionTokens),
+                    reasoningTokens: g.nativeTokensReasoning > 0 ? g.nativeTokensReasoning : reasoningTokens,
+                    costUsd: g.totalCost, authoritative: true, estimated: false, webSearchCostUsd: webSearchCost)
+                self?.applyAuthoritative(assistantId, authoritative)
+            }
+        }
+        if status == .complete, let lastUser, chat.titleAuto != false, !continueMode {
+            let userText = lastUser.content
+            Task { [weak self] in await self?.autoTitle(userText: userText, assistantText: finalContent) }
+        }
+    }
+
+    private func endBackgroundTask() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
+    }
+
+    private func finishWithError(_ id: String, _ e: MessageError) {
+        update(id) { $0.status = .error; $0.error = e }
+        saveMessages()
+    }
+
+    private func update(_ id: String, _ mutate: (inout Message) -> Void) {
+        guard var m = messages[id] else { return }
+        mutate(&m)
+        messages[id] = m
+    }
+
+    private func applyAuthoritative(_ id: String, _ usage: Usage) {
+        guard let m = messages[id] else { return }
+        let prev = m.usage?.costUsd ?? 0
+        update(id) { $0.usage = usage }
+        saveMessages()
+        app.applyCostDelta(chatId: chat.id, delta: (usage.costUsd ?? 0) - prev)
+    }
+
+    /// A short title from the first exchange, via the extraction model. Never overwrites a manual rename.
+    private func autoTitle(userText: String, assistantText: String) async {
+        let fallback = TextUtil.stripMarkdown(userText, max: 48)
+        guard chat.titleAuto != false, chat.title == "New chat" || chat.title == fallback || chat.title.hasSuffix("…") else { return }
+        let body: [String: JSONValue] = [
+            "model": .string(app.settings.memory.extractionModelId),
+            "messages": [
+                ["role": "system", "content": "Write a title for this conversation: two to six words, sentence case, no quotes, no trailing punctuation. Reply with the title only."],
+                ["role": "user", "content": .string("User: \(userText.prefix(1500))\n\nAssistant: \(assistantText.prefix(1500))")],
+            ],
+            "max_tokens": 24,
+            "temperature": 0.3,
+        ]
+        guard let r = try? await app.client.complete(body: body) else { return }
+        var title = r.content.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n").first ?? ""
+        title = title.trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”.").union(.whitespaces))
+        guard !title.isEmpty, chat.titleAuto != false else { return }
+        chat.title = String(title.prefix(60))
+        saveChat()
+    }
+
+    private static func snapshot(_ body: [String: JSONValue]) -> String {
+        var b = body
+        if let msgs = body["messages"]?.arrayValue {
+            b["messages"] = .array(msgs.map { (m: JSONValue) -> JSONValue in
+                if m["content"]?.stringValue != nil { return m }
+                let text = (m["content"]?.arrayValue ?? []).map { p in p["type"]?.stringValue == "text" ? (p["text"]?.stringValue ?? "") : "[\(p["type"]?.stringValue ?? "part")]" }.joined(separator: "\n")
+                return ["role": m["role"] ?? "user", "content": .string(text)]
+            })
+        }
+        return JSONValue.object(b).text(pretty: true)
+    }
+}
+
+/// A thrown error, reduced to what the UI shows and what the retry logic needs.
+struct ErrorInfo {
+    var status = 0
+    var code = "unknown"
+    var message = ""
+    var retryAfterMs: Double?
+    var aborted = false
+
+    init(_ error: Error) {
+        if error is CancellationError { aborted = true; code = "aborted"; message = "Stopped"; return }
+        if let e = error as? ORError {
+            status = e.status
+            code = e.status != 0 ? String(e.status) : e.code
+            var msg = e.message
+            if e.status == 403, let reasons = e.metadata?["reasons"]?.arrayValue?.compactMap(\.stringValue), !reasons.isEmpty {
+                msg += " (\(reasons.joined(separator: ", ")))"
+            }
+            if e.status == 403, let flagged = e.metadata?["flagged_input"]?.stringValue { msg += "\nFlagged input: \(flagged)" }
+            if let provider = e.metadata?["provider_name"]?.stringValue { msg += " [\(provider)]" }
+            message = msg
+            retryAfterMs = e.retryAfterMs
+            return
+        }
+        if let u = error as? URLError {
+            if u.code == .cancelled { aborted = true; code = "aborted"; message = "Stopped"; return }
+            code = "network"
+            switch u.code {
+            case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed:
+                message = "You're offline. The message is kept; retry when you're back online."
+            case .timedOut:
+                message = "The request timed out."
+            default:
+                message = "Network error: \(u.localizedDescription)"
+            }
+            return
+        }
+        message = error.localizedDescription
+    }
+}

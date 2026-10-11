@@ -1,0 +1,83 @@
+name: Build IPA
+
+# Builds an unsigned Quire.ipa on GitHub's macOS runner. Sign and install it on your iPhone with
+# Sideloadly, AltStore or SideStore (see README). Runs on every push to main, or by hand from the
+# Actions tab ("Run workflow").
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Quire.xcodeproj \
+            -scheme Quire \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log
+
+      # On failure, print just the compiler errors so the log is easy to paste back for fixing.
+      - name: Compiler errors
+        if: failure()
+        run: |
+          echo "::group::Errors"
+          grep -E "error:" build.log | sed -E 's#^.*/Quire/#Quire/#' | sort -u | head -150 || true
+          echo "::endgroup::"
+          grep -E "error:" build.log | sed -E 's#^.*/Quire/#Quire/#' | sort -u | head -150 > errors.txt || true
+
+      - name: Package IPA
+        run: |
+          APP=build/Build/Products/Release-iphoneos/Quire.app
+          test -d "$APP"
+          rm -rf Payload && mkdir Payload
+          cp -R "$APP" Payload/
+          zip -qry Quire.ipa Payload
+          ls -lh Quire.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Quire-ipa
+          path: Quire.ipa
+          retention-days: 30
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: |
+            build.log
+            errors.txt
+          if-no-files-found: ignore
+          retention-days: 7

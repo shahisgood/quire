@@ -1,0 +1,63 @@
+# XcodeGen spec. The .xcodeproj is generated from this (locally with `xcodegen generate`,
+# or by the GitHub Actions workflow), so the project file never needs hand-editing or committing.
+name: Quire
+
+options:
+  bundleIdPrefix: app.quire
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Swift 5 language mode for the first builds: concurrency diagnostics are warnings rather than
+    # errors while the port settles. Flip to "6.0" once the build log is clean (see DECISIONS.md).
+    SWIFT_VERSION: "5.0"
+    SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+    SWIFT_APPROACHABLE_CONCURRENCY: "YES"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    ENABLE_USER_SCRIPT_SANDBOXING: "YES"
+
+targets:
+  Quire:
+    type: application
+    platform: iOS
+    sources:
+      - path: Quire
+    info:
+      path: Quire/Info.plist
+      properties:
+        CFBundleDisplayName: Quire
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        LSRequiresIPhoneOS: true
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIFileSharingEnabled: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.quire.ios
+        PRODUCT_NAME: Quire
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
+
+schemes:
+  Quire:
+    build:
+      targets:
+        Quire: all
+    run:
+      config: Debug
+    archive:
+      config: Release
