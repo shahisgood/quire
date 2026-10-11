@@ -216,7 +216,7 @@ private struct TableBlockView: View {
 
     private func alignment(_ i: Int) -> HorizontalAlignment {
         let a: MDAlign = i < alignments.count ? alignments[i] : .leading
-        switch a {
+        return switch a {
         case .leading: .leading
         case .center: .center
         case .trailing: .trailing
