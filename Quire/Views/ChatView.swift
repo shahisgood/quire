@@ -22,7 +22,8 @@ struct ChatView: View {
 
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var pinned = true
-    @State private var atBottom = true
+    @State private var nearBottom = true
+    @State private var tailVisible = true
     @State private var userScrolling = false
     @State private var visibleCount = 40
     @State private var flashId: String? = nil
@@ -44,36 +45,51 @@ struct ChatView: View {
     private var hiddenCount: Int { max(0, session.path.count - visibleCount) }
     private var density: CGFloat { app.settings.ui.density == "compact" ? 16 : 26 }
 
+    /// Two independent signals, either of which counts: scroll geometry, and whether the marker at
+    /// the very end of the thread is on screen. The marker needs no inset arithmetic, so the pill
+    /// can't get stuck when the geometry reads differently (with the keyboard, say).
+    private var atBottom: Bool { nearBottom || tailVisible }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: density) {
-                if session.path.isEmpty {
-                    EmptyChatView(session: session, openModels: { showModels = true }, openSettings: { showSettings = true })
-                        .containerRelativeFrame(.vertical, alignment: .center)
-                }
-                if hiddenCount > 0 {
-                    Button(action: showEarlier) {
-                        Label("Show \(min(40, hiddenCount)) earlier of \(hiddenCount)", systemImage: "arrow.up")
-                            .font(.footnote.weight(.medium))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
+            VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: density) {
+                    if session.path.isEmpty {
+                        EmptyChatView(session: session, openModels: { showModels = true }, openSettings: { showSettings = true })
+                            .containerRelativeFrame(.vertical, alignment: .center)
                     }
-                    .buttonStyle(.glass)
-                    .frame(maxWidth: .infinity)
-                }
-                ForEach(Array(visiblePath), id: \.self) { id in
-                    if let m = session.messages[id] {
-                        MessageRow(session: session, message: m, highlighted: flashId == id, actions: actions)
-                            .id(id)
-                            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .offset(y: 8)), removal: .opacity))
+                    if hiddenCount > 0 {
+                        Button(action: showEarlier) {
+                            Label("Show \(min(40, hiddenCount)) earlier of \(hiddenCount)", systemImage: "arrow.up")
+                                .font(.footnote.weight(.medium))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.glass)
+                        .frame(maxWidth: .infinity)
+                    }
+                    ForEach(Array(visiblePath), id: \.self) { id in
+                        if let m = session.messages[id] {
+                            MessageRow(session: session, message: m, highlighted: flashId == id, actions: actions)
+                                .id(id)
+                                .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .offset(y: 8)), removal: .opacity))
+                        }
                     }
                 }
+                .padding(.horizontal, 18)
+                .padding(.top, 12)
+                .padding(.bottom, 12)
+                .environment(\.dynamicTypeSize, ReadingSize(scale: app.settings.ui.fontScale).apply(to: typeSize))
+                .animation(reduceMotion ? nil : Motion.standard, value: session.path)
+
+                Color.clear
+                    .frame(height: 1)
+                    .onScrollVisibilityChange(threshold: 0.01) { visible in
+                        tailVisible = visible
+                        updateFollow()
+                    }
+                    .accessibilityHidden(true)
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 12)
-            .padding(.bottom, 12)
-            .environment(\.dynamicTypeSize, ReadingSize(scale: app.settings.ui.fontScale).apply(to: typeSize))
-            .animation(reduceMotion ? nil : Motion.standard, value: session.path)
         }
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom)
@@ -85,13 +101,18 @@ struct ChatView: View {
         // scroll to the bottom is still animating, and treating that as "scrolled away" left the
         // pill stuck on screen at the bottom of the chat.
         .onScrollGeometryChange(for: Bool.self) { geo in
-            geo.contentOffset.y + geo.containerSize.height >= geo.contentSize.height - 60
+            geo.visibleRect.maxY >= geo.contentSize.height - 40
         } action: { _, near in
-            atBottom = near
-            if near { pinned = true } else if userScrolling { pinned = false }
+            nearBottom = near
+            updateFollow()
         }
-        .onScrollPhaseChange { _, phase in
-            userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+        .onScrollPhaseChange { old, new in
+            let wasDragging = Self.isUserPhase(old)
+            userScrolling = Self.isUserPhase(new)
+            // A drag or fling that comes to rest away from the bottom stops the follow, even if
+            // the last position update arrived after the finger lifted.
+            if wasDragging && !userScrolling && !atBottom { pinned = false }
+            updateFollow()
         }
         .onChange(of: session.streamContent) { if pinned { position.scrollTo(edge: .bottom) } }
         .onChange(of: session.streamReasoning) { if pinned { position.scrollTo(edge: .bottom) } }
@@ -178,6 +199,14 @@ struct ChatView: View {
 
     /// Never while the bottom is already in view, whatever the follow state says.
     private var showsJumpPill: Bool { !pinned && !atBottom && !session.path.isEmpty }
+
+    private func updateFollow() {
+        if atBottom { pinned = true } else if userScrolling { pinned = false }
+    }
+
+    private static func isUserPhase(_ phase: ScrollPhase) -> Bool {
+        phase == .tracking || phase == .interacting || phase == .decelerating
+    }
 
     @ViewBuilder
     private var jumpPill: some View {
@@ -338,6 +367,7 @@ private struct EmptyChatView: View {
     let openModels: () -> Void
     let openSettings: () -> Void
     @Environment(AppModel.self) private var app
+    @State private var shown = false
 
     var body: some View {
         if app.apiKey == nil {
@@ -347,33 +377,122 @@ private struct EmptyChatView: View {
                     .buttonStyle(.glassProminent)
             }
         } else {
-            EmptyState(title: "Talking to \(app.modelName(session.chat.modelId)).", message: message) {
-                VStack(spacing: 10) {
+            // A greeting that follows the clock, then the model you're about to talk to, then the
+            // way into this chat's settings. Each arrives a beat after the one above it.
+            VStack(spacing: 22) {
+                VStack(spacing: 14) {
+                    QuireMark(width: 48, breathing: true)
+                        .entrance(shown)
+                    Text(greeting)
+                        .font(.system(.title2, design: .serif).weight(.semibold))
+                        .foregroundStyle(Color.qInk)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .entrance(shown, delay: 0.06)
+                    if !session.chat.memoryEnabled {
+                        Label("Incognito. Nothing here is remembered.", systemImage: "eye.slash")
+                            .font(.footnote)
+                            .foregroundStyle(Color.qInk2)
+                            .entrance(shown, delay: 0.1)
+                    }
+                }
+                modelCard
+                    .entrance(shown, delay: 0.14)
+                HStack(spacing: 10) {
                     if let p = session.persona {
                         Text("\(p.icon ?? "◦")  \(p.name)")
                             .font(.subheadline.weight(.medium))
+                            .lineLimit(1)
                             .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
+                            .frame(height: 34)
                             .background(Color.qAccentSoft, in: .capsule)
                             .foregroundStyle(Color.qInk)
                     }
-                    HStack(spacing: 10) {
-                        Button(action: openModels) { Label("Change model", systemImage: "cpu") }
-                            .buttonStyle(.glass)
-                        Button(action: openSettings) { Label("Settings", systemImage: "slider.horizontal.3") }
-                            .buttonStyle(.glass)
+                    Button(action: openSettings) { Label("Chat settings", systemImage: "slider.horizontal.3") }
+                        .buttonStyle(.glass)
+                }
+                .entrance(shown, delay: 0.2)
+            }
+            .frame(maxWidth: 380)
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity)
+            .onAppear { shown = true }
+        }
+    }
+
+    private var greeting: String {
+        Greeting.line(seed: session.chat.id, returning: app.chats.contains { $0.id != session.chat.id })
+    }
+
+    private var provider: String {
+        session.model?.provider ?? session.chat.modelId.split(separator: "/").first.map(String.init) ?? ""
+    }
+
+    /// The model, where it's from, and what it costs and can do: tap to choose another.
+    private var modelCard: some View {
+        Button(action: openModels) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    ProviderMark(provider: provider, size: 40)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(app.modelName(session.chat.modelId))
+                            .font(.headline)
+                            .foregroundStyle(Color.qInk)
+                            .lineLimit(1)
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(Color.qInk2)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.qInk2)
+                }
+                if !tags.isEmpty {
+                    ViewThatFits(in: .horizontal) {
+                        tagRow(tags)
+                        tagRow(Array(tags.prefix(2)))
+                        tagRow(Array(tags.prefix(1)))
                     }
                 }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .card(radius: 20)
+            .contentShape(.rect(cornerRadius: 20))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("Model: \(app.modelName(session.chat.modelId)). \(subtitle)")
+        .accessibilityHint("Choose a different model")
+    }
+
+    private func tagRow(_ items: [String]) -> some View {
+        HStack(spacing: 6) {
+            ForEach(items, id: \.self) { t in
+                Text(t)
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(Color.qSunken, in: .capsule)
+                    .foregroundStyle(Color.qInk2)
             }
         }
     }
 
-    private var message: String {
-        if !session.chat.memoryEnabled { return "Incognito. Nothing from this chat is remembered or recalled." }
-        if let m = session.model {
-            return "\(Fmt.context(m.contextLength)) context · \(Pricing.perMillion(m.pricing.prompt)) in · \(Pricing.perMillion(m.pricing.completion)) out per million tokens."
-        }
-        return "Type below, or pick any of the models OpenRouter offers."
+    private var subtitle: String {
+        guard let m = session.model else { return ProviderStyle.displayName(provider) }
+        return "\(ProviderStyle.displayName(m.provider)) · \(Fmt.context(m.contextLength)) context"
+    }
+
+    private var tags: [String] {
+        guard let m = session.model else { return [] }
+        var t = [m.isFree ? "Free" : "\(Pricing.perMillion(m.pricing.prompt)) in · \(Pricing.perMillion(m.pricing.completion)) out"]
+        if let thinking = session.thinkingLabel { t.append("Thinking: \(thinking)") }
+        if m.acceptsImages { t.append("Sees images") }
+        return t
     }
 }
 

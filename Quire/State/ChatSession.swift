@@ -221,6 +221,34 @@ final class ChatSession {
         saveChat()
     }
 
+    /// What sits next to the model name in the composer: the effort level or the budget, or nothing
+    /// when thinking is off or the model can't think.
+    var thinkingLabel: String? {
+        guard model?.supportsReasoning == true, let r = effectiveSettings.reasoning else { return nil }
+        switch r.mode {
+        case .off: return nil
+        case .effort:
+            let e = r.effort ?? .medium
+            return e == ReasoningEffort.none ? nil : e.label
+        case .budget: return r.maxTokens.map { "\(Fmt.tokens($0)) budget" } ?? "Budget"
+        }
+    }
+
+    /// Quick switch from the composer: thinking off (nil), or effort mode at a level. Stored as this
+    /// chat's override, keeping any budget and "hide the trace" choice already made.
+    func setThinking(_ effort: ReasoningEffort?) {
+        var o = chat.settingsOverride ?? GenerationSettings()
+        var r = effectiveSettings.reasoning ?? ReasoningSettings()
+        if let effort {
+            r.mode = .effort
+            r.effort = effort
+        } else {
+            r.mode = .off
+        }
+        o.reasoning = r
+        setOverrides(o)
+    }
+
     // MARK: Actions
 
     func send(_ text: String, attachments: [Attachment] = []) {

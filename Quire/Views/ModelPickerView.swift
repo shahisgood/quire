@@ -1,19 +1,17 @@
 import SwiftUI
 
-nonisolated enum ModelFilter: String, CaseIterable, Identifiable, Hashable, Sendable {
-    case vision = "Vision", files = "Files", tools = "Tools", reasoning = "Reasoning", structured = "Structured"
-    case free = "Free", cheap = "Cheap", mid = "Mid", premium = "Premium"
-    case ctx32 = "≥32k", ctx200 = "≥200k", ctx1m = "≥1M"
+/// What a model can take or do. Any number can be on at once.
+nonisolated enum ModelAbility: String, CaseIterable, Identifiable, Hashable, Sendable {
+    case vision = "Vision", files = "Files", tools = "Tools", reasoning = "Reasoning", structured = "JSON"
     var id: String { rawValue }
 
-    var symbol: String? {
+    var symbol: String {
         switch self {
         case .vision: "eye"
         case .files: "doc"
         case .tools: "wrench.and.screwdriver"
         case .reasoning: "brain"
         case .structured: "curlybraces"
-        default: nil
         }
     }
 
@@ -24,15 +22,49 @@ nonisolated enum ModelFilter: String, CaseIterable, Identifiable, Hashable, Send
         case .tools: m.supportsTools
         case .reasoning: m.supportsReasoning
         case .structured: m.supportsStructured
+        }
+    }
+}
+
+/// One price band at a time (a model can't be both free and premium).
+nonisolated enum PriceFilter: String, CaseIterable, Hashable, Sendable {
+    case any, free, cheap, mid, premium
+
+    var label: String {
+        switch self {
+        case .any: "Any"
+        case .free: "Free"
+        case .cheap: "$"
+        case .mid: "$$"
+        case .premium: "$$$"
+        }
+    }
+
+    func passes(_ m: ORModel) -> Bool {
+        switch self {
+        case .any: true
         case .free: m.priceBand == .free
         case .cheap: m.priceBand == .cheap
         case .mid: m.priceBand == .mid
         case .premium: m.priceBand == .premium
-        case .ctx32: m.contextLength >= 32_000
-        case .ctx200: m.contextLength >= 200_000
-        case .ctx1m: m.contextLength >= 1_000_000
         }
     }
+}
+
+/// A minimum context window.
+nonisolated enum ContextFilter: Int, CaseIterable, Hashable, Sendable {
+    case any = 0, k32 = 32_000, k128 = 128_000, m1 = 1_000_000
+
+    var label: String {
+        switch self {
+        case .any: "Any"
+        case .k32: "32k+"
+        case .k128: "128k+"
+        case .m1: "1M+"
+        }
+    }
+
+    func passes(_ m: ORModel) -> Bool { m.contextLength >= rawValue }
 }
 
 struct ModelPickerView: View {
@@ -41,19 +73,40 @@ struct ModelPickerView: View {
     let onPick: (String) -> Void
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var query = ""
-    @State private var filters: Set<ModelFilter> = []
+    @State private var abilities: Set<ModelAbility> = []
+    @State private var price: PriceFilter = .any
+    @State private var context: ContextFilter = .any
     @State private var provider: String? = nil
     @State private var onlyNew = false
     @State private var card: ORModel? = nil
 
-    private var providers: [String] { Array(Set(app.models.map(\.provider))).sorted() }
+    private struct ProviderCount: Identifiable {
+        let id: String
+        let count: Int
+    }
+
+    /// Providers by how many models they offer, most first.
+    private var providers: [ProviderCount] {
+        Dictionary(grouping: app.models, by: { $0.provider })
+            .map { ProviderCount(id: $0.key, count: $0.value.count) }
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.id < $1.id }
+    }
+
+    private var activeFilterCount: Int {
+        abilities.count + (price == .any ? 0 : 1) + (context == .any ? 0 : 1) + (provider == nil ? 0 : 1) + (onlyNew ? 1 : 0)
+    }
+
+    private var isBrowsing: Bool { query.trimmingCharacters(in: .whitespaces).isEmpty && activeFilterCount == 0 }
 
     private var filtered: [ORModel] {
         let base = app.models.filter { m in
             (provider == nil || m.provider == provider)
                 && (!onlyNew || app.newModelIds.contains(m.id))
-                && filters.allSatisfy { $0.passes(m) }
+                && price.passes(m)
+                && context.passes(m)
+                && abilities.allSatisfy { $0.passes(m) }
         }
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return base }
@@ -66,17 +119,19 @@ struct ModelPickerView: View {
             .map(\.0)
     }
 
-    private var isBrowsing: Bool { query.trimmingCharacters(in: .whitespaces).isEmpty && filters.isEmpty && provider == nil && !onlyNew }
+    private var listAnimation: Animation? { reduceMotion ? nil : Motion.quick }
 
     var body: some View {
         NavigationStack {
             List {
-                Section { filterBar }
-                    .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                Section { filterPanel }
+                    .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
 
                 if app.models.isEmpty {
                     Section { loadingState }
+                        .listRowBackground(Color.qRaised)
                 } else if isBrowsing {
                     let recents = app.settings.recentModelIds.compactMap { app.model($0) }
                     if !recents.isEmpty {
@@ -87,21 +142,21 @@ struct ModelPickerView: View {
                         Section { ForEach(favs) { row($0) } } header: { SectionLabel(text: "Favourites") }
                     }
                     Section { ForEach(app.models) { row($0) } } header: { SectionLabel(text: "All \(app.models.count) models") }
+                } else if filtered.isEmpty {
+                    Section { noMatches }
+                        .listRowBackground(Color.clear)
                 } else {
                     Section {
-                        if filtered.isEmpty {
-                            Text("No models match.").foregroundStyle(Color.qInk2)
-                        }
                         ForEach(filtered) { row($0) }
                     } header: {
-                        SectionLabel(text: "\(filtered.count) \(filtered.count == 1 ? "model" : "models")")
+                        SectionLabel(text: "\(filtered.count) of \(app.models.count) models")
                     }
                 }
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(Color.qBase)
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search name, id or description")
+            .searchable(text: $query, prompt: "Search models")
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -112,9 +167,14 @@ struct ModelPickerView: View {
                     }
                     .accessibilityLabel("Refresh models")
                 }
+                // Search lives at the bottom, within thumb's reach.
+                DefaultToolbarItem(kind: .search, placement: .bottomBar)
             }
-            .animation(Motion.quick, value: filters)
-            .animation(Motion.quick, value: provider)
+            .animation(listAnimation, value: abilities)
+            .animation(listAnimation, value: price)
+            .animation(listAnimation, value: context)
+            .animation(listAnimation, value: provider)
+            .animation(listAnimation, value: onlyNew)
             .sheet(item: $card) { m in
                 ModelCardView(model: m, onUse: { pick(m.id) })
             }
@@ -124,44 +184,144 @@ struct ModelPickerView: View {
         .presentationDragIndicator(.visible)
     }
 
-    private var filterBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                if !app.newModelIds.isEmpty {
-                    FilterChip(title: "New · \(app.newModelIds.count)", symbol: "sparkles", isOn: onlyNew) { onlyNew.toggle() }
+    // MARK: Filters
+
+    private var filterPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            providerStrip
+            abilityRow
+            VStack(spacing: 8) {
+                filterLine("Price") {
+                    SlidingSegments(options: PriceFilter.allCases.map { (value: $0, label: $0.label) }, selection: $price)
                 }
-                Menu {
-                    Button { provider = nil } label: { checkLabel("All providers", on: provider == nil) }
-                    Divider()
-                    ForEach(providers, id: \.self) { p in
-                        Button { provider = p } label: { checkLabel(p, on: provider == p) }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(provider ?? "Provider")
-                        Image(systemName: "chevron.down").imageScale(.small)
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .foregroundStyle(provider == nil ? Color.qInk : Color.qOnAccent)
-                    .background(provider == nil ? Color.qRaised : Color.qAccent, in: .capsule)
-                    .overlay(Capsule().strokeBorder(provider == nil ? Color.qRule : Color.clear, lineWidth: 1))
-                }
-                ForEach(ModelFilter.allCases) { f in
-                    FilterChip(title: f.rawValue, symbol: f.symbol, isOn: filters.contains(f)) {
-                        if filters.contains(f) { filters.remove(f) } else { filters.insert(f) }
-                    }
+                filterLine("Context") {
+                    SlidingSegments(options: ContextFilter.allCases.map { (value: $0, label: $0.label) }, selection: $context)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 20)
+        }
+        .padding(.top, 4)
+        .padding(.bottom, 8)
+    }
+
+    private func filterLine<Control: View>(_ title: String, @ViewBuilder control: () -> Control) -> some View {
+        HStack(spacing: 12) {
+            Text(title.uppercased())
+                .font(.caption2.weight(.semibold))
+                .tracking(1.1)
+                .foregroundStyle(Color.qInk2)
+                .frame(width: 62, alignment: .leading)
+            control()
         }
     }
 
-    @ViewBuilder
-    private func checkLabel(_ title: String, on: Bool) -> some View {
-        if on { Label(title, systemImage: "checkmark") } else { Text(title) }
+    /// Every provider as a monogram, busiest first. Tap one to narrow to it; tap again for all.
+    private var providerStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 10) {
+                providerItem(nil, count: app.models.count)
+                ForEach(providers) { p in providerItem(p.id, count: p.count) }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+        }
     }
+
+    private func providerItem(_ p: String?, count: Int) -> some View {
+        let on = provider == p
+        let name = p.map(ProviderStyle.displayName) ?? "All"
+        return Button {
+            Haptics.selection()
+            withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy) {
+                provider = (p == nil || on) ? nil : p
+            }
+        } label: {
+            VStack(spacing: 6) {
+                Group {
+                    if let p {
+                        ProviderMark(provider: p, size: 46)
+                    } else {
+                        Image(systemName: "square.grid.2x2.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(on ? Color.qOnAccent : Color.qInk2)
+                            .frame(width: 46, height: 46)
+                            .background((on ? Color.qAccent : Color.qRaised).gradient, in: .rect(cornerRadius: 14, style: .continuous))
+                    }
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                        .strokeBorder(Color.qAccent, lineWidth: 2)
+                        .padding(-4)
+                        .opacity(on && p != nil ? 1 : 0)
+                        .scaleEffect(on ? 1 : 0.9)
+                }
+                .scaleEffect(on && p != nil ? 1.04 : 1)
+                VStack(spacing: 1) {
+                    Text(name)
+                        .font(.caption2.weight(on ? .semibold : .medium))
+                        .foregroundStyle(on ? Color.qInk : Color.qInk2)
+                        .lineLimit(1)
+                    Text("\(count)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(Color.qInk2.opacity(0.7))
+                }
+            }
+            .frame(width: 62)
+            .opacity(provider == nil || on ? 1 : 0.5)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("\(p == nil ? "All providers" : name), \(count) models")
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private var abilityRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                if activeFilterCount > 0 {
+                    Button(action: clearFilters) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "xmark")
+                            Text("Clear · \(activeFilterCount)")
+                                .contentTransition(.numericText())
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.qAccent)
+                        .padding(.horizontal, 14)
+                        .frame(height: 34)
+                        .background(Color.qAccentSoft, in: .capsule)
+                        .contentShape(.capsule)
+                    }
+                    .buttonStyle(.pressable)
+                    .transition(reduceMotion ? .opacity : .pop)
+                    .accessibilityLabel("Clear \(activeFilterCount) filters")
+                }
+                if !app.newModelIds.isEmpty {
+                    ToggleChip(title: "New · \(app.newModelIds.count)", symbol: "sparkles", isOn: onlyNew) { onlyNew.toggle() }
+                }
+                ForEach(ModelAbility.allCases) { a in
+                    ToggleChip(title: a.rawValue, symbol: a.symbol, isOn: abilities.contains(a)) {
+                        if abilities.contains(a) { abilities.remove(a) } else { abilities.insert(a) }
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)   // room for the chips' glow
+        }
+    }
+
+    private func clearFilters() {
+        Haptics.tap()
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy) {
+            abilities = []
+            price = .any
+            context = .any
+            provider = nil
+            onlyNew = false
+        }
+    }
+
+    // MARK: States
 
     @ViewBuilder
     private var loadingState: some View {
@@ -178,15 +338,39 @@ struct ModelPickerView: View {
         }
     }
 
+    private var noMatches: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(Color.qInk2)
+            Text("No models match")
+                .font(.system(.headline, design: .serif))
+                .foregroundStyle(Color.qInk)
+            Text("Try fewer filters, or a different search.")
+                .font(.subheadline)
+                .foregroundStyle(Color.qInk2)
+            if activeFilterCount > 0 {
+                Button("Clear filters", action: clearFilters)
+                    .buttonStyle(.glass)
+                    .padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+    }
+
+    // MARK: Rows
+
     private func row(_ m: ORModel) -> some View {
         let isSelected = m.id == selected
         let isFav = app.settings.favouriteModelIds.contains(m.id)
         return Button { pick(m.id) } label: {
             HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
+                ProviderMark(provider: m.provider, size: 36)
+                VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(m.shortName)
-                            .font(.body.weight(isSelected ? .semibold : .regular))
+                            .font(.body.weight(isSelected ? .semibold : .medium))
                             .foregroundStyle(Color.qInk)
                             .lineLimit(1)
                         if app.newModelIds.contains(m.id) {
@@ -195,17 +379,24 @@ struct ModelPickerView: View {
                                 .foregroundStyle(Color.qOnAccent)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
-                                .background(Color.qAccent, in: .capsule)
+                                .background(Color.qAccent.gradient, in: .capsule)
                         }
                     }
                     HStack(spacing: 6) {
-                        Text(m.provider)
+                        Text("\(Fmt.context(m.contextLength)) context")
                         Text("·")
-                        Text(Fmt.context(m.contextLength))
-                        Text("·")
-                        Text(m.isFree ? "free" : "\(Pricing.perMillion(m.pricing.prompt))/\(Pricing.perMillion(m.pricing.completion))")
-                        if m.acceptsImages { Image(systemName: "eye").accessibilityLabel("Vision") }
-                        if m.supportsReasoning { Image(systemName: "brain").accessibilityLabel("Reasoning") }
+                        if m.isFree {
+                            Text("Free").foregroundStyle(Color.qTileTeal)
+                        } else {
+                            Text("\(Pricing.perMillion(m.pricing.prompt)) / \(Pricing.perMillion(m.pricing.completion))")
+                        }
+                        HStack(spacing: 4) {
+                            if m.acceptsImages { Image(systemName: "eye").accessibilityLabel("Vision") }
+                            if m.supportsReasoning { Image(systemName: "brain").accessibilityLabel("Reasoning") }
+                            if m.supportsTools { Image(systemName: "wrench.and.screwdriver").accessibilityLabel("Tools") }
+                        }
+                        .imageScale(.small)
+                        .padding(.leading, 2)
                     }
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(Color.qInk2)
@@ -213,22 +404,27 @@ struct ModelPickerView: View {
                 }
                 Spacer(minLength: 6)
                 if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.body.weight(.semibold))
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title3)
                         .foregroundStyle(Color.qAccent)
                         .accessibilityHidden(true)
                 }
-                Button { app.toggleFavourite(m.id) } label: {
+                Button {
+                    app.toggleFavourite(m.id)
+                    Haptics.selection()
+                } label: {
                     Image(systemName: isFav ? "star.fill" : "star")
-                        .foregroundStyle(isFav ? Color.qAccent : Color.qInk2)
+                        .foregroundStyle(isFav ? Color.qWarn : Color.qInk2.opacity(0.6))
                         .contentTransition(.symbolEffect(.replace))
+                        .symbolEffect(.bounce, value: isFav)
                         .frame(width: 32, height: 32)
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(isFav ? "Remove from favourites" : "Add to favourites")
             }
+            .padding(.vertical, 2)
         }
-        .listRowBackground(Color.qRaised)
+        .listRowBackground(isSelected ? Color.qAccentSoft : Color.qRaised)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .contextMenu {
             Button { card = m } label: { Label("Details", systemImage: "info.circle") }

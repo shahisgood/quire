@@ -150,6 +150,8 @@ enum Motion {
     /// screen moving rather than a toy; leaving is a touch quicker than arriving.
     static let drawerIn = Animation.smooth(duration: 0.38)
     static let drawerOut = Animation.smooth(duration: 0.3)
+    /// First arrival of a screen's content (the empty chat). Rare, so it can take its time.
+    static let entrance = Animation.smooth(duration: 0.55)
 }
 
 extension View {

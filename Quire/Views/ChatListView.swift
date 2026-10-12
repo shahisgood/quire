@@ -36,6 +36,7 @@ struct ChatListView: View {
         .background(Color.qBase)
         .environment(\.editMode, $editMode)
         .navigationTitle(showArchived ? "Archived" : "Quire")
+        .navigationSubtitle(statusText)
         // Pinned under the title rather than hide-on-scroll: the automatic mode keeps the field out of
         // navigation transitions and then drops it in once they finish. The placement is explicit so
         // iOS never moves the field between the top and the bottom bar mid-search, and the toolbar
@@ -177,25 +178,15 @@ struct ChatListView: View {
                 .disabled(selection.isEmpty)
             }
         }
-        // Not tied to search: adding and removing bar items while the search field is active is what
-        // left the toolbar half-empty.
-        if !isEditing {
-            ToolbarItem(placement: .status) {
-                statusLine
-            }
-        }
     }
 
-    private var statusLine: some View {
+    /// One quiet line under the title instead of a capsule in the bottom bar.
+    private var statusText: String {
         let count = visible.count
         var parts = ["\(count) \(count == 1 ? "chat" : "chats")"]
         if app.settings.ui.showCosts && app.todayCost > 0 { parts.append("\(Fmt.usd(app.todayCost)) today") }
         if !app.connectivity.online { parts.append("Offline") }
-        return Text(parts.joined(separator: " · "))
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(Color.qInk2)
-            .contentTransition(.numericText())
-            .animation(Motion.quick, value: parts)
+        return parts.joined(separator: " · ")
     }
 
     // MARK: Sections
