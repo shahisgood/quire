@@ -203,3 +203,39 @@ nonisolated enum Greeting {
         return pool[Int(h % UInt64(pool.count))]
     }
 }
+
+// MARK: - Layout
+
+extension VerticalAlignment {
+    private nonisolated enum OpticalCenter: AlignmentID {
+        static func defaultValue(in d: ViewDimensions) -> CGFloat { d.height * 0.42 }
+    }
+
+    /// A touch above true centre, where the eye expects "centred" to be. In a full-height frame this
+    /// leaves the space above and below a block in a 42:58 ratio instead of 50:50.
+    static let opticalCenter = VerticalAlignment(OpticalCenter.self)
+}
+
+// MARK: - Live
+
+/// A small accent dot that breathes while something is happening (a reply being written). Holds
+/// still under Reduce Motion.
+struct LiveDot: View {
+    var size: CGFloat = 7
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let dot = Circle().fill(Color.qAccent).frame(width: size, height: size)
+        if reduceMotion {
+            dot.accessibilityHidden(true)
+        } else {
+            dot
+                .phaseAnimator([false, true]) { view, bright in
+                    view
+                        .opacity(bright ? 1 : 0.35)
+                        .scaleEffect(bright ? 1 : 0.75)
+                } animation: { _ in .easeInOut(duration: 0.7) }
+                .accessibilityHidden(true)
+        }
+    }
+}

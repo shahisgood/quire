@@ -138,6 +138,7 @@ private struct AssistantMessageView: View {
     let actions: MessageActions
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var justCopied = false
 
     private var isStreaming: Bool { session.streamingId == message.id }
     private var content: String { isStreaming ? session.streamContent : message.content }
@@ -273,7 +274,8 @@ private struct AssistantMessageView: View {
                     .accessibilityLabel("Usage: \(usageText(u)). Shows details")
                 }
                 Spacer(minLength: 8)
-                FooterButton(symbol: "square.on.square", label: "Copy", action: copyPlain)
+                FooterButton(symbol: justCopied ? "checkmark" : "square.on.square", label: justCopied ? "Copied" : "Copy",
+                             tint: justCopied ? Color.qAccent : Color.qInk2, action: copyPlain)
                 FooterButton(symbol: "arrow.clockwise", label: "Regenerate") { session.regenerate(message.id) }
                     .disabled(session.generating)
                 Menu { menuItems } label: {
@@ -338,27 +340,34 @@ private struct AssistantMessageView: View {
         .background(Color.qBase)
     }
 
+    /// The button itself confirms (a checkmark for a moment) rather than a toast over the chat.
     private func copyPlain() {
         UIPasteboard.general.string = PlainText.from(markdown: message.content)
         Haptics.tap()
-        app.toasts.show("Copied", symbol: "checkmark")
+        withAnimation(Motion.quick) { justCopied = true }
+        Task {
+            try? await Task.sleep(for: .seconds(1.6))
+            withAnimation(Motion.quick) { justCopied = false }
+        }
     }
 }
 
 private struct FooterButton: View {
     let symbol: String
     let label: String
+    var tint: Color = .qInk2
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.footnote.weight(.medium))
+                .contentTransition(.symbolEffect(.replace))
                 .frame(width: 36, height: 32)
                 .contentShape(.rect)
         }
         .buttonStyle(.pressable)
-        .foregroundStyle(Color.qInk2)
+        .foregroundStyle(tint)
         .accessibilityLabel(label)
     }
 }

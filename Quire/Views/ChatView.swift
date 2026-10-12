@@ -253,6 +253,7 @@ struct ChatView: View {
                     .font(.system(.headline, design: .serif))
                     .foregroundStyle(Color.qInk)
                     .lineLimit(1)
+                    .contentTransition(.opacity)
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(Color.qInk2)
@@ -265,6 +266,7 @@ struct ChatView: View {
         }
         .frame(maxWidth: 250)
         .animation(Motion.quick, value: session.generating)
+        .animation(Motion.standard, value: session.chat.title)
     }
 
     private var subtitle: String {

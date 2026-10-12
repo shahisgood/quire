@@ -211,11 +211,14 @@ struct ComposerView: View {
                 Text(app.modelName(session.chat.modelId))
                     .foregroundStyle(Color.qInk)
                     .lineLimit(1)
+                    .contentTransition(.opacity)
                 if let t = session.thinkingLabel {
                     Text(t)
                         .foregroundStyle(Color.qInk2)
                         .lineLimit(1)
                         .fixedSize()
+                        .contentTransition(.opacity)
+                        .transition(.opacity)
                 }
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption2.weight(.semibold))
@@ -226,6 +229,8 @@ struct ComposerView: View {
             .frame(height: 34)
             .background(Color.qInk.opacity(0.08), in: .capsule)
             .contentShape(.capsule)
+            .animation(Motion.quick, value: session.chat.modelId)
+            .animation(Motion.quick, value: session.thinkingLabel)
         }
         .accessibilityLabel("Model: \(app.modelName(session.chat.modelId))\(session.thinkingLabel.map { ", thinking \($0)" } ?? "")")
         .accessibilityHint("Switch model or thinking level")

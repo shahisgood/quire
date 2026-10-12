@@ -5,11 +5,11 @@ import SwiftUI
 /// It colours four token kinds in muted tones, which is what makes code scannable; it doesn't try to
 /// be a parser. Results are cached by source text.
 enum Highlighter {
-    nonisolated(unsafe) private static let slashComment = try! NSRegularExpression(
+    private static let slashComment = try! NSRegularExpression(
         pattern: "//[^\\n]*|/\\*[\\s\\S]*?\\*/", options: [])
-    nonisolated(unsafe) private static let hashComment = try! NSRegularExpression(
+    private static let hashComment = try! NSRegularExpression(
         pattern: "(?<![\\w\"'$])#(?![!\\[{])[^\\n]*", options: [])
-    nonisolated(unsafe) private static let dashComment = try! NSRegularExpression(pattern: "--[^\\n]*", options: [])
+    private static let dashComment = try! NSRegularExpression(pattern: "--[^\\n]*", options: [])
 
     private static let cLike: Set<String> = ["c", "h", "cpp", "c++", "objc", "swift", "js", "javascript", "jsx", "ts", "tsx", "typescript",
                                               "go", "rust", "rs", "java", "kotlin", "kt", "scala", "css", "scss", "json", "jsonc", "dart",
@@ -17,11 +17,11 @@ enum Highlighter {
     private static let hashLangs: Set<String> = ["python", "py", "ruby", "rb", "sh", "bash", "zsh", "shell", "fish", "yaml", "yml", "toml",
                                                   "r", "perl", "pl", "dockerfile", "makefile", "make", "ini", "conf", "nix", "elixir", "ex"]
     private static let dashLangs: Set<String> = ["sql", "lua", "haskell", "hs", "ada"]
-    nonisolated(unsafe) private static let string = try! NSRegularExpression(
+    private static let string = try! NSRegularExpression(
         pattern: "\"(?:\\\\.|[^\"\\\\\\n])*\"|'(?:\\\\.|[^'\\\\\\n])*'|`(?:\\\\.|[^`\\\\])*`", options: [])
-    nonisolated(unsafe) private static let number = try! NSRegularExpression(
+    private static let number = try! NSRegularExpression(
         pattern: "\\b(?:0x[0-9a-fA-F_]+|\\d[\\d_]*(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)\\b", options: [])
-    nonisolated(unsafe) private static let word = try! NSRegularExpression(pattern: "\\b[A-Za-z_][A-Za-z0-9_]*\\b", options: [])
+    private static let word = try! NSRegularExpression(pattern: "\\b[A-Za-z_][A-Za-z0-9_]*\\b", options: [])
 
     private static let keywords: Set<String> = [
         "if", "else", "for", "while", "do", "switch", "case", "default", "break", "continue", "return", "in",

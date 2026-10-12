@@ -123,6 +123,17 @@ final class AppModel {
 
     func closeSettings() { if settingsOpen { settingsOpen = false } }
 
+    /// A reply finished in a chat that isn't the one on screen (replies keep streaming while you
+    /// browse): say so, with a way straight back to it.
+    func replyFinished(chatId: String, title: String) {
+        if case .chat(let open)? = path.last, open == chatId, !settingsOpen { return }
+        guard UIApplication.shared.applicationState == .active else { return }
+        let name = title.count > 32 ? String(title.prefix(31)) + "…" : title
+        Haptics.success()
+        toasts.show("Reply ready in “\(name)”", symbol: "text.bubble",
+                    action: (label: "Open", run: { [weak self] in self?.openChat(chatId) }))
+    }
+
     // MARK: Sessions
 
     func session(for id: String) -> ChatSession? {

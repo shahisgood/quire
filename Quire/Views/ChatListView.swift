@@ -6,6 +6,7 @@ struct ChatListView: View {
     @State private var hits: [SearchHit] = []
     @State private var searching = false
     @State private var searchActive = false
+    @State private var emptyShown = false
     @State private var showArchived = false
     @State private var editMode: EditMode = .inactive
     @State private var selection: Set<String> = []
@@ -168,8 +169,8 @@ struct ChatListView: View {
                 .disabled(selection.isEmpty)
                 Spacer()
                 Menu {
-                    Button { app.patchChats(selection) { $0.pinned = true }; finishBulk() } label: { Label("Pin", systemImage: "pin") }
-                    Button { app.patchChats(selection) { $0.pinned = false }; finishBulk() } label: { Label("Unpin", systemImage: "pin.slash") }
+                    Button { withAnimation(Motion.standard) { app.patchChats(selection) { $0.pinned = true } }; finishBulk() } label: { Label("Pin", systemImage: "pin") }
+                    Button { withAnimation(Motion.standard) { app.patchChats(selection) { $0.pinned = false } }; finishBulk() } label: { Label("Unpin", systemImage: "pin.slash") }
                     Divider()
                     Button(role: .destructive) { confirmDelete = selection } label: { Label("Delete", systemImage: "trash") }
                 } label: {
@@ -334,6 +335,8 @@ struct ChatListView: View {
         }
     }
 
+    /// Sits at the optical centre of the space under the search field (a little above true middle,
+    /// which reads as sagging there), and drifts in when the list empties.
     private var emptyState: some View {
         EmptyState(title: showArchived ? "Nothing archived" : "No chats yet",
                    message: showArchived ? "Swipe a chat to archive it. It stays searchable." : "Everything you write stays on this iPhone until you export it.") {
@@ -342,7 +345,10 @@ struct ChatListView: View {
                     .buttonStyle(.glassProminent)
             }
         }
-        .allowsHitTesting(true)
+        .entrance(emptyShown)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: Alignment(horizontal: .center, vertical: .opticalCenter))
+        .onAppear { emptyShown = true }
+        .onDisappear { emptyShown = false }
     }
 
     // MARK: Row
@@ -361,7 +367,7 @@ struct ChatListView: View {
         }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button {
-                app.patchChat(chat.id) { $0.pinned.toggle() }
+                withAnimation(Motion.standard) { app.patchChat(chat.id) { $0.pinned.toggle() } }
                 Haptics.selection()
             } label: {
                 Label(chat.pinned ? "Unpin" : "Pin", systemImage: chat.pinned ? "pin.slash" : "pin")
@@ -370,7 +376,7 @@ struct ChatListView: View {
         }
         .contextMenu {
             Button { renameText = chat.title; renaming = chat } label: { Label("Rename", systemImage: "pencil") }
-            Button { app.patchChat(chat.id) { $0.pinned.toggle() } } label: {
+            Button { withAnimation(Motion.standard) { app.patchChat(chat.id) { $0.pinned.toggle() } } } label: {
                 Label(chat.pinned ? "Unpin" : "Pin", systemImage: chat.pinned ? "pin.slash" : "pin")
             }
             Menu {
@@ -468,21 +474,36 @@ struct ChatRow: View {
                     Image(systemName: "pin.fill")
                         .font(.caption2)
                         .foregroundStyle(Color.qAccent)
+                        .transition(.pop)
                         .accessibilityLabel("Pinned")
                 }
                 Text(chat.title)
                     .font(.system(.body, design: .serif).weight(.semibold))
                     .foregroundStyle(Color.qInk)
                     .lineLimit(1)
+                    .contentTransition(.opacity)
                 Spacer(minLength: 8)
                 Text(Fmt.relative(chat.updatedAt))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(Color.qInk2)
             }
-            Text(preview)
-                .font(.subheadline)
-                .foregroundStyle(Color.qInk2)
-                .lineLimit(2)
+            // A reply still coming in (you can leave a chat mid-reply) shows as a live line.
+            if isWriting {
+                HStack(spacing: 7) {
+                    LiveDot()
+                    Text("Writing…")
+                        .foregroundStyle(Color.qAccent)
+                }
+                .font(.subheadline.weight(.medium))
+                .transition(.opacity)
+                .accessibilityLabel("Writing a reply")
+            } else {
+                Text(preview)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.qInk2)
+                    .lineLimit(2)
+                    .transition(.opacity)
+            }
             HStack(spacing: 6) {
                 if let p = app.preset(chat.systemPromptId) {
                     Text("\(p.icon ?? "◦") \(p.name)")
@@ -505,8 +526,12 @@ struct ChatRow: View {
             .foregroundStyle(Color.qInk2.opacity(0.85))
         }
         .padding(.vertical, 4)
+        .animation(Motion.standard, value: chat.title)
+        .animation(Motion.quick, value: isWriting)
         .accessibilityElement(children: .combine)
     }
+
+    private var isWriting: Bool { app.sessions[chat.id]?.generating == true }
 
     private var preview: String {
         if let d = chat.draft, !d.isEmpty { return "Draft: \(d)" }
