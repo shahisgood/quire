@@ -1,21 +1,37 @@
 # Quire for iPhone
 
-A native SwiftUI port of [Quire](https://github.com/shahisgood/quire), the single-user OpenRouter chat client. Same idea as the web app: no backend, no accounts, no analytics. Your chats stay on the phone, the key lives in the Keychain, and the only network traffic is to `openrouter.ai`.
+A native SwiftUI version of [Quire](https://github.com/shahisgood/quire), the single-user OpenRouter chat client, with everything the web app does. No backend, no accounts, no analytics. Your chats stay on the phone, the key lives in the Keychain, and the only network traffic is to `openrouter.ai`.
 
-Requires **iOS 26**. Built entirely on GitHub's macOS runners, so you don't need a Mac.
+Requires **iOS 26**. Built on GitHub's macOS runners, so you don't need a Mac.
 
-## What's in this build
+## What's in it
 
-- Streaming chat with reasoning traces, retry with backoff on 429/5xx, stop, continue, and regenerate (optionally with another model). Regenerated replies are kept as siblings, with a ‹ 1/2 › switcher.
-- Markdown rendered natively: headings, lists and task lists, tables, quotes, code blocks with copy. Math is shown as TeX source for now.
-- Model picker over the live OpenRouter catalogue, with search, Free/Vision/Reasoning/Files filters, favourites and recents.
-- Photo and file attachments (images downscaled to 1600 px, same as the web app).
-- Costs: a live estimate while streaming, replaced by OpenRouter's authoritative figure a few seconds later. Per-chat and per-day totals.
-- Chat list with pin, archive, rename, delete and search across every message.
-- Settings: API key (paste, or Sign in with OpenRouter), default and title models, system prompt, temperature/top-p/max tokens, reasoning mode, web search, provider routing, theme and typeface.
-- **Backups in the web app's format.** Export from the web app (Settings → Data), import here, and everything comes across: chats, messages, costs, settings, even personas and memory, which are kept for a later build.
+**Chat**
+- Streaming replies with a live accent cursor, reasoning traces that open while the model thinks and fold away when it answers, and automatic retry with a countdown on 429/5xx.
+- Stop, continue, retry, regenerate (or regenerate with another model), and **edit and resend**. Every version is kept as a branch, with a ‹ 2/3 › switcher.
+- Branch any message into a new chat, duplicate a chat, share it as Markdown or JSON.
+- Markdown rendered natively: headings, lists, task lists, tables, quotes, rules, and code blocks with syntax colouring and a copy button. Display math is shown as TeX.
+- Attachments from Photos, the camera, Files or the clipboard. Images are resized to 1600 px, as in the web app.
+- A status line in the composer: model, context meter, chat cost. Offline is detected and your draft waits.
+- Long-press any message for copy, select text, edit, branch, details (tokens, cost, the exact request sent) and delete.
 
-Not here yet: memory extraction, persona editing, folders, editing a sent message, and the full parameter editor. See `DECISIONS.md`.
+**Memory**
+- Facts are extracted from your chats after replies (batched, never on the critical path) and injected into requests within a character budget: pinned first, then the most relevant, then the newest.
+- A memory manager with categories, search, inline editing, pin, disable, jump to source, add your own, and a typed "clear" confirmation.
+- Incognito chats neither read nor write memory.
+
+**Prompts and personas**
+- Global system prompt, per-chat prompt overrides, and personas: icon, name, prompt, optional pinned model, and their own generation settings. Hold the compose button to start a chat from one. Import and export personas as JSON.
+
+**Models and settings**
+- A model picker over the live OpenRouter catalogue: fuzzy search, Vision/Files/Tools/Reasoning/Structured, price bands, context sizes, provider filter, a "New" filter for models that appeared since you last looked, favourites, recents, and a full model card.
+- A generation editor that only shows what the model supports: sampling presets (Precise, Balanced, Creative), every sampling parameter, seed, max tokens, stop sequences, reasoning effort or budget per model family, provider routing, fallback models, web search and middle-out trimming. It works at three levels (global, persona, chat), with an Inherit button and a dot on anything set at that level.
+- Chat list with pinned chats, collapsible folders, Today/Yesterday/This week/Earlier, swipe to archive (with Undo) or pin, multi-select to move, archive, export, pin or delete, and search across every message that jumps to the match.
+- Costs: a live estimate while streaming, replaced by OpenRouter's authoritative figure a few seconds later, and per-chat, per-day and 14-day totals with a chart.
+- Appearance: dark, light or auto; serif or sans replies; reply size on top of Dynamic Type; comfortable or compact; haptics.
+- Backups in the web app's format, so you can move between the two in either direction. A reminder appears after 200 messages or 30 days.
+
+Accessibility: Dynamic Type throughout, VoiceOver labels and custom actions on messages, spoken "reply finished", Reduce Motion honoured everywhere (motion becomes a crossfade), and 44 pt touch targets.
 
 ## Get it onto your iPhone (from Windows)
 
@@ -34,7 +50,7 @@ git push -u origin main
 
 ### 2. Let GitHub build it
 
-Pushing to `main` starts the **Build IPA** workflow (Actions tab). It takes about 5–10 minutes. When it goes green, open the run and download the **Quire-ipa** artifact. It's a zip containing `Quire.ipa`.
+Pushing to `main` starts the **Build IPA** workflow (Actions tab). It takes about 5–10 minutes. When it goes green, open the run and download the **Quire-ipa** artifact, a zip containing `Quire.ipa`.
 
 If the build fails, open the run, expand the **Compiler errors** step, and paste what it shows back to Claude. The **build-log** artifact has the full log.
 
@@ -42,21 +58,21 @@ If the build fails, open the run, expand the **Compiler errors** step, and paste
 
 ### 3. Sign and install
 
-The IPA is unsigned. iOS only runs signed apps, so sign it with your Apple ID using one of these tools on Windows:
+The IPA is unsigned, and iOS only runs signed apps, so sign it with your Apple ID using one of these on Windows:
 
-- **[Sideloadly](https://sideloadly.io)**: install iTunes and iCloud (the non-Store versions it links to), plug in the iPhone, drag in `Quire.ipa`, enter your Apple ID, and press Start.
-- **[AltStore](https://altstore.io)** or **[SideStore](https://sidestore.io)**: AltServer runs on Windows. SideStore can refresh on the phone itself after the first setup.
+- **[Sideloadly](https://sideloadly.io)**: install iTunes and iCloud (the non-Store versions it links to), plug in the iPhone, drag in `Quire.ipa`, enter your Apple ID, press Start.
+- **[AltStore](https://altstore.io)** or **[SideStore](https://sidestore.io)**: AltServer runs on Windows; SideStore can refresh on the phone itself after the first setup.
 
 Then on the phone:
 
 1. **Settings → General → VPN & Device Management**: trust your Apple ID's developer profile.
 2. **Settings → Privacy & Security → Developer Mode**: turn it on (the phone restarts).
 
-With a **free Apple ID** the app stops opening after **7 days** and needs re-signing (AltStore and SideStore can do this automatically), and you can have at most 3 sideloaded apps. A paid Apple Developer account ($99/year) signs for a year.
+With a **free Apple ID** the app stops opening after **7 days** and needs re-signing (AltStore and SideStore can do it automatically), and you can have at most 3 sideloaded apps. A paid Apple Developer account ($99/year) signs for a year.
 
 ### 4. First run
 
-Open Quire → Settings → Connection, and either paste a key from [openrouter.ai/keys](https://openrouter.ai/keys) or use **Sign in with OpenRouter**. That opens openrouter.ai, which shows you a code to paste back into the app. To bring your web-app chats across, export a backup there and import it under Settings → Data.
+Open Quire, then Settings → Connection: paste a key from [openrouter.ai/keys](https://openrouter.ai/keys), or use **Sign in with OpenRouter**, which shows you a code on openrouter.ai to paste back. To bring your web-app chats, memory and personas across, export a backup there (Settings → Data) and import it under Settings → Data & backup.
 
 ## Working on it
 
@@ -64,10 +80,13 @@ The Xcode project is generated from `project.yml` by [XcodeGen](https://github.c
 
 ```
 Quire/
-  App/        entry point, navigation root
-  Models/     data types (mirroring the web app's), JSONValue
-  Core/       OpenRouter client and SSE parsing, request builder, storage, Keychain, attachments, formatting
-  State/      AppModel (settings, catalogue, chat list), ChatSession (one thread + stream engine), backups
-  Markdown/   block parser and native renderer
-  Views/      screens
+  App/        entry point, navigation root, toasts
+  Models/     data types (mirroring the web app's) and JSONValue
+  Core/       OpenRouter client and SSE parsing, request builder, memory logic, storage,
+              Keychain, attachments, formatting, connectivity, haptics
+  State/      AppModel (settings, catalogue, chats, personas, memory, folders, costs),
+              ChatSession (one thread and its stream engine), memory extraction, backups
+  Markdown/   block parser, native renderer, code highlighter
+  Design/     palette, type, motion tokens, shared components
+  Views/      every screen and sheet
 ```

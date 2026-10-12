@@ -1,18 +1,18 @@
 import Foundation
 
-/// The PWA's backup format, unchanged: `{ app: "quire", version: 1, chats, messages, ... }`.
-/// A backup from the web app imports here, and a backup from here imports into the web app.
+/// The PWA's backup format, unchanged: `{ app: "quire", version: 1, chats, messages, folders,
+/// presets, memory, dayCosts, settings }`. A backup from the web app imports here and the reverse.
 nonisolated struct BackupBundle: Codable, Sendable {
     var app: String = "quire"
     var version: Int = 1
     var exportedAt: Double = nowMs()
     var chats: [Chat] = []
     var messages: [Message] = []
-    var folders: [JSONValue] = []
-    var presets: [JSONValue] = []
-    var memory: [JSONValue] = []
+    var folders: [Folder] = []
+    var presets: [Preset] = []
+    var memory: [MemoryEntry] = []
     var dayCosts: [DayCost] = []
-    var settings: AppSettings?
+    var settings: AppSettings? = nil
 
     init() {}
 
@@ -31,47 +31,88 @@ nonisolated struct BackupBundle: Codable, Sendable {
     }
 }
 
+/// The PWA's personas file: `{ app: "quire-presets", presets }`.
+nonisolated struct PresetsFile: Codable, Sendable {
+    var app: String = "quire-presets"
+    var presets: [Preset]
+}
+
 struct ImportResult {
     var chats: Int
     var messages: Int
+    var memory: Int
+    var presets: Int
 }
 
-enum BackupError: LocalizedError {
-    case notJSON, notQuire
+nonisolated enum BackupError: LocalizedError {
+    case notJSON, notQuire, notPersonas
     var errorDescription: String? {
         switch self {
-        case .notJSON: "That file is not valid JSON."
-        case .notQuire: "That file is not a Quire backup."
+        case .notJSON: "That file isn't valid JSON."
+        case .notQuire: "That file isn't a Quire backup."
+        case .notPersonas: "That file isn't a Quire personas file."
         }
     }
 }
 
 extension AppModel {
-    /// Write a full backup to a temporary file for the share sheet.
+    private func writeTemp(_ data: Data, name: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try data.write(to: url, options: .atomic)
+        return url
+    }
+
+    private static func slug(_ s: String) -> String {
+        let t = s.lowercased()
+            .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return String((t.isEmpty ? "chat" : t).prefix(40))
+    }
+
+    /// Every message of a chat: from its live session if open, else from disk.
+    func allMessages(_ chatId: String) -> [Message] {
+        if let s = sessions[chatId] { return Array(s.messages.values) }
+        return store.loadMessages(chatId)
+    }
+
+    /// A full backup, to a temporary file for the share sheet.
     func exportBackup(includeKey: Bool) async throws -> URL {
         for s in sessions.values { s.flushDraft() }
         await store.flush()
         var b = BackupBundle()
         b.chats = chats
-        b.messages = chats.flatMap { store.loadMessages($0.id) }
-        b.folders = extras.folders
-        b.presets = extras.presets
-        b.memory = extras.memory
+        b.messages = chats.flatMap { allMessages($0.id) }
+        b.folders = folders
+        b.presets = presets
+        b.memory = memory
         b.dayCosts = costs
         var s = settings
         s.apiKey = includeKey ? apiKey : nil
         b.settings = s
-        let data = try JSONEncoder().encode(b)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("quire-backup-\(dayKey()).json")
-        try data.write(to: url, options: .atomic)
+        let url = try writeTemp(try JSONEncoder().encode(b), name: "quire-backup-\(dayKey()).json")
         settings.lastExportAt = nowMs()
         settings.messagesSinceExport = 0
+        settings.exportNudgeSnoozedUntil = nil
         return url
+    }
+
+    /// Selected chats as a backup bundle. Unlike the PWA, this carries only those chats (and the
+    /// personas they use): no memory, no settings, so sharing a chat never leaks anything else.
+    func exportChats(_ ids: Set<String>) throws -> URL {
+        var b = BackupBundle()
+        b.chats = chats.filter { ids.contains($0.id) }
+        b.messages = b.chats.flatMap { allMessages($0.id) }
+        let used = Set(b.chats.compactMap(\.systemPromptId))
+        b.presets = presets.filter { used.contains($0.id) }
+        let name = b.chats.count == 1 ? Self.slug(b.chats[0].title) : "quire-\(b.chats.count)-chats"
+        return try writeTemp(try JSONEncoder().encode(b), name: "\(name).json")
     }
 
     func importBackup(_ data: Data, replace: Bool) async throws -> ImportResult {
         guard let probe = JSONValue.parse(data) else { throw BackupError.notJSON }
-        guard probe["app"]?.stringValue == "quire", probe["chats"]?.arrayValue != nil, probe["messages"]?.arrayValue != nil else { throw BackupError.notQuire }
+        guard probe["app"]?.stringValue == "quire", probe["chats"]?.arrayValue != nil, probe["messages"]?.arrayValue != nil else {
+            throw BackupError.notQuire
+        }
         let b = try JSONDecoder().decode(BackupBundle.self, from: data)
 
         for s in sessions.values { s.stop() }
@@ -79,44 +120,54 @@ extension AppModel {
         path = []
         await store.flush()
 
-        var byChat: [String: [Message]] = Dictionary(grouping: b.messages.map { (m: Message) -> Message in
-            var m = m
+        var byChat: [String: [Message]] = [:]
+        for var m in b.messages {
             m.lc = m.role == .user ? m.content.lowercased() : nil
-            return m
-        }, by: \.chatId)
+            byChat[m.chatId, default: []].append(m)
+        }
 
+        var addedMemory = 0
         if replace {
             for c in chats { store.deleteMessages(c.id) }
             chats = b.chats
             costs = b.dayCosts
-            extras = BackupExtras(folders: b.folders, presets: b.presets, memory: b.memory)
+            folders = b.folders.sorted { $0.order < $1.order }
+            presets = b.presets
+            memory = b.memory
+            addedMemory = b.memory.count
         } else {
             for c in b.chats {
                 if let i = chats.firstIndex(where: { $0.id == c.id }) { chats[i] = c } else { chats.append(c) }
-                let existing = store.loadMessages(c.id)
-                var merged = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+                var merged: [String: Message] = [:]
+                for m in store.loadMessages(c.id) { merged[m.id] = m }
                 for m in byChat[c.id] ?? [] { merged[m.id] = m }
                 byChat[c.id] = Array(merged.values)
             }
-            func upsert(_ list: inout [JSONValue], _ incoming: [JSONValue]) {
-                for item in incoming {
-                    if let id = item["id"]?.stringValue, let i = list.firstIndex(where: { $0["id"]?.stringValue == id }) { list[i] = item }
-                    else { list.append(item) }
-                }
+            for f in b.folders {
+                if let i = folders.firstIndex(where: { $0.id == f.id }) { folders[i] = f } else { folders.append(f) }
             }
-            upsert(&extras.folders, b.folders)
-            upsert(&extras.presets, b.presets)
-            let known = Set(extras.memory.compactMap { $0["text"]?.stringValue?.lowercased() })
-            extras.memory += b.memory.filter { !known.contains($0["text"]?.stringValue?.lowercased() ?? "") }
+            for p in b.presets {
+                if let i = presets.firstIndex(where: { $0.id == p.id }) { presets[i] = p } else { presets.append(p) }
+            }
+            let known = Set(memory.map { $0.text.lowercased() })
+            for var e in b.memory where !known.contains(e.text.lowercased()) {
+                e.id = newID()
+                memory.append(e)
+                addedMemory += 1
+            }
             for d in b.dayCosts where !costs.contains(where: { $0.day == d.day }) { costs.append(d) }
         }
 
         let chatIds = Set(chats.map(\.id))
         for (chatId, msgs) in byChat where chatIds.contains(chatId) { store.saveMessages(chatId, msgs) }
         chats.sort { $0.updatedAt > $1.updatedAt }
+        presets.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        memory.sort { $0.updatedAt > $1.updatedAt }
         store.saveChats(chats)
         store.saveCosts(costs)
-        store.saveExtras(extras)
+        store.saveFolders(folders)
+        store.savePresets(presets)
+        store.saveMemory(memory)
 
         if var s = b.settings {
             if let key = s.apiKey, !key.isEmpty { setAPIKey(key) }
@@ -124,13 +175,34 @@ extension AppModel {
             s.keyMeta = nil
             // The web app couldn't use haptics on iOS, so its "off" says nothing about a preference here.
             s.ui.hapticsEnabled = settings.ui.hapticsEnabled
+            s.lastChatId = settings.lastChatId
             settings = s
         }
-        return ImportResult(chats: b.chats.count, messages: b.messages.count)
+        await store.flush()
+        return ImportResult(chats: b.chats.count, messages: b.messages.count, memory: addedMemory, presets: b.presets.count)
     }
 
-    /// One chat's visible branch as Markdown, to a temporary file for the share sheet.
-    func exportMarkdown(_ session: ChatSession) throws -> URL {
+    // MARK: Personas file
+
+    func exportPresets() throws -> URL {
+        try writeTemp(try JSONEncoder().encode(PresetsFile(presets: presets)), name: "quire-personas.json")
+    }
+
+    /// Import personas; an id that already exists gets a fresh one so nothing is overwritten.
+    func importPresets(_ data: Data) throws -> Int {
+        guard let probe = JSONValue.parse(data) else { throw BackupError.notJSON }
+        guard probe["presets"]?.arrayValue != nil else { throw BackupError.notPersonas }
+        let file = try JSONDecoder().decode(PresetsFile.self, from: data)
+        for var p in file.presets {
+            if presets.contains(where: { $0.id == p.id }) { p.id = newID() }
+            savePreset(p)
+        }
+        return file.presets.count
+    }
+
+    // MARK: One chat as Markdown
+
+    func markdown(for session: ChatSession) -> String {
         let chat = session.chat
         let date = Date(timeIntervalSince1970: chat.createdAt / 1000).formatted(date: .abbreviated, time: .shortened)
         var lines = ["# \(chat.title)", "", "_\(date) · \(chat.modelId)_", ""]
@@ -143,22 +215,22 @@ extension AppModel {
                 lines += [m.content, ""]
             }
         }
-        let slug = chat.title.lowercased()
-            .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        let name = String((slug.isEmpty ? "chat" : slug).prefix(40))
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(name).md")
-        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
-        return url
+        return lines.joined(separator: "\n")
+    }
+
+    func exportMarkdown(_ session: ChatSession) throws -> URL {
+        try writeTemp(Data(markdown(for: session).utf8), name: "\(Self.slug(session.chat.title)).md")
     }
 
     func wipeEverything() async {
-        for s in sessions.values { s.stop() }
+        for s in sessions.values { s.markDeleted() }
         sessions = [:]
         await store.wipe()
         chats = []
         costs = []
-        extras = BackupExtras()
+        presets = []
+        memory = []
+        folders = []
         setAPIKey(nil)
         settings = AppSettings()
         path = []

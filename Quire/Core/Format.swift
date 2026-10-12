@@ -62,7 +62,7 @@ nonisolated enum Fmt {
         return sameYear ? date.formatted(.dateTime.month(.abbreviated).day()) : date.formatted(.dateTime.year().month(.abbreviated).day())
     }
 
-    enum DayGroup: String, CaseIterable { case today = "Today", yesterday = "Yesterday", week = "This week", earlier = "Earlier" }
+    nonisolated enum DayGroup: String, CaseIterable, Hashable, Sendable { case today = "Today", yesterday = "Yesterday", week = "This week", earlier = "Earlier" }
 
     static func dayGroup(_ ms: Double) -> DayGroup {
         let cal = Calendar.current
@@ -89,13 +89,13 @@ nonisolated enum Tokens {
 }
 
 nonisolated enum TextUtil {
-    private static let codeFence = try! NSRegularExpression(pattern: "```[\\s\\S]*?```")
-    private static let inlineCode = try! NSRegularExpression(pattern: "`([^`]*)`")
-    private static let image = try! NSRegularExpression(pattern: "!\\[[^\\]]*\\]\\([^)]*\\)")
-    private static let link = try! NSRegularExpression(pattern: "\\[([^\\]]*)\\]\\([^)]*\\)")
-    private static let heading = try! NSRegularExpression(pattern: "^#{1,6}\\s+", options: .anchorsMatchLines)
-    private static let marks = try! NSRegularExpression(pattern: "[*_~>]+")
-    private static let space = try! NSRegularExpression(pattern: "\\s+")
+    nonisolated(unsafe) private static let codeFence = try! NSRegularExpression(pattern: "```[\\s\\S]*?```")
+    nonisolated(unsafe) private static let inlineCode = try! NSRegularExpression(pattern: "`([^`]*)`")
+    nonisolated(unsafe) private static let image = try! NSRegularExpression(pattern: "!\\[[^\\]]*\\]\\([^)]*\\)")
+    nonisolated(unsafe) private static let link = try! NSRegularExpression(pattern: "\\[([^\\]]*)\\]\\([^)]*\\)")
+    nonisolated(unsafe) private static let heading = try! NSRegularExpression(pattern: "^#{1,6}\\s+", options: .anchorsMatchLines)
+    nonisolated(unsafe) private static let marks = try! NSRegularExpression(pattern: "[*_~>]+")
+    nonisolated(unsafe) private static let space = try! NSRegularExpression(pattern: "\\s+")
 
     /// Markdown to a one-line preview.
     static func stripMarkdown(_ s: String, max: Int = 120) -> String {

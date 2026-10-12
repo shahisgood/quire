@@ -2,11 +2,26 @@ import Foundation
 import Observation
 import UIKit
 
-/// App-wide state: settings, the API key, the model catalogue, the chat list and day costs.
-/// One instance for the app's lifetime. The open thread and its stream engine live in `ChatSession`.
+nonisolated enum SettingsSection: String, Hashable, Sendable, CaseIterable {
+    case connection, generation, prompts, memory, appearance, data, about
+}
+
+nonisolated enum Route: Hashable, Sendable {
+    case chat(String)
+    case settings
+    case section(SettingsSection)
+    case memory
+}
+
+/// App-wide state: settings, the API key, the model catalogue, chats, personas, memory, folders
+/// and day costs. One instance for the app's lifetime. The open thread and its stream engine live
+/// in `ChatSession`.
 @Observable
 final class AppModel {
     let store: Store
+    let toasts = ToastCenter()
+    let connectivity = Connectivity()
+    let extractor = MemoryExtractor()
 
     var settings: AppSettings
     /// Mirrors the Keychain. Change it with `setAPIKey(_:)` so the Keychain stays in step.
@@ -17,10 +32,14 @@ final class AppModel {
     private(set) var catalogueFetchedAt: Double = 0
     private(set) var loadingModels = false
     private(set) var modelsError: String? = nil
+    /// Models that appeared since the user last looked (the PWA's "new" badge).
+    private(set) var newModelIds: Set<String> = []
 
     var chats: [Chat] = []
     var costs: [DayCost] = []
-    var extras: BackupExtras
+    var presets: [Preset] = []
+    var memory: [MemoryEntry] = []
+    var folders: [Folder] = []
 
     /// Live sessions by chat id. A session keeps streaming while you browse elsewhere; idle ones
     /// are dropped when another chat opens so memory stays bounded.
@@ -38,10 +57,20 @@ final class AppModel {
         apiKey = Keychain.readKey()
         chats = store.loadChats().sorted { $0.updatedAt > $1.updatedAt }
         costs = store.loadCosts()
-        extras = store.loadExtras()
+        presets = store.loadPresets().sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        memory = store.loadMemory().sorted { $0.updatedAt > $1.updatedAt }
+        folders = store.loadFolders().sorted { $0.order < $1.order }
         if let c = store.loadCatalogue() { applyCatalogue(c.models, fetchedAt: c.fetchedAt) }
+        Haptics.enabled = settings.ui.hapticsEnabled
         resumeLastChat()
     }
+
+    func persistSettings() {
+        Haptics.enabled = settings.ui.hapticsEnabled
+        store.saveSettings(settings)
+    }
+
+    var client: OpenRouterClient { OpenRouterClient(apiKey: apiKey, baseURL: settings.proxyBaseUrl) }
 
     func setAPIKey(_ key: String?) {
         let k = key?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -50,9 +79,9 @@ final class AppModel {
         settings.keyMeta = nil
     }
 
-    func persistSettings() { store.saveSettings(settings) }
-
-    var client: OpenRouterClient { OpenRouterClient(apiKey: apiKey, baseURL: settings.proxyBaseUrl) }
+    func refreshKeyMeta() async throws {
+        settings.keyMeta = try await client.keyMeta()
+    }
 
     // MARK: Navigation
 
@@ -64,14 +93,16 @@ final class AppModel {
     }
 
     func openChat(_ id: String, highlight: String? = nil) {
-        path = [.chat(id)]
         if let highlight { session(for: id)?.highlightId = highlight }
+        path = [.chat(id)]
     }
 
-    func startNewChat() {
-        let s = newChat()
+    func startNewChat(persona: Preset? = nil, incognito: Bool = false) {
+        let s = newChat(persona: persona, incognito: incognito)
         path = [.chat(s.chat.id)]
     }
+
+    func push(_ route: Route) { path.append(route) }
 
     // MARK: Sessions
 
@@ -86,9 +117,11 @@ final class AppModel {
     }
 
     @discardableResult
-    func newChat(modelId: String? = nil) -> ChatSession {
+    func newChat(persona: Preset? = nil, incognito: Bool = false, modelId: String? = nil) -> ChatSession {
         evictIdleSessions(keeping: nil)
-        let chat = Chat(modelId: modelId ?? settings.defaultModelId, memoryEnabled: settings.memory.enabled)
+        var chat = Chat(modelId: modelId ?? persona?.modelId ?? settings.defaultModelId,
+                        memoryEnabled: !incognito && settings.memory.enabled)
+        chat.systemPromptId = persona?.id
         let s = ChatSession(app: self, chat: chat, persisted: false)
         sessions[chat.id] = s
         return s
@@ -112,13 +145,22 @@ final class AppModel {
         store.saveChats(chats)
     }
 
-    func chat(_ id: String) -> Chat? { chats.first { $0.id == id } }
+    func chat(_ id: String) -> Chat? { chats.first(where: { $0.id == id }) }
 
     func patchChat(_ id: String, _ mutate: (inout Chat) -> Void) {
         guard let i = chats.firstIndex(where: { $0.id == id }) else { return }
         mutate(&chats[i])
         let updated = chats[i]
         sessions[id]?.chatDidChangeExternally(updated)
+        chats.sort { $0.updatedAt > $1.updatedAt }
+        store.saveChats(chats)
+    }
+
+    func patchChats(_ ids: Set<String>, _ mutate: (inout Chat) -> Void) {
+        for i in chats.indices where ids.contains(chats[i].id) {
+            mutate(&chats[i])
+            sessions[chats[i].id]?.chatDidChangeExternally(chats[i])
+        }
         chats.sort { $0.updatedAt > $1.updatedAt }
         store.saveChats(chats)
     }
@@ -134,9 +176,157 @@ final class AppModel {
         if case .chat(let open)? = path.last, ids.contains(open) { path = [] }
     }
 
+    /// Add a complete chat (from duplicate or branch) and its messages.
+    func insertChat(_ chat: Chat, messages: [Message]) {
+        store.saveMessages(chat.id, messages)
+        upsertChat(chat)
+    }
+
+    func duplicateChat(_ id: String) -> String? {
+        guard let src = chat(id) else { return nil }
+        sessions[id]?.flushDraft()
+        let msgs = sessions[id].map { Array($0.messages.values) } ?? store.loadMessages(id)
+        var idMap: [String: String] = [:]
+        for m in msgs { idMap[m.id] = newID() }
+        let now = nowMs()
+        var copy = src
+        copy.id = newID()
+        copy.title = "\(src.title) (copy)"
+        copy.createdAt = now
+        copy.updatedAt = now
+        copy.pinned = false
+        copy.draft = ""
+        copy.totalCostUsd = 0
+        copy.activeLeafId = src.activeLeafId.flatMap { idMap[$0] }
+        let newMsgs: [Message] = msgs.map { (m: Message) -> Message in
+            var n = m
+            n.id = idMap[m.id] ?? newID()
+            n.chatId = copy.id
+            n.parentId = m.parentId.flatMap { idMap[$0] }
+            n.editedFrom = m.editedFrom.flatMap { idMap[$0] }
+            return n
+        }
+        insertChat(copy, messages: newMsgs)
+        return copy.id
+    }
+
+    // MARK: Folders
+
+    @discardableResult
+    func createFolder(_ name: String) -> Folder {
+        let f = Folder(name: name, order: (folders.map(\.order).max() ?? -1) + 1)
+        folders.append(f)
+        store.saveFolders(folders)
+        return f
+    }
+
+    func renameFolder(_ id: String, to name: String) {
+        guard let i = folders.firstIndex(where: { $0.id == id }) else { return }
+        folders[i].name = name
+        store.saveFolders(folders)
+    }
+
+    func toggleFolder(_ id: String) {
+        guard let i = folders.firstIndex(where: { $0.id == id }) else { return }
+        folders[i].collapsed = !(folders[i].collapsed ?? false)
+        store.saveFolders(folders)
+    }
+
+    /// Deleting a folder keeps its chats; they move back to the main list.
+    func deleteFolder(_ id: String) {
+        let inside = Set(chats.filter { $0.folderId == id }.map(\.id))
+        if !inside.isEmpty { patchChats(inside) { $0.folderId = nil } }
+        folders.removeAll { $0.id == id }
+        store.saveFolders(folders)
+    }
+
+    func folder(_ id: String?) -> Folder? {
+        guard let id else { return nil }
+        return folders.first(where: { $0.id == id })
+    }
+
+    // MARK: Personas
+
+    func preset(_ id: String?) -> Preset? {
+        guard let id else { return nil }
+        return presets.first(where: { $0.id == id })
+    }
+
+    func savePreset(_ p: Preset) {
+        if let i = presets.firstIndex(where: { $0.id == p.id }) { presets[i] = p } else { presets.append(p) }
+        presets.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        store.savePresets(presets)
+    }
+
+    func deletePreset(_ id: String) {
+        presets.removeAll { $0.id == id }
+        store.savePresets(presets)
+    }
+
+    @discardableResult
+    func duplicatePreset(_ p: Preset) -> Preset {
+        var copy = p
+        copy.id = newID()
+        copy.name = "\(p.name) (copy)"
+        copy.createdAt = nowMs()
+        savePreset(copy)
+        return copy
+    }
+
+    // MARK: Memory
+
+    func addMemory(_ text: String, category: MemoryCategory) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        memory.insert(MemoryEntry(text: t, category: category), at: 0)
+        store.saveMemory(memory)
+    }
+
+    func updateMemory(_ id: String, _ mutate: (inout MemoryEntry) -> Void) {
+        guard let i = memory.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&memory[i])
+        memory[i].updatedAt = nowMs()
+        store.saveMemory(memory)
+    }
+
+    func deleteMemory(_ id: String) {
+        memory.removeAll { $0.id == id }
+        store.saveMemory(memory)
+    }
+
+    func clearMemory() {
+        memory = []
+        store.saveMemory(memory)
+    }
+
+    /// Replace the list after an extraction pass.
+    func setMemory(_ list: [MemoryEntry]) {
+        memory = list.sorted { $0.updatedAt > $1.updatedAt }
+        store.saveMemory(memory)
+    }
+
     // MARK: Costs
 
     var todayCost: Double { costs.first(where: { $0.day == dayKey() })?.costUsd ?? 0 }
+
+    func costSince(daysAgo: Int) -> Double {
+        let cutoff = dayKey(nowMs() - Double(daysAgo) * 86_400_000)
+        return costs.filter { $0.day >= cutoff }.reduce(0) { $0 + $1.costUsd }
+    }
+
+    /// One point per day for the last `days` days, oldest first, zero-filled.
+    func dailySeries(days: Int) -> [DayPoint] {
+        var byDay: [String: Double] = [:]
+        for c in costs { byDay[c.day, default: 0] += c.costUsd }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        var out: [DayPoint] = []
+        for back in stride(from: days - 1, through: 0, by: -1) {
+            guard let d = cal.date(byAdding: .day, value: -back, to: today) else { continue }
+            out.append(DayPoint(date: d, cost: byDay[dayKey(d.timeIntervalSince1970 * 1000)] ?? 0))
+        }
+        return out
+    }
 
     /// Apply a cost change to a chat and to today's total. Deltas, not absolutes, so an estimate
     /// later replaced by the authoritative figure never double-counts.
@@ -155,9 +345,34 @@ final class AppModel {
         store.saveCosts(costs)
     }
 
+    // MARK: Backup reminder
+
+    /// The PWA's nudge: after 200 messages, or 30 days since the last export with anything new.
+    var exportNudgeDue: Bool {
+        if let snooze = settings.exportNudgeSnoozedUntil, nowMs() < snooze { return false }
+        let since = settings.messagesSinceExport ?? 0
+        if since >= 200 { return true }
+        let last = settings.lastExportAt ?? 0
+        if last > 0 && since > 0 && nowMs() - last > 30 * 86_400_000 { return true }
+        if last == 0 && since >= 60 { return true }
+        return false
+    }
+
+    func snoozeExportNudge() {
+        settings.exportNudgeSnoozedUntil = nowMs() + 7 * 86_400_000
+    }
+
     // MARK: Model catalogue
 
-    func model(_ id: String?) -> ORModel? { id.flatMap { modelsById[$0] } }
+    func model(_ id: String?) -> ORModel? {
+        guard let id else { return nil }
+        return modelsById[id]
+    }
+
+    func modelName(_ id: String?) -> String {
+        if let m = model(id) { return m.shortName }
+        return shortId(id ?? "")
+    }
 
     private func applyCatalogue(_ list: [ORModel], fetchedAt: Double) {
         models = list
@@ -177,12 +392,29 @@ final class AppModel {
             guard !list.isEmpty else { throw ORError(status: 0, code: "empty", message: "OpenRouter returned an empty model list.") }
             list.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             let fetchedAt = nowMs()
+            let seen = Set(settings.seenModelIds ?? [])
+            if seen.isEmpty {
+                settings.seenModelIds = list.map(\.id)
+            } else {
+                newModelIds.formUnion(list.map(\.id).filter { !seen.contains($0) })
+            }
             applyCatalogue(list, fetchedAt: fetchedAt)
             store.saveCatalogue(Catalogue(fetchedAt: fetchedAt, models: list))
             settings.lastSyncedModelsAt = fetchedAt
         } catch {
             modelsError = error.localizedDescription
         }
+    }
+
+    func acknowledgeNewModels() {
+        settings.seenModelIds = models.map(\.id)
+        newModelIds = []
+    }
+
+    func clearModelCache() async {
+        store.deleteCatalogue()
+        catalogueFetchedAt = 0
+        await refreshModels(force: true)
     }
 
     /// If a default model's guessed id isn't in the catalogue, adopt the newest model whose name
@@ -194,7 +426,7 @@ final class AppModel {
             return models
                 .filter { $0.name.range(of: h.pattern, options: [.regularExpression, .caseInsensitive]) != nil
                     || $0.id.range(of: h.pattern, options: [.regularExpression, .caseInsensitive]) != nil }
-                .max { $0.created < $1.created }?.id
+                .max(by: { $0.created < $1.created })?.id
         }
         func isDefault(_ id: String, _ h: ModelHint) -> Bool { id == h.id || h.previous.contains(id) }
         if let chat = resolve(DefaultModels.chat), isDefault(settings.defaultModelId, DefaultModels.chat), settings.defaultModelId != chat {
@@ -208,26 +440,11 @@ final class AppModel {
     func toggleFavourite(_ id: String) {
         if let i = settings.favouriteModelIds.firstIndex(of: id) { settings.favouriteModelIds.remove(at: i) }
         else { settings.favouriteModelIds.append(id) }
+        Haptics.selection()
     }
 
     func touchRecent(_ id: String) {
         settings.recentModelIds = Array(([id] + settings.recentModelIds.filter { $0 != id }).prefix(8))
-    }
-
-    // MARK: Key
-
-    func refreshKeyMeta() async throws {
-        settings.keyMeta = try await client.keyMeta()
-    }
-
-    // MARK: Personas imported from the PWA
-
-    /// Chats created from a PWA persona reference it by id. Personas aren't editable in this build,
-    /// but their prompt and settings still apply to those chats.
-    func preset(_ id: String?) -> (systemPrompt: String, settings: GenerationSettings?)? {
-        guard let id, let p = extras.presets.first(where: { $0["id"]?.stringValue == id }) else { return nil }
-        let s = p["settings"].flatMap { try? JSONDecoder().decode(GenerationSettings.self, from: $0.data()) }
-        return (p["systemPrompt"]?.stringValue ?? "", s)
     }
 
     // MARK: Lifecycle
@@ -235,10 +452,23 @@ final class AppModel {
     func didEnterBackground() {
         for s in sessions.values { s.flushDraft() }
         persistSettings()
+        let store = self.store
+        let task = UIApplication.shared.beginBackgroundTask(withName: "quire.flush", expirationHandler: nil)
+        Task {
+            await store.flush()
+            UIApplication.shared.endBackgroundTask(task)
+        }
     }
 }
 
-enum Route: Hashable {
-    case chat(String)
-    case settings
+nonisolated struct DayPoint: Identifiable, Hashable, Sendable {
+    var date: Date
+    var cost: Double
+    var id: Date { date }
+}
+
+/// "deepseek/deepseek-v4-flash" → "deepseek-v4-flash", for ids the catalogue doesn't know.
+func shortId(_ id: String) -> String {
+    guard let slash = id.firstIndex(of: "/") else { return id.isEmpty ? "No model" : id }
+    return String(id[id.index(after: slash)...])
 }

@@ -27,7 +27,7 @@ targets:
     sources:
       - path: Quire
     info:
-      path: Quire/Info.plist
+      path: Support/Info.plist
       properties:
         CFBundleDisplayName: Quire
         CFBundleShortVersionString: $(MARKETING_VERSION)
@@ -43,6 +43,8 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         UIFileSharingEnabled: false
+        NSCameraUsageDescription: Take a photo to attach to a message.
+        UIStatusBarStyle: UIStatusBarStyleDefault
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.quire.ios

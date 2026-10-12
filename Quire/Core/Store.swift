@@ -8,19 +8,24 @@ nonisolated let storeLog = Logger(subsystem: "app.quire", category: "store")
 ///     settings.json            AppSettings (never the API key)
 ///     chats.json               [Chat]
 ///     messages/<chatId>.json   [Message], one file per chat
+///     presets.json             [Preset]   (personas)
+///     memory.json              [MemoryEntry]
+///     folders.json             [Folder]
 ///     catalogue.json           cached /models response
 ///     costs.json               [DayCost]
-///     extras.json              backup sections this build carries but doesn't edit yet
 ///
-/// Chosen over SwiftData so the on-disk shape is the PWA's backup shape: import and export are a
-/// straight copy, and there is no migration layer to get wrong. Reads are synchronous (small
-/// files); writes are encoded and written off the main thread, in the order they were made.
+/// The shapes are the PWA's backup shapes, so import and export are a straight copy with no
+/// migration layer. Reads are synchronous (small files, read once at launch or when a chat
+/// opens). Writes are coalesced per file for 300 ms, so dragging a slider or streaming a reply
+/// doesn't rewrite a file dozens of times a second, then encoded and written off the main thread
+/// in the order they were made.
 final class Store {
     let root: URL
     private let writer = DiskWriter()
-    /// Every write chains onto the previous one, so writes land in the order they were made and
-    /// `flush()` can wait for all of them. Encoding and disk I/O happen inside `DiskWriter`, off the main thread.
     private var tail: Task<Void, Never>?
+    private var pending: [URL: @Sendable () async -> Void] = [:]
+    private var pendingOrder: [URL] = []
+    private var debounce: Task<Void, Never>?
 
     init() {
         let base = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
@@ -53,7 +58,9 @@ final class Store {
     func loadMessages(_ chatId: String) -> [Message] { read([Message].self, at: messagesURL(chatId)) ?? [] }
     func loadCatalogue() -> Catalogue? { read(Catalogue.self, at: url("catalogue.json")) }
     func loadCosts() -> [DayCost] { read([DayCost].self, at: url("costs.json")) ?? [] }
-    func loadExtras() -> BackupExtras { read(BackupExtras.self, at: url("extras.json")) ?? BackupExtras() }
+    func loadPresets() -> [Preset] { read([Preset].self, at: url("presets.json")) ?? [] }
+    func loadMemory() -> [MemoryEntry] { read([MemoryEntry].self, at: url("memory.json")) ?? [] }
+    func loadFolders() -> [Folder] { read([Folder].self, at: url("folders.json")) ?? [] }
 
     // MARK: Writing
 
@@ -65,9 +72,33 @@ final class Store {
         }
     }
 
+    /// Replace any pending write to the same file with this one, and flush shortly.
+    private func schedule(_ url: URL, _ op: @escaping @Sendable () async -> Void) {
+        if pending[url] == nil { pendingOrder.append(url) }
+        pending[url] = op
+        guard debounce == nil else { return }
+        debounce = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            self?.movePendingToQueue()
+        }
+    }
+
+    private func movePendingToQueue() {
+        debounce?.cancel()
+        debounce = nil
+        let order = pendingOrder
+        let ops = pending
+        pending = [:]
+        pendingOrder = []
+        for u in order {
+            if let op = ops[u] { enqueue(op) }
+        }
+    }
+
     private func write<T: Encodable & Sendable>(_ value: T, to url: URL) {
         let writer = self.writer
-        enqueue { await writer.write(value, to: url) }
+        schedule(url) { await writer.write(value, to: url) }
     }
 
     func saveSettings(_ s: AppSettings) {
@@ -79,16 +110,27 @@ final class Store {
     func saveMessages(_ chatId: String, _ messages: [Message]) { write(messages, to: messagesURL(chatId)) }
     func saveCatalogue(_ c: Catalogue) { write(c, to: url("catalogue.json")) }
     func saveCosts(_ c: [DayCost]) { write(c, to: url("costs.json")) }
-    func saveExtras(_ e: BackupExtras) { write(e, to: url("extras.json")) }
+    func savePresets(_ p: [Preset]) { write(p, to: url("presets.json")) }
+    func saveMemory(_ m: [MemoryEntry]) { write(m, to: url("memory.json")) }
+    func saveFolders(_ f: [Folder]) { write(f, to: url("folders.json")) }
 
     func deleteMessages(_ chatId: String) {
         let u = messagesURL(chatId)
         let writer = self.writer
-        enqueue { await writer.delete(u) }
+        schedule(u) { await writer.delete(u) }
     }
 
-    /// Wait for queued writes, e.g. before exporting or when the app goes to the background.
-    func flush() async { await tail?.value }
+    func deleteCatalogue() {
+        let u = url("catalogue.json")
+        let writer = self.writer
+        schedule(u) { await writer.delete(u) }
+    }
+
+    /// Write everything pending now and wait for it: before export, search, or backgrounding.
+    func flush() async {
+        movePendingToQueue()
+        await tail?.value
+    }
 
     func wipe() async {
         await flush()
@@ -117,13 +159,6 @@ actor DiskWriter {
     func delete(_ url: URL) {
         try? FileManager.default.removeItem(at: url)
     }
-}
-
-/// Sections of a PWA backup that this build preserves byte-for-byte but has no screens for yet.
-nonisolated struct BackupExtras: Codable, Sendable {
-    var folders: [JSONValue] = []
-    var presets: [JSONValue] = []
-    var memory: [JSONValue] = []
 }
 
 // MARK: - Search

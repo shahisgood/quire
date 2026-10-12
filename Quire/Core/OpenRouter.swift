@@ -103,7 +103,7 @@ nonisolated enum ORParse {
 
     /// One SSE line. Returns nil for keep-alive comments, non-data lines and malformed JSON;
     /// `.done` for the terminator.
-    enum Line { case chunk(JSONValue), done }
+    nonisolated enum Line { case chunk(JSONValue), done }
 
     static func line(_ raw: String) -> Line? {
         var line = Substring(raw)
@@ -135,10 +135,13 @@ nonisolated enum ORParse {
             inputModalities: inputs.isEmpty ? ["text"] : inputs,
             outputModalities: outputs.isEmpty ? ["text"] : outputs,
             pricing: ModelPricing(prompt: price("prompt"), completion: price("completion"), request: price("request"),
-                                  image: price("image"), webSearch: price("web_search"), internalReasoning: price("internal_reasoning")),
+                                  image: price("image"), webSearch: price("web_search"), internalReasoning: price("internal_reasoning"),
+                                  cacheRead: price("input_cache_read"), cacheWrite: price("input_cache_write")),
             maxCompletionTokens: top["max_completion_tokens"]?.intValue,
             isModerated: top["is_moderated"]?.boolValue ?? false,
-            supportedParameters: strs(r["supported_parameters"])
+            supportedParameters: strs(r["supported_parameters"]),
+            tokenizer: arch["tokenizer"]?.stringValue,
+            topContextLength: top["context_length"]?.intValue
         )
     }
 }

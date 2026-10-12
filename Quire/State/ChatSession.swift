@@ -3,8 +3,8 @@ import Observation
 import UIKit
 
 /// One open thread and its stream engine. Messages form a tree (`parentId`), and `path` is the
-/// branch currently shown, from the root to `chat.activeLeafId`. Regenerating adds a sibling
-/// rather than overwriting, so earlier replies are never lost.
+/// branch currently shown, from the root to `chat.activeLeafId`. Regenerating or editing adds a
+/// sibling rather than overwriting, so earlier versions are never lost.
 @Observable
 final class ChatSession {
     unowned let app: AppModel
@@ -17,21 +17,25 @@ final class ChatSession {
     /// Set when the chat is deleted, so late callbacks (cost reconciliation, a sheet closing) can't resurrect it.
     @ObservationIgnored private(set) var deleted = false
 
-    // Live view of the streaming reply, published at most ~30 times a second so the message list
+    // Live view of the streaming reply, published at most 20 times a second so the message list
     // doesn't re-render per token.
     private(set) var streamingId: String? = nil
     private(set) var streamContent = ""
     private(set) var streamReasoning = ""
     private(set) var streamCompletionTokens = 0
+    private(set) var streamReasoningTokens = 0
     private(set) var streamEstCost: Double = 0
-    private(set) var retryNote: String? = nil
+    private(set) var streamFirstTokenAt: Double? = nil
+    /// When a 429/5xx retry is waiting: the time it fires and the reason.
+    private(set) var retryAt: Double? = nil
+    private(set) var retryReason: String? = nil
 
-    /// A message to scroll to when the chat opens (from a search hit).
+    /// A message to scroll to and briefly mark when the chat opens (from search or memory).
     var highlightId: String? = nil
     var draft: String
 
-    @ObservationIgnored private var task: Task<Void, Never>?
-    @ObservationIgnored private var draftSaveTask: Task<Void, Never>?
+    @ObservationIgnored private var task: Task<Void, Never>? = nil
+    @ObservationIgnored private var draftSaveTask: Task<Void, Never>? = nil
     @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
     init(app: AppModel, chat: Chat, persisted: Bool) {
@@ -53,15 +57,15 @@ final class ChatSession {
         }
         messages = loaded
         var leaf = chat.activeLeafId
-        if leaf == nil || loaded[leaf!] == nil {
-            leaf = children(of: nil).last.map { deepest(from: $0.id) }
-        }
+        if let l = leaf, loaded[l] == nil { leaf = nil }
+        if leaf == nil { leaf = children(of: nil).last.map { deepest(from: $0.id) } }
         path = computePath(to: leaf)
         if repaired { saveMessages() }
     }
 
     var thread: [Message] { path.compactMap { messages[$0] } }
     var model: ORModel? { app.model(chat.modelId) }
+    var persona: Preset? { app.preset(chat.systemPromptId) }
 
     // MARK: Tree helpers
 
@@ -77,10 +81,11 @@ final class ChatSession {
 
     private func computePath(to leaf: String?) -> [String] {
         var out: [String] = []
-        var cur = leaf.flatMap { messages[$0] }
+        var cur: Message? = nil
+        if let leaf { cur = messages[leaf] }
         while let m = cur {
             out.append(m.id)
-            cur = m.parentId.flatMap { messages[$0] }
+            if let p = m.parentId { cur = messages[p] } else { cur = nil }
         }
         return out.reversed()
     }
@@ -88,26 +93,41 @@ final class ChatSession {
     func siblingInfo(_ id: String) -> (index: Int, count: Int) {
         guard let m = messages[id] else { return (0, 1) }
         let sibs = children(of: m.parentId)
-        return (sibs.firstIndex { $0.id == id } ?? 0, sibs.count)
+        return (sibs.firstIndex(where: { $0.id == id }) ?? 0, sibs.count)
     }
 
-    // MARK: Settings resolution
+    // MARK: Settings resolution (global → persona → chat)
+
+    /// Global settings with the persona's on top: what this chat inherits.
+    var inheritedSettings: GenerationSettings {
+        app.settings.globalSettings.merged(with: persona?.settings)
+    }
 
     var effectiveSettings: GenerationSettings {
-        app.settings.globalSettings.merged(with: app.preset(chat.systemPromptId)?.settings).merged(with: chat.settingsOverride)
+        inheritedSettings.merged(with: chat.settingsOverride)
+    }
+
+    var inheritedSystemPrompt: String {
+        if let p = persona { return p.systemPrompt }
+        return app.settings.globalSystemPrompt
     }
 
     var effectiveSystemPrompt: String {
         if let inline = chat.systemPromptInline, !inline.isEmpty { return inline }
-        if let p = app.preset(chat.systemPromptId) { return p.systemPrompt }
-        return app.settings.globalSystemPrompt
+        return inheritedSystemPrompt
     }
 
     var contextTokens: Int {
         var n = Tokens.estimate(effectiveSystemPrompt)
-        for m in thread { n += Tokens.estimate(m.content) + (m.attachments ?? []).reduce(0) { $0 + Tokens.estimate($1) } + 4 }
+        for m in thread {
+            n += Tokens.estimate(m.content) + 4
+            for a in m.attachments ?? [] { n += Tokens.estimate(a) }
+        }
         return n
     }
+
+    /// Context use including whatever is streaming right now, for the meter.
+    var liveContextTokens: Int { contextTokens + (streamingId == nil ? 0 : streamCompletionTokens + streamReasoningTokens) }
 
     // MARK: Persistence
 
@@ -132,7 +152,7 @@ final class ChatSession {
         app.settings.lastChatId = chat.id
     }
 
-    /// Called by the app model when the chat was edited from the list (rename, pin, cost change).
+    /// Called by the app model when the chat was edited from elsewhere (list, cost reconciliation).
     func chatDidChangeExternally(_ updated: Chat) {
         var c = updated
         c.activeLeafId = chat.activeLeafId
@@ -151,7 +171,7 @@ final class ChatSession {
     }
 
     func flushDraft() {
-        guard !deleted, chat.draft ?? "" != draft else { return }
+        guard !deleted, (chat.draft ?? "") != draft else { return }
         chat.draft = draft
         if persisted { app.upsertChat(chat) }
     }
@@ -166,14 +186,38 @@ final class ChatSession {
 
     func rename(_ title: String) {
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { return }
+        guard !t.isEmpty, t != chat.title else { return }
         chat.title = t
         chat.titleAuto = false
         saveChat()
     }
 
     func setSystemPrompt(_ text: String?) {
-        chat.systemPromptInline = (text?.isEmpty ?? true) ? nil : text
+        let t = text ?? ""
+        chat.systemPromptInline = t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : t
+        saveChat()
+    }
+
+    /// Switching persona also switches to its pinned model, if it has one.
+    func setPersona(_ id: String?) {
+        chat.systemPromptId = id
+        if let p = app.preset(id), let m = p.modelId { chat.modelId = m }
+        saveChat()
+    }
+
+    func setMemoryEnabled(_ on: Bool) {
+        chat.memoryEnabled = on
+        saveChat()
+    }
+
+    func setOverrides(_ o: GenerationSettings) {
+        chat.settingsOverride = o.isEmpty ? nil : o
+        saveChat()
+    }
+
+    func resetOverrides() {
+        chat.settingsOverride = nil
+        chat.systemPromptInline = nil
         saveChat()
     }
 
@@ -214,10 +258,33 @@ final class ChatSession {
         messages[asst.id] = asst
         path = computePath(to: asst.id)
         chat.activeLeafId = asst.id
-        if modelId != nil { chat.modelId = mid; app.touchRecent(mid) }
+        if modelId != nil {
+            chat.modelId = mid
+            app.touchRecent(mid)
+        }
         saveChat()
         saveMessages()
         startGeneration(assistantId: asst.id, modelId: mid)
+    }
+
+    /// Edit a sent message and resend it. The original stays as a sibling branch.
+    func editResend(_ userId: String, text: String) {
+        guard !generating, let old = messages[userId], old.role == .user else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty || !(old.attachments ?? []).isEmpty else { return }
+        let now = nowMs()
+        var user = Message(chatId: chat.id, parentId: old.parentId, role: .user, content: trimmed,
+                           attachments: old.attachments, createdAt: now, status: .complete)
+        user.editedFrom = old.id
+        let asst = Message(chatId: chat.id, parentId: user.id, role: .assistant, content: "", modelId: chat.modelId, createdAt: now + 1, status: .streaming)
+        messages[user.id] = user
+        messages[asst.id] = asst
+        path = computePath(to: asst.id)
+        chat.activeLeafId = asst.id
+        chat.updatedAt = now
+        saveChat()
+        saveMessages()
+        startGeneration(assistantId: asst.id, modelId: chat.modelId)
     }
 
     func retry(_ assistantId: String) {
@@ -248,6 +315,7 @@ final class ChatSession {
         path = computePath(to: leaf)
         chat.activeLeafId = leaf
         saveChat()
+        Haptics.selection()
     }
 
     /// Delete a message and everything under it. If the shown branch was inside, fall back to the
@@ -262,7 +330,8 @@ final class ChatSession {
         }
         for d in doomed { messages[d] = nil }
         var leaf = chat.activeLeafId
-        if leaf == nil || doomed.contains(leaf!) {
+        if let l = leaf, doomed.contains(l) { leaf = nil }
+        if leaf == nil {
             if let parent = m.parentId { leaf = deepest(from: parent) }
             else { leaf = children(of: nil).last.map { deepest(from: $0.id) } }
         }
@@ -270,6 +339,39 @@ final class ChatSession {
         chat.activeLeafId = leaf
         saveChat()
         saveMessages()
+    }
+
+    /// Copy the branch up to this message into a new chat. Returns the new chat's id.
+    func branch(from messageId: String) -> String? {
+        let ids = computePath(to: messageId)
+        guard !ids.isEmpty, persisted else { return nil }
+        var idMap: [String: String] = [:]
+        for i in ids { idMap[i] = newID() }
+        let newChatId = newID()
+        let copies: [Message] = ids.compactMap { (i: String) -> Message? in
+            guard var m = messages[i] else { return nil }
+            m.id = idMap[i] ?? newID()
+            m.chatId = newChatId
+            m.parentId = m.parentId.flatMap { idMap[$0] }
+            m.editedFrom = nil
+            if m.status == .streaming { m.status = .interrupted }
+            return m
+        }
+        let now = nowMs()
+        var c = chat
+        c.id = newChatId
+        c.title = "\(chat.title) (branch)"
+        c.createdAt = now
+        c.updatedAt = now
+        c.pinned = false
+        c.archived = false
+        c.activeLeafId = idMap[messageId]
+        c.draft = ""
+        c.totalCostUsd = 0
+        c.titleAuto = false
+        c.lastPreview = copies.last.map { TextUtil.stripMarkdown($0.content, max: 100) }
+        app.insertChat(c, messages: copies)
+        return newChatId
     }
 
     // MARK: Stream engine
@@ -282,15 +384,25 @@ final class ChatSession {
     }
 
     private func requestMessages(upTo assistantId: String, continueMode: Bool) -> [JSONValue] {
-        var out: [JSONValue] = []
-        let sp = effectiveSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !sp.isEmpty { out.append(["role": "system", "content": .string(sp)]) }
+        var history: [Message] = []
         for id in path {
             if id == assistantId { break }
             guard let m = messages[id] else { continue }
             if m.role == .assistant && m.content.isEmpty { continue }
-            out.append(Self.param(for: m))
+            history.append(m)
         }
+        var system: [String] = []
+        let sp = effectiveSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !sp.isEmpty { system.append(sp) }
+        if chat.memoryEnabled && app.settings.memory.enabled {
+            let lastUser = history.last(where: { $0.role == .user })?.content ?? ""
+            let plan = MemoryLogic.plan(app.memory, userText: lastUser, budget: app.settings.memory.maxInjectedChars)
+            let block = MemoryLogic.block(plan.entries)
+            if !block.isEmpty { system.append(block) }
+        }
+        var out: [JSONValue] = []
+        if !system.isEmpty { out.append(["role": "system", "content": .string(system.joined(separator: "\n\n"))]) }
+        for m in history { out.append(Self.param(for: m)) }
         if continueMode, let existing = messages[assistantId], !existing.content.isEmpty {
             out.append(["role": "assistant", "content": .string(existing.content)])
         }
@@ -311,10 +423,33 @@ final class ChatSession {
         return ["role": .string(m.role.rawValue), "content": .array(parts)]
     }
 
+    private static func estimatePrompt(_ msgs: [JSONValue]) -> Int {
+        var n = 0
+        for m in msgs {
+            n += 4
+            if let s = m["content"]?.stringValue { n += Tokens.estimate(s); continue }
+            for p in m["content"]?.arrayValue ?? [] {
+                switch p["type"]?.stringValue ?? "" {
+                case "text": n += Tokens.estimate(p["text"]?.stringValue ?? "")
+                case "image_url": n += 1000
+                default: n += 2000
+                }
+            }
+        }
+        return n
+    }
+
     private func generate(assistantId: String, modelId: String, continueMode: Bool) async {
-        defer { generating = false; task = nil }
+        defer {
+            generating = false
+            task = nil
+        }
         guard let apiKey = app.apiKey, !apiKey.isEmpty else {
             finishWithError(assistantId, MessageError(code: "401", message: "No API key set. Add one in Settings → Connection."))
+            return
+        }
+        guard app.connectivity.online else {
+            finishWithError(assistantId, MessageError(code: "offline", message: "You're offline. The message is kept; retry when you're back online."))
             return
         }
         let client = OpenRouterClient(apiKey: apiKey, baseURL: app.settings.proxyBaseUrl)
@@ -324,17 +459,7 @@ final class ChatSession {
         let body = RequestBuilder.body(modelId: modelId, model: model, settings: settings, messages: msgs)
         let lastUser = thread.last(where: { $0.role == .user && $0.id != assistantId })
 
-        let promptEst = msgs.reduce(0) { (n: Int, m: JSONValue) -> Int in
-            if let s = m["content"]?.stringValue { return n + Tokens.estimate(s) + 4 }
-            let parts = m["content"]?.arrayValue ?? []
-            return n + 4 + parts.reduce(0) { (k: Int, p: JSONValue) -> Int in
-                switch p["type"]?.stringValue {
-                case "text": return k + Tokens.estimate(p["text"]?.stringValue ?? "")
-                case "image_url": return k + 1000
-                default: return k + 2000
-                }
-            }
-        }
+        let promptEst = Self.estimatePrompt(msgs)
         let pPrompt = Pricing.parse(model?.pricing.prompt)
         let pComp = Pricing.parse(model?.pricing.completion)
         let pReasonRaw = Pricing.parse(model?.pricing.internalReasoning)
@@ -346,8 +471,8 @@ final class ChatSession {
         var content = base
         var reasoning = baseReason
         var generationId = existing?.generationId
-        var usage: StreamUsage?
-        var finish: String?
+        var usage: StreamUsage? = nil
+        var finish: String? = nil
 
         update(assistantId) {
             $0.status = .streaming
@@ -359,8 +484,11 @@ final class ChatSession {
         streamContent = content
         streamReasoning = reasoning
         streamCompletionTokens = 0
+        streamReasoningTokens = 0
         streamEstCost = 0
-        retryNote = nil
+        streamFirstTokenAt = nil
+        retryAt = nil
+        retryReason = nil
 
         // A reply in flight gets the ~30 seconds iOS allows after backgrounding, instead of the PWA's
         // immediate abort. If time runs out, the stream is cancelled and the partial reply kept.
@@ -374,24 +502,32 @@ final class ChatSession {
         var lastPersist = Date()
         func publish(force: Bool = false) {
             let now = Date()
-            if force || now.timeIntervalSince(lastPublish) > 0.033 {
+            if force || now.timeIntervalSince(lastPublish) > 0.05 {
                 lastPublish = now
                 let ct = Tokens.estimate(String(content.dropFirst(base.count)))
                 let rt = Tokens.estimate(String(reasoning.dropFirst(baseReason.count)))
                 streamContent = content
                 streamReasoning = reasoning
                 streamCompletionTokens = ct
+                streamReasoningTokens = rt
                 streamEstCost = Double(promptEst) * pPrompt + Double(ct) * pComp + Double(rt) * pReason
             }
             if now.timeIntervalSince(lastPersist) > 1.5 {
                 lastPersist = now
-                update(assistantId) { $0.content = content; $0.reasoning = reasoning.isEmpty ? nil : reasoning; $0.generationId = generationId }
+                let c = content
+                let r = reasoning
+                let g = generationId
+                update(assistantId) {
+                    $0.content = c
+                    $0.reasoning = r.isEmpty ? nil : r
+                    $0.generationId = g
+                }
                 saveMessages()
             }
         }
 
         var attempt = 0
-        var finalError: ErrorInfo?
+        var finalError: ErrorInfo? = nil
         var aborted = false
         retryLoop: while true {
             do {
@@ -402,7 +538,10 @@ final class ChatSession {
                         if let r = ev.reasoning { reasoning += r }
                         if let f = ev.finishReason { finish = f }
                         if let u = ev.usage { usage = u }
-                        if ev.content != nil || ev.reasoning != nil { publish() }
+                        if ev.content != nil || ev.reasoning != nil {
+                            if streamFirstTokenAt == nil { streamFirstTokenAt = nowMs() }
+                            publish()
+                        }
                     }
                 } else {
                     let r = try await client.complete(body: body)
@@ -411,6 +550,7 @@ final class ChatSession {
                     reasoning += r.reasoning
                     finish = r.finishReason
                     usage = r.usage
+                    streamFirstTokenAt = nowMs()
                 }
                 break retryLoop
             } catch {
@@ -420,9 +560,11 @@ final class ChatSession {
                 guard retriable else { finalError = info; break retryLoop }
                 attempt += 1
                 let wait = max((info.retryAfterMs ?? 0) / 1000, 1.5 * pow(2, Double(attempt - 1)))
-                retryNote = "\(info.message) Retrying in \(Int(wait.rounded()))s…"
+                retryAt = nowMs() + wait * 1000
+                retryReason = info.message
                 do { try await Task.sleep(for: .seconds(wait)) } catch { aborted = true; break retryLoop }
-                retryNote = nil
+                retryAt = nil
+                retryReason = nil
             }
         }
         publish(force: true)
@@ -431,7 +573,7 @@ final class ChatSession {
         // authoritative /generation figure replaces it a few seconds later.
         let completionTokens = usage?.completionTokens ?? Tokens.estimate(String(content.dropFirst(base.count)))
         let newReasoning = String(reasoning.dropFirst(baseReason.count))
-        let reasoningTokens = usage?.reasoningTokens ?? (newReasoning.isEmpty ? nil : Tokens.estimate(newReasoning))
+        let reasoningTokens: Int? = usage?.reasoningTokens ?? (newReasoning.isEmpty ? nil : Tokens.estimate(newReasoning))
         let promptTokens = usage?.promptTokens ?? promptEst
         let est = Double(promptTokens) * pPrompt + Double(completionTokens) * pComp + Double(reasoningTokens ?? 0) * pReason
         let cost: Double
@@ -441,22 +583,25 @@ final class ChatSession {
         let prevCost = existing?.usage?.costUsd ?? 0
 
         let status: MessageStatus
-        var err: MessageError?
+        var err: MessageError? = nil
         if let fe = finalError {
             status = content.isEmpty ? .error : .interrupted
             err = MessageError(code: fe.code, message: fe.message)
         } else if aborted {
-            status = .interrupted
+            status = content.isEmpty && reasoning.isEmpty ? .error : .interrupted
             let bg = UIApplication.shared.applicationState == .background
             err = MessageError(code: "interrupted", message: bg ? "Interrupted when the app was in the background too long" : "Stopped")
         } else {
             status = .complete
             if finish == "length" { err = MessageError(code: "length", message: "Reply hit the max output token limit") }
         }
+        let finalContent = content
+        let finalReasoning = reasoning
+        let finalGenerationId = generationId
         update(assistantId) {
-            $0.content = content
-            $0.reasoning = reasoning.isEmpty ? nil : reasoning
-            $0.generationId = generationId
+            $0.content = finalContent
+            $0.reasoning = finalReasoning.isEmpty ? nil : finalReasoning
+            $0.generationId = finalGenerationId
             $0.usage = finalUsage
             $0.status = status
             $0.error = err
@@ -464,7 +609,8 @@ final class ChatSession {
         streamingId = nil
         streamContent = ""
         streamReasoning = ""
-        retryNote = nil
+        retryAt = nil
+        retryReason = nil
 
         let now = nowMs()
         chat.updatedAt = now
@@ -475,9 +621,17 @@ final class ChatSession {
         app.applyCostDelta(chatId: chat.id, delta: cost - prevCost, countMessage: true)
         app.settings.messagesSinceExport = (app.settings.messagesSinceExport ?? 0) + 2
 
+        if status == .complete {
+            Haptics.soft()
+            if UIAccessibility.isVoiceOverRunning {
+                UIAccessibility.post(notification: .announcement, argument: "Reply finished")
+            }
+        } else if finalError != nil {
+            Haptics.warning()
+        }
+
         let webSearchCost = usage?.webSearchCost
-        let finalContent = content
-        if let gid = generationId, status != .error {
+        if let gid = finalGenerationId, status != .error {
             Task { [weak self] in
                 guard let g = await client.generationWithRetry(id: gid) else { return }
                 let authoritative = Usage(
@@ -488,9 +642,14 @@ final class ChatSession {
                 self?.applyAuthoritative(assistantId, authoritative)
             }
         }
-        if status == .complete, let lastUser, chat.titleAuto != false, !continueMode {
-            let userText = lastUser.content
-            Task { [weak self] in await self?.autoTitle(userText: userText, assistantText: finalContent) }
+        if status == .complete, let lastUser {
+            if chat.titleAuto != false && !continueMode {
+                let userText = lastUser.content
+                Task { [weak self] in await self?.autoTitle(userText: userText, assistantText: finalContent) }
+            }
+            if chat.memoryEnabled, let final = messages[assistantId] {
+                app.extractor.schedule(app: app, chatId: chat.id, user: lastUser, assistant: final)
+            }
         }
     }
 
@@ -501,8 +660,12 @@ final class ChatSession {
     }
 
     private func finishWithError(_ id: String, _ e: MessageError) {
-        update(id) { $0.status = .error; $0.error = e }
+        update(id) {
+            $0.status = .error
+            $0.error = e
+        }
         saveMessages()
+        Haptics.warning()
     }
 
     private func update(_ id: String, _ mutate: (inout Message) -> Void) {
@@ -512,7 +675,7 @@ final class ChatSession {
     }
 
     private func applyAuthoritative(_ id: String, _ usage: Usage) {
-        guard let m = messages[id] else { return }
+        guard !deleted, let m = messages[id] else { return }
         let prev = m.usage?.costUsd ?? 0
         update(id) { $0.usage = usage }
         saveMessages()
@@ -534,8 +697,8 @@ final class ChatSession {
         ]
         guard let r = try? await app.client.complete(body: body) else { return }
         var title = r.content.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n").first ?? ""
-        title = title.trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”.").union(.whitespaces))
-        guard !title.isEmpty, chat.titleAuto != false else { return }
+        title = title.trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”.*#").union(.whitespaces))
+        guard !title.isEmpty, chat.titleAuto != false, !deleted else { return }
         chat.title = String(title.prefix(60))
         saveChat()
     }
@@ -545,7 +708,10 @@ final class ChatSession {
         if let msgs = body["messages"]?.arrayValue {
             b["messages"] = .array(msgs.map { (m: JSONValue) -> JSONValue in
                 if m["content"]?.stringValue != nil { return m }
-                let text = (m["content"]?.arrayValue ?? []).map { p in p["type"]?.stringValue == "text" ? (p["text"]?.stringValue ?? "") : "[\(p["type"]?.stringValue ?? "part")]" }.joined(separator: "\n")
+                let parts = m["content"]?.arrayValue ?? []
+                let text = parts.map { (p: JSONValue) -> String in
+                    p["type"]?.stringValue == "text" ? (p["text"]?.stringValue ?? "") : "[\(p["type"]?.stringValue ?? "part")]"
+                }.joined(separator: "\n")
                 return ["role": m["role"] ?? "user", "content": .string(text)]
             })
         }
@@ -558,11 +724,14 @@ struct ErrorInfo {
     var status = 0
     var code = "unknown"
     var message = ""
-    var retryAfterMs: Double?
+    var retryAfterMs: Double? = nil
     var aborted = false
 
     init(_ error: Error) {
-        if error is CancellationError { aborted = true; code = "aborted"; message = "Stopped"; return }
+        if error is CancellationError {
+            aborted = true; code = "aborted"; message = "Stopped"
+            return
+        }
         if let e = error as? ORError {
             status = e.status
             code = e.status != 0 ? String(e.status) : e.code
@@ -577,7 +746,10 @@ struct ErrorInfo {
             return
         }
         if let u = error as? URLError {
-            if u.code == .cancelled { aborted = true; code = "aborted"; message = "Stopped"; return }
+            if u.code == .cancelled {
+                aborted = true; code = "aborted"; message = "Stopped"
+                return
+            }
             code = "network"
             switch u.code {
             case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed:

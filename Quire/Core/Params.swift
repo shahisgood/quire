@@ -116,3 +116,34 @@ nonisolated enum RequestBuilder {
         return body
     }
 }
+
+/// Precise / Balanced / Creative, as in the PWA. A preset sets four sampling values; anything else
+/// the user changes afterwards shows as "Custom".
+nonisolated struct SamplingPreset: Identifiable, Sendable {
+    let name: String
+    let temperature: Double
+    let topP: Double
+    let frequencyPenalty: Double
+    let presencePenalty: Double
+    var id: String { name }
+
+    static let all: [SamplingPreset] = [
+        SamplingPreset(name: "Precise", temperature: 0.2, topP: 0.9, frequencyPenalty: 0, presencePenalty: 0),
+        SamplingPreset(name: "Balanced", temperature: 0.7, topP: 1, frequencyPenalty: 0, presencePenalty: 0),
+        SamplingPreset(name: "Creative", temperature: 1.1, topP: 1, frequencyPenalty: 0.2, presencePenalty: 0.3),
+    ]
+
+    /// Unset values count as the provider defaults (1, 1, 0, 0).
+    func matches(_ s: GenerationSettings) -> Bool {
+        func eq(_ a: Double?, _ fallback: Double, _ b: Double) -> Bool { abs((a ?? fallback) - b) < 1e-6 }
+        return eq(s.temperature, 1, temperature) && eq(s.topP, 1, topP)
+            && eq(s.frequencyPenalty, 0, frequencyPenalty) && eq(s.presencePenalty, 0, presencePenalty)
+    }
+
+    func apply(to s: inout GenerationSettings) {
+        s.temperature = temperature
+        s.topP = topP
+        s.frequencyPenalty = frequencyPenalty
+        s.presencePenalty = presencePenalty
+    }
+}

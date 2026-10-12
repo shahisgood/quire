@@ -1,56 +1,191 @@
 import SwiftUI
+import Charts
 import UniformTypeIdentifiers
 
+/// Settings home: account and spending up top, then the sections, each with a one-line summary
+/// so you can see the state of things without opening anything.
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        Form {
-            Section {
-                NavigationLink { ConnectionSettings() } label: {
-                    settingsRow("Connection", "key", app.apiKey == nil ? "No key yet" : (app.settings.keyMeta?.label ?? "Key saved"))
-                }
-                NavigationLink { GenerationSettingsView() } label: {
-                    settingsRow("Generation", "slider.horizontal.3", app.model(app.settings.defaultModelId)?.shortName ?? shortId(app.settings.defaultModelId))
-                }
-                NavigationLink { AppearanceSettings() } label: {
-                    settingsRow("Appearance", "textformat", app.settings.ui.theme.label)
-                }
-                NavigationLink { DataSettings() } label: {
-                    settingsRow("Data", "externaldrive", "\(app.chats.count) chats")
-                }
-                NavigationLink { AboutView() } label: {
-                    settingsRow("About", "info.circle", nil)
-                }
-            }
+        List {
+            Section { AccountCard() }
+                .listRowBackground(Color.qRaised)
+
             if app.settings.ui.showCosts {
-                Section("Spending") {
-                    LabeledContent("Today") { Text(Fmt.usd(app.todayCost)).monospacedDigit() }
-                    LabeledContent("Last 30 days") { Text(Fmt.usd(last30)).monospacedDigit() }
-                    if let meta = app.settings.keyMeta, let remaining = meta.limitRemaining {
-                        LabeledContent("Key limit left") { Text(Fmt.usd(remaining)).monospacedDigit() }
-                    }
-                }
+                Section { SpendingCard() } header: { SectionLabel(text: "Spending") }
+                    .listRowBackground(Color.qRaised)
             }
+
+            Section {
+                link(.generation, "Models & generation", "cpu", .qTileBlue, app.modelName(app.settings.defaultModelId))
+                link(.prompts, "Prompts & personas", "person.crop.rectangle.stack", .qTileViolet,
+                     app.presets.isEmpty ? "No personas" : "\(app.presets.count) persona\(app.presets.count == 1 ? "" : "s")")
+                link(.memory, "Memory", "brain", .qTileTeal,
+                     app.settings.memory.enabled ? "\(app.memory.count) facts · on" : "Off")
+                link(.appearance, "Appearance", "textformat", .qTileAmber,
+                     "\(app.settings.ui.theme.label) · \(app.settings.ui.readingFace.label)")
+            }
+            .listRowBackground(Color.qRaised)
+
+            Section {
+                link(.connection, "Connection", "key", .qTileSlate, app.apiKey == nil ? "No key" : (app.settings.keyMeta?.label ?? "Key saved"))
+                link(.data, "Data & backup", "externaldrive", .qTileRose, backupDetail)
+                link(.about, "About", "info.circle", .qTileSlate, nil)
+            }
+            .listRowBackground(Color.qRaised)
         }
+        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(Color.qBase)
         .navigationTitle("Settings")
     }
 
-    private var last30: Double {
-        let cutoff = dayKey(nowMs() - 29 * 86_400_000)
-        return app.costs.filter { $0.day >= cutoff }.reduce(0) { $0 + $1.costUsd }
+    private var backupDetail: String {
+        guard let last = app.settings.lastExportAt, last > 0 else { return "Never backed up" }
+        return "Backed up \(Fmt.relative(last))"
     }
 
-    private func settingsRow(_ title: String, _ icon: String, _ detail: String?) -> some View {
-        HStack {
-            Label(title, systemImage: icon)
-            Spacer()
-            if let detail {
-                Text(detail).foregroundStyle(Color.qInk2).lineLimit(1)
+    private func link(_ s: SettingsSection, _ title: String, _ symbol: String, _ color: Color, _ detail: String?) -> some View {
+        NavigationLink(value: Route.section(s)) {
+            TileLabel(title: title, symbol: symbol, color: color, detail: detail)
+        }
+    }
+}
+
+struct SettingsSectionView: View {
+    let section: SettingsSection
+
+    var body: some View {
+        switch section {
+        case .connection: ConnectionSettings()
+        case .generation: GenerationSettingsView()
+        case .prompts: PromptsSettingsView()
+        case .memory: MemorySettingsView()
+        case .appearance: AppearanceSettings()
+        case .data: DataSettings()
+        case .about: AboutView()
+        }
+    }
+}
+
+// MARK: - Home cards
+
+private struct AccountCard: View {
+    @Environment(AppModel.self) private var app
+    @State private var refreshing = false
+
+    var body: some View {
+        if app.apiKey == nil {
+            NavigationLink(value: Route.section(.connection)) {
+                HStack(spacing: 14) {
+                    QuireMark(width: 34, breathing: true)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Connect OpenRouter")
+                            .font(.system(.headline, design: .serif))
+                            .foregroundStyle(Color.qInk)
+                        Text("Paste a key or sign in. It stays in this iPhone's Keychain.")
+                            .font(.footnote)
+                            .foregroundStyle(Color.qInk2)
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(app.settings.keyMeta?.label ?? "OpenRouter key")
+                            .font(.system(.headline, design: .serif))
+                            .foregroundStyle(Color.qInk)
+                        Text(app.settings.keyMeta?.isFreeTier == true ? "Free tier" : "Connected")
+                            .font(.caption)
+                            .foregroundStyle(Color.qInk2)
+                    }
+                    Spacer()
+                    Button {
+                        Task { await refresh() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .rotationEffect(.degrees(refreshing ? 360 : 0))
+                            .animation(refreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: refreshing)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Refresh key details")
+                }
+                if let meta = app.settings.keyMeta {
+                    if let limit = meta.limit, limit > 0 {
+                        let remaining = meta.limitRemaining ?? max(0, limit - meta.usage)
+                        MeterBar(fraction: 1 - remaining / limit, warn: remaining / limit < 0.15, height: 5)
+                        HStack {
+                            Text("\(Fmt.usd(remaining)) left of \(Fmt.usd(limit))")
+                            Spacer()
+                            Text("\(Fmt.usd(meta.usage)) used")
+                        }
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(Color.qInk2)
+                    } else {
+                        Text("\(Fmt.usd(meta.usage)) used · no credit limit on this key")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(Color.qInk2)
+                    }
+                }
+            }
+            .padding(.vertical, 6)
+            .task {
+                if let meta = app.settings.keyMeta, nowMs() - meta.fetchedAt < 60_000 { return }
+                await refresh()
             }
         }
+    }
+
+    private func refresh() async {
+        refreshing = true
+        try? await app.refreshKeyMeta()
+        refreshing = false
+    }
+}
+
+private struct SpendingCard: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        let series = app.dailySeries(days: 14)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 18) {
+                stat("Today", app.todayCost)
+                stat("7 days", app.costSince(daysAgo: 6))
+                stat("30 days", app.costSince(daysAgo: 29))
+            }
+            Chart(series) { p in
+                BarMark(x: .value("Day", p.date, unit: .day), y: .value("Cost", p.cost))
+                    .foregroundStyle(Calendar.current.isDateInToday(p.date) ? Color.qAccent : Color.qAccent.opacity(0.45))
+                    .cornerRadius(3)
+            }
+            .chartYAxis(.hidden)
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .day, count: 7)) { _ in
+                    AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                }
+            }
+            .frame(height: 72)
+            .accessibilityLabel("Spending over the last 14 days")
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func stat(_ label: String, _ value: Double) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(Fmt.usd(value))
+                .font(.system(.title3, design: .serif).weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(Color.qInk)
+                .contentTransition(.numericText())
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(Color.qInk2)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -61,36 +196,57 @@ private struct ConnectionSettings: View {
     @Environment(\.openURL) private var openURL
     @State private var draftKey = ""
     @State private var reveal = false
+    @State private var showKey = false
     @State private var checking = false
     @State private var keyError: String? = nil
     @State private var pkce: PKCE? = nil
     @State private var code = ""
     @State private var exchanging = false
+    @State private var baseURL = ""
 
     var body: some View {
         Form {
             if let key = app.apiKey {
                 Section {
-                    LabeledContent("Key") { Text(masked(key)).font(.body.monospaced()) }
+                    LabeledContent("Key") {
+                        Text(showKey ? key : masked(key))
+                            .font(.footnote.monospaced())
+                            .foregroundStyle(Color.qInk)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
                     if let meta = app.settings.keyMeta {
                         LabeledContent("Label", value: meta.label + (meta.isFreeTier ? " · free tier" : ""))
                         LabeledContent("Used") { Text(Fmt.usd(meta.usage)).monospacedDigit() }
-                        if let limit = meta.limit {
-                            LabeledContent("Limit") { Text(Fmt.usd(limit)).monospacedDigit() }
+                        LabeledContent("Limit") {
+                            Text(meta.limit.map { "\(Fmt.usd(meta.limitRemaining)) left of \(Fmt.usd($0))" } ?? "No limit").monospacedDigit()
                         }
                         if let rl = meta.rateLimit, rl.requests > 0 {
                             LabeledContent("Rate limit", value: "\(rl.requests) per \(rl.interval)")
                         }
                     }
-                    if let keyError { Text(keyError).font(.footnote).foregroundStyle(Color.qDanger) }
-                    Button { Task { await check() } } label: {
-                        HStack { Text("Check key"); if checking { Spacer(); ProgressView() } }
+                    if let keyError {
+                        Label(keyError, systemImage: "exclamationmark.triangle")
+                            .font(.footnote)
+                            .foregroundStyle(Color.qDanger)
                     }
-                    Button("Remove key", role: .destructive) { app.setAPIKey(nil) }
+                    HStack {
+                        Button(showKey ? "Hide key" : "Show key") { showKey.toggle() }
+                        Spacer()
+                        Button { Task { await check() } } label: {
+                            if checking { ProgressView() } else { Text("Check") }
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                    Button("Remove key", role: .destructive) {
+                        app.setAPIKey(nil)
+                        app.toasts.show("Key removed", symbol: "key")
+                    }
                 } header: {
-                    Text("OpenRouter key")
+                    SectionLabel(text: "Your key")
                 } footer: {
-                    Text("Stored in the iPhone Keychain, on this device only.")
+                    Text("Stored in the iPhone Keychain, on this device only, and sent only to OpenRouter.")
                 }
             }
 
@@ -102,75 +258,121 @@ private struct ConnectionSettings: View {
                     .font(.body.monospaced())
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .submitLabel(.done)
+                    .onSubmit(saveKey)
                     Button { reveal.toggle() } label: { Image(systemName: reveal ? "eye.slash" : "eye") }
                         .buttonStyle(.borderless)
+                        .accessibilityLabel(reveal ? "Hide" : "Show")
                 }
-                Button("Save key") {
-                    let k = draftKey.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !k.isEmpty else { return }
-                    app.setAPIKey(k)
-                    draftKey = ""
-                    Task { await check() }
+                Button("Save key", action: saveKey)
+                    .disabled(draftKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Link(destination: URL(string: "https://openrouter.ai/keys")!) {
+                    Label("Get a key at openrouter.ai/keys", systemImage: "arrow.up.right.square")
                 }
-                .disabled(draftKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Link("Get a key at openrouter.ai/keys", destination: URL(string: "https://openrouter.ai/keys")!)
             } header: {
-                Text(app.apiKey == nil ? "Paste a key" : "Replace key")
+                SectionLabel(text: app.apiKey == nil ? "Paste a key" : "Replace key")
             } footer: {
                 Text("Use a key with a spending limit.")
             }
 
             Section {
                 if pkce == nil {
-                    Button("Sign in with OpenRouter") {
+                    Button {
                         let p = PKCE()
                         pkce = p
                         if let url = OpenRouterClient.authURL(challenge: p.challenge) { openURL(url) }
+                    } label: {
+                        Label("Sign in with OpenRouter", systemImage: "person.badge.key")
                     }
                 } else {
                     TextField("Paste the code from openrouter.ai", text: $code)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .font(.body.monospaced())
-                    Button {
-                        Task { await exchange() }
-                    } label: {
-                        HStack { Text("Finish sign-in"); if exchanging { Spacer(); ProgressView() } }
+                    Button { Task { await exchange() } } label: {
+                        HStack {
+                            Text("Finish sign-in")
+                            if exchanging { Spacer(); ProgressView() }
+                        }
                     }
                     .disabled(code.trimmingCharacters(in: .whitespaces).isEmpty || exchanging)
-                    Button("Start over") { pkce = nil; code = "" }
+                    Button("Start over") {
+                        pkce = nil
+                        code = ""
+                    }
+                    .foregroundStyle(Color.qInk2)
                 }
             } header: {
-                Text("Or sign in")
+                SectionLabel(text: "Or sign in")
             } footer: {
                 Text(pkce == nil
-                     ? "Opens openrouter.ai in Safari. After you approve, OpenRouter shows a code; copy it and come back here."
+                     ? "Opens openrouter.ai in Safari. After you approve, OpenRouter shows a code: copy it and come back here."
                      : "Codes expire after 10 minutes.")
             }
 
             Section {
-                TextField("https://openrouter.ai/api/v1", text: Binding(
-                    get: { app.settings.proxyBaseUrl ?? "" },
-                    set: { app.settings.proxyBaseUrl = $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0.trimmingCharacters(in: .whitespaces) }))
+                TextField("https://openrouter.ai/api/v1", text: $baseURL)
                     .font(.footnote.monospaced())
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
+                    .submitLabel(.done)
+                    .onSubmit(saveBaseURL)
             } header: {
-                Text("API base URL")
+                SectionLabel(text: "API base URL")
             } footer: {
-                Text("Leave empty for OpenRouter. Set it only if you route through your own proxy.")
+                Text("Leave empty for OpenRouter. Change it only if you route through your own pass-through proxy.")
+            }
+
+            Section {
+                Link(destination: URL(string: "https://openrouter.ai/settings/integrations")!) {
+                    Label("Your own provider keys", systemImage: "arrow.up.right.square")
+                }
+                Link(destination: URL(string: "https://openrouter.ai/settings/credits")!) {
+                    Label("Credits", systemImage: "creditcard")
+                }
+                Link(destination: URL(string: "https://openrouter.ai/activity")!) {
+                    Label("Activity", systemImage: "chart.bar")
+                }
+            } footer: {
+                Text("OpenRouter can route through keys you hold with OpenAI, Anthropic, Google and others. That's set up in your OpenRouter account; Quire works with whatever routing it uses.")
             }
         }
         .scrollContentBackground(.hidden)
         .background(Color.qBase)
         .navigationTitle("Connection")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear { baseURL = app.settings.proxyBaseUrl ?? "" }
+        .onDisappear(perform: saveBaseURL)
+        .task {
+            guard app.apiKey != nil else { return }
+            if let meta = app.settings.keyMeta, nowMs() - meta.fetchedAt < 60_000 { return }
+            await check()
+        }
     }
 
     private func masked(_ k: String) -> String {
-        guard k.count > 12 else { return String(repeating: "•", count: k.count) }
-        return String(k.prefix(9)) + "…" + String(k.suffix(4))
+        guard k.count > 16 else { return String(repeating: "•", count: k.count) }
+        return String(k.prefix(12)) + "…" + String(k.suffix(4))
+    }
+
+    private func saveKey() {
+        let k = draftKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !k.isEmpty else { return }
+        app.setAPIKey(k)
+        draftKey = ""
+        Haptics.success()
+        app.toasts.show("Key saved on this iPhone", symbol: "key")
+        Task {
+            await check()
+            await app.refreshModels(force: true)
+        }
+    }
+
+    private func saveBaseURL() {
+        let t = baseURL.trimmingCharacters(in: .whitespaces)
+        let v: String? = t.isEmpty ? nil : t
+        if app.settings.proxyBaseUrl != v { app.settings.proxyBaseUrl = v }
     }
 
     private func check() async {
@@ -191,6 +393,8 @@ private struct ConnectionSettings: View {
             app.setAPIKey(key)
             pkce = nil
             code = ""
+            Haptics.success()
+            app.toasts.show("Signed in", symbol: "checkmark")
             await check()
         } catch {
             keyError = error.localizedDescription
@@ -198,208 +402,357 @@ private struct ConnectionSettings: View {
     }
 }
 
-// MARK: - Generation
+// MARK: - Models & generation
 
 private struct GenerationSettingsView: View {
     @Environment(AppModel.self) private var app
     @State private var pickDefault = false
     @State private var pickTitleModel = false
+    @State private var card: ORModel? = nil
 
     var body: some View {
         @Bindable var app = app
-        let g = $app.settings.globalSettings
         let defaultModel = app.model(app.settings.defaultModelId)
-        let style = ReasoningStyle.detect(defaultModel)
-
         Form {
             Section {
                 Button { pickDefault = true } label: {
-                    LabeledContent("Default model") {
-                        Text(defaultModel?.shortName ?? shortId(app.settings.defaultModelId)).foregroundStyle(Color.qInk2)
-                    }
+                    modelRow("Default model", id: app.settings.defaultModelId, symbol: "cpu", color: .qTileBlue)
                 }
-                .foregroundStyle(Color.qInk)
                 Button { pickTitleModel = true } label: {
-                    LabeledContent("Title model") {
-                        Text(app.model(app.settings.memory.extractionModelId)?.shortName ?? shortId(app.settings.memory.extractionModelId)).foregroundStyle(Color.qInk2)
-                    }
+                    modelRow("Titles & memory", id: app.settings.memory.extractionModelId, symbol: "text.badge.star", color: .qTileTeal)
                 }
-                .foregroundStyle(Color.qInk)
             } footer: {
                 if !app.models.isEmpty && defaultModel == nil {
-                    Text("The default model isn't in OpenRouter's catalogue. Pick another.").foregroundStyle(Color.qDanger)
+                    Text("The default model isn't in OpenRouter's catalogue right now. It's still sent as-is; pick another if requests fail.")
+                        .foregroundStyle(Color.qDanger)
                 } else {
-                    Text("New chats start with the default model. The title model names chats after the first reply; a cheap, fast one is best.")
+                    Text("New chats start with the default model. The second one names chats and extracts memory: a cheap, fast model is best.")
                 }
             }
 
+            ParamsEditor(model: defaultModel, target: $app.settings.globalSettings, base: nil)
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color.qBase)
+        .navigationTitle("Models & generation")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $pickDefault) {
+            ModelPickerView(title: "Default model", selected: app.settings.defaultModelId) { id in app.settings.defaultModelId = id }
+        }
+        .sheet(isPresented: $pickTitleModel) {
+            ModelPickerView(title: "Titles & memory model", selected: app.settings.memory.extractionModelId) { id in app.settings.memory.extractionModelId = id }
+        }
+    }
+
+    private func modelRow(_ title: String, id: String, symbol: String, color: Color) -> some View {
+        HStack {
+            TileLabel(title: title, symbol: symbol, color: color, detail: app.modelName(id))
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.qInk2)
+        }
+        .contentShape(.rect)
+    }
+}
+
+// MARK: - Prompts & personas
+
+struct PromptsSettingsView: View {
+    @Environment(AppModel.self) private var app
+    @State private var editing: Preset? = nil
+    @State private var share: SharedFile? = nil
+    @State private var importing = false
+
+    var body: some View {
+        @Bindable var app = app
+        List {
             Section {
-                TextEditor(text: $app.settings.globalSystemPrompt)
-                    .frame(minHeight: 120)
+                NavigationLink {
+                    PromptEditorView(title: "Global system prompt", text: $app.settings.globalSystemPrompt,
+                                     placeholder: "Sent at the start of every chat that has no persona or prompt of its own.",
+                                     footer: "Personas and per-chat prompts replace this one.")
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Global system prompt").foregroundStyle(Color.qInk)
+                        Text(app.settings.globalSystemPrompt.isEmpty ? "Empty" : app.settings.globalSystemPrompt)
+                            .font(.footnote)
+                            .foregroundStyle(Color.qInk2)
+                            .lineLimit(3)
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+            .listRowBackground(Color.qRaised)
+
+            Section {
+                ForEach(app.presets) { p in
+                    Button { editing = p } label: { PersonaRow(preset: p) }
+                        .swipeActions {
+                            Button(role: .destructive) { app.deletePreset(p.id) } label: { Label("Delete", systemImage: "trash") }
+                            Button { app.duplicatePreset(p) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+                                .tint(Color.qTileSlate)
+                        }
+                        .contextMenu {
+                            Button { app.startNewChat(persona: p) } label: { Label("New chat with \(p.name)", systemImage: "square.and.pencil") }
+                            Button { app.duplicatePreset(p) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+                            Button(role: .destructive) { app.deletePreset(p.id) } label: { Label("Delete", systemImage: "trash") }
+                        }
+                }
+                Button { editing = Preset() } label: { Label("New persona", systemImage: "plus") }
             } header: {
-                Text("System prompt")
+                SectionLabel(text: "Personas")
             } footer: {
-                Text("Sent at the start of every chat that doesn't set its own.")
+                Text("A persona is a saved system prompt, optionally with its own model and settings. Hold the compose button to start a chat from one.")
             }
-
-            Section("Sampling") {
-                OptionalSlider(title: "Temperature", value: g.temperature, range: 0...2, step: 0.05, defaultValue: 1)
-                OptionalSlider(title: "Top P", value: g.topP, range: 0...1, step: 0.01, defaultValue: 1)
-                OptionalStepper(title: "Max output tokens", value: g.maxTokens, range: 64...200_000, step: 256, defaultValue: 4096)
+            .listRowBackground(Color.qRaised)
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Color.qBase)
+        .navigationTitle("Prompts & personas")
+        .navigationBarTitleDisplayMode(.inline)
+        .animation(Motion.standard, value: app.presets)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button { importing = true } label: { Label("Import personas", systemImage: "square.and.arrow.down") }
+                    Button {
+                        if let url = try? app.exportPresets() { share = SharedFile(url: url) }
+                    } label: { Label("Export personas", systemImage: "square.and.arrow.up") }
+                    .disabled(app.presets.isEmpty)
+                } label: { Image(systemName: "ellipsis") }
+                .accessibilityLabel("Import or export")
             }
+        }
+        .sheet(item: $editing) { p in PersonaEditor(preset: p) }
+        .sheet(item: $share) { f in ShareSheet(items: [f.url]).presentationDetents([.medium, .large]) }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
+            guard case .success(let url) = result else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let data = try Data(contentsOf: url)
+                let n = try app.importPresets(data)
+                app.toasts.show("Imported \(n) persona\(n == 1 ? "" : "s")", symbol: "person.crop.rectangle.stack")
+            } catch {
+                app.toasts.show(error.localizedDescription, symbol: "exclamationmark.triangle")
+            }
+        }
+    }
+}
 
-            Section {
-                Picker("Reasoning", selection: reasoningMode) {
-                    Text("Off").tag(ReasoningSettings.Mode.off)
-                    Text("Effort").tag(ReasoningSettings.Mode.effort)
-                    Text("Budget").tag(ReasoningSettings.Mode.budget)
+private struct PersonaRow: View {
+    let preset: Preset
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(preset.icon?.isEmpty == false ? preset.icon! : "◦")
+                .font(.title3)
+                .frame(width: 40, height: 40)
+                .background(Color.qAccentSoft, in: .circle)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(preset.name.isEmpty ? "Untitled" : preset.name)
+                    .font(.system(.body, design: .serif).weight(.semibold))
+                    .foregroundStyle(Color.qInk)
+                Text(preset.systemPrompt.isEmpty ? "No prompt" : preset.systemPrompt)
+                    .font(.footnote)
+                    .foregroundStyle(Color.qInk2)
+                    .lineLimit(2)
+                if let m = preset.modelId {
+                    Label(app.modelName(m), systemImage: "cpu")
+                        .font(.caption)
+                        .foregroundStyle(Color.qInk2)
                 }
-                if reasoning.mode == .effort {
-                    Picker("Effort", selection: reasoningEffort) {
-                        ForEach(ReasoningEffort.allCases, id: \.self) { e in Text(e.label).tag(e) }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+/// Create or edit a persona: icon, name, prompt, optional pinned model, and the settings it sets.
+struct PersonaEditor: View {
+    let preset: Preset
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft = Preset()
+    @State private var loaded = false
+    @State private var pickModel = false
+    @State private var confirmDelete = false
+
+    private var isNew: Bool { !app.presets.contains(where: { $0.id == preset.id }) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    HStack(spacing: 12) {
+                        TextField("◦", text: Binding(get: { draft.icon ?? "" }, set: { draft.icon = String($0.prefix(2)) }))
+                            .font(.title2)
+                            .multilineTextAlignment(.center)
+                            .frame(width: 52, height: 52)
+                            .background(Color.qAccentSoft, in: .circle)
+                            .accessibilityLabel("Icon, one emoji")
+                        TextField("Name", text: $draft.name)
+                            .font(.system(.title3, design: .serif).weight(.semibold))
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Section {
+                    ZStack(alignment: .topLeading) {
+                        if draft.systemPrompt.isEmpty {
+                            Text("You are…")
+                                .foregroundStyle(Color.qInk2.opacity(0.7))
+                                .padding(.top, 8)
+                                .padding(.leading, 5)
+                                .allowsHitTesting(false)
+                        }
+                        TextEditor(text: $draft.systemPrompt)
+                            .frame(minHeight: 160)
+                            .scrollContentBackground(.hidden)
+                    }
+                } header: {
+                    SectionLabel(text: "System prompt")
+                } footer: {
+                    Text("\(draft.systemPrompt.count) characters · about \(Tokens.estimate(draft.systemPrompt)) tokens")
+                        .monospacedDigit()
+                }
+
+                Section {
+                    Button { pickModel = true } label: {
+                        HStack {
+                            TileLabel(title: "Pinned model", symbol: "cpu", color: .qTileBlue,
+                                      detail: draft.modelId.map { app.modelName($0) } ?? "Uses the chat's model")
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Color.qInk2)
+                        }
+                    }
+                    if draft.modelId != nil {
+                        Button("Don't pin a model") { draft.modelId = nil }
                     }
                 }
-                if reasoning.mode == .budget {
-                    Stepper(value: reasoningBudget, in: 512...64_000, step: 512) {
-                        LabeledContent("Thinking budget") { Text("\(reasoning.maxTokens ?? style.defaultBudget) tokens").monospacedDigit() }
+
+                ParamsEditor(model: app.model(draft.modelId ?? app.settings.defaultModelId),
+                             target: $draft.settings,
+                             base: app.settings.globalSettings)
+
+                if !isNew {
+                    Section {
+                        Button {
+                            app.startNewChat(persona: draft)
+                            dismiss()
+                        } label: { Label("New chat with this persona", systemImage: "square.and.pencil") }
+                        Button {
+                            app.duplicatePreset(draft)
+                            dismiss()
+                        } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+                        Button(role: .destructive) { confirmDelete = true } label: { Label("Delete persona", systemImage: "trash") }
                     }
                 }
-                Toggle("Hide the reasoning trace", isOn: reasoningExclude)
-            } header: {
-                Text("Reasoning")
-            } footer: {
-                Text("Only sent to models that accept it. For \(defaultModel?.shortName ?? "the default model"): \(style.note)")
+            }
+            .scrollContentBackground(.hidden)
+            .background(Color.qBase)
+            .navigationTitle(isNew ? "New persona" : "Edit persona")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        var p = draft
+                        p.name = p.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        app.savePreset(p)
+                        Haptics.success()
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .onAppear {
+                guard !loaded else { return }
+                draft = preset
+                loaded = true
+            }
+            .sheet(isPresented: $pickModel) {
+                ModelPickerView(title: "Persona model", selected: draft.modelId) { id in draft.modelId = id }
+            }
+            .confirmationDialog("Delete \(draft.name.isEmpty ? "this persona" : draft.name)?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    app.deletePreset(preset.id)
+                    dismiss()
+                }
+            } message: {
+                Text("Chats that use it keep their messages and fall back to the global prompt.")
+            }
+        }
+        .interactiveDismissDisabled(draft != preset && loaded)
+    }
+}
+
+// MARK: - Memory settings
+
+private struct MemorySettingsView: View {
+    @Environment(AppModel.self) private var app
+    @State private var pickModel = false
+
+    var body: some View {
+        @Bindable var app = app
+        let total = MemoryLogic.totalChars(app.memory)
+        Form {
+            Section {
+                NavigationLink(value: Route.memory) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        TileLabel(title: "Open memory", symbol: "brain", color: .qTileTeal,
+                                  detail: "\(app.memory.count) facts · \(total.formatted()) characters")
+                        MeterBar(fraction: Double(total) / Double(max(1, app.settings.memory.maxInjectedChars)),
+                                 warn: total > app.settings.memory.maxInjectedChars)
+                    }
+                    .padding(.vertical, 2)
+                }
             }
 
             Section {
-                Toggle("Web search", isOn: Binding(
-                    get: { app.settings.globalSettings.webSearch?.enabled ?? false },
-                    set: { v in mutateWeb { $0.enabled = v } }))
-                if app.settings.globalSettings.webSearch?.enabled ?? false {
-                    Stepper(value: Binding(
-                        get: { app.settings.globalSettings.webSearch?.maxResults ?? 5 },
-                        set: { v in mutateWeb { $0.maxResults = v } }), in: 1...10) {
-                        LabeledContent("Results") { Text("\(app.settings.globalSettings.webSearch?.maxResults ?? 5)").monospacedDigit() }
+                Toggle(isOn: $app.settings.memory.enabled) {
+                    HelpLabel(title: "Use memory", help: "Inject remembered facts into chats, inside a <user_memory> block in the system message, with an instruction not to announce it.")
+                }
+                Toggle(isOn: $app.settings.memory.autoExtract) {
+                    HelpLabel(title: "Extract automatically", help: "After replies, quietly ask the memory model to note durable facts you stated. Runs at most once per three exchanges or thirty seconds, after the reply, and never delays the chat.")
+                }
+                .disabled(!app.settings.memory.enabled)
+                Button { pickModel = true } label: {
+                    HStack {
+                        TileLabel(title: "Memory model", symbol: "text.badge.star", color: .qTileTeal,
+                                  detail: app.modelName(app.settings.memory.extractionModelId))
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Color.qInk2)
                     }
                 }
-                Toggle("Stream replies", isOn: Binding(
-                    get: { app.settings.globalSettings.stream ?? true },
-                    set: { app.settings.globalSettings.stream = $0 }))
-            } footer: {
-                Text("Web search uses OpenRouter's web plugin and is billed per request.")
-            }
-
-            Section {
-                Picker("Prefer", selection: Binding(
-                    get: { app.settings.globalSettings.provider?.sort ?? "" },
-                    set: { v in mutateProvider { $0.sort = v.isEmpty ? nil : v } })) {
-                    Text("Default").tag("")
-                    Text("Lowest price").tag("price")
-                    Text("Throughput").tag("throughput")
-                    Text("Latency").tag("latency")
+                Stepper(value: $app.settings.memory.maxInjectedChars, in: 200...20_000, step: 200) {
+                    HStack {
+                        HelpLabel(title: "Injection budget", help: "How many characters of memory go into each request. Pinned facts always go in; the rest are chosen by relevance to your latest message, then recency.")
+                        Spacer()
+                        Text(app.settings.memory.maxInjectedChars.formatted())
+                            .monospacedDigit()
+                            .foregroundStyle(Color.qInk2)
+                    }
                 }
-                Toggle("Allow fallbacks", isOn: Binding(
-                    get: { app.settings.globalSettings.provider?.allowFallbacks ?? true },
-                    set: { v in mutateProvider { $0.allowFallbacks = v } }))
-                Toggle("Require all parameters", isOn: Binding(
-                    get: { app.settings.globalSettings.provider?.requireParameters ?? true },
-                    set: { v in mutateProvider { $0.requireParameters = v } }))
-                Toggle("Deny data collection", isOn: Binding(
-                    get: { app.settings.globalSettings.provider?.denyDataCollection ?? false },
-                    set: { v in mutateProvider { $0.denyDataCollection = v } }))
-            } header: {
-                Text("Providers")
             } footer: {
-                Text("Denying data collection removes some of the cheapest providers.")
+                if !app.models.isEmpty && app.model(app.settings.memory.extractionModelId) == nil {
+                    Text("This model isn't in the catalogue, so extraction and titles will fail until you pick one that exists.")
+                        .foregroundStyle(Color.qDanger)
+                } else {
+                    Text("Each extraction is a small call to the memory model. Turn memory off for a single chat from its settings (incognito).")
+                }
             }
         }
         .scrollContentBackground(.hidden)
         .background(Color.qBase)
-        .navigationTitle("Generation")
+        .navigationTitle("Memory")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $pickDefault) {
-            ModelPickerView(selected: app.settings.defaultModelId) { id in app.settings.defaultModelId = id }
-        }
-        .sheet(isPresented: $pickTitleModel) {
-            ModelPickerView(selected: app.settings.memory.extractionModelId) { id in app.settings.memory.extractionModelId = id }
-        }
-    }
-
-    // MARK: Reasoning bindings
-
-    private var reasoning: ReasoningSettings { app.settings.globalSettings.reasoning ?? ReasoningSettings() }
-
-    private func mutateReasoning(_ f: (inout ReasoningSettings) -> Void) {
-        var r = reasoning
-        f(&r)
-        app.settings.globalSettings.reasoning = r
-    }
-
-    private var reasoningMode: Binding<ReasoningSettings.Mode> {
-        Binding(get: { reasoning.mode }, set: { v in mutateReasoning { $0.mode = v } })
-    }
-    private var reasoningEffort: Binding<ReasoningEffort> {
-        Binding(get: { reasoning.effort ?? .medium }, set: { v in mutateReasoning { $0.effort = v } })
-    }
-    private var reasoningBudget: Binding<Int> {
-        Binding(get: { reasoning.maxTokens ?? ReasoningStyle.detect(app.model(app.settings.defaultModelId)).defaultBudget },
-                set: { v in mutateReasoning { $0.maxTokens = v } })
-    }
-    private var reasoningExclude: Binding<Bool> {
-        Binding(get: { reasoning.exclude }, set: { v in mutateReasoning { $0.exclude = v } })
-    }
-
-    private func mutateWeb(_ f: (inout WebSearchSettings) -> Void) {
-        var w = app.settings.globalSettings.webSearch ?? WebSearchSettings()
-        f(&w)
-        app.settings.globalSettings.webSearch = w
-    }
-
-    private func mutateProvider(_ f: (inout ProviderSettings) -> Void) {
-        var p = app.settings.globalSettings.provider ?? ProviderSettings()
-        f(&p)
-        app.settings.globalSettings.provider = p
-    }
-}
-
-/// A slider that can be switched off, so "unset" (let the provider decide) stays distinct from any value.
-private struct OptionalSlider: View {
-    let title: String
-    @Binding var value: Double?
-    let range: ClosedRange<Double>
-    let step: Double
-    let defaultValue: Double
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Toggle(isOn: Binding(get: { value != nil }, set: { value = $0 ? defaultValue : nil })) {
-                LabeledContent(title) {
-                    Text(value.map { String(format: "%.2f", $0) } ?? "Default").monospacedDigit()
-                }
-            }
-            if let v = value {
-                Slider(value: Binding(get: { v }, set: { value = ($0 / step).rounded() * step }), in: range)
-            }
-        }
-    }
-}
-
-private struct OptionalStepper: View {
-    let title: String
-    @Binding var value: Int?
-    let range: ClosedRange<Int>
-    let step: Int
-    let defaultValue: Int
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Toggle(isOn: Binding(get: { value != nil }, set: { value = $0 ? defaultValue : nil })) {
-                LabeledContent(title) { Text(value.map { Fmt.tokens($0) } ?? "Model limit").monospacedDigit() }
-            }
-            if let v = value {
-                Stepper("Adjust", value: Binding(get: { v }, set: { value = $0 }), in: range, step: step)
-                    .labelsHidden()
-            }
+        .sheet(isPresented: $pickModel) {
+            ModelPickerView(title: "Memory model", selected: app.settings.memory.extractionModelId) { id in app.settings.memory.extractionModelId = id }
         }
     }
 }
@@ -413,27 +766,85 @@ private struct AppearanceSettings: View {
         @Bindable var app = app
         Form {
             Section {
+                ReadingPreview(face: app.settings.ui.readingFace, size: ReadingSize(scale: app.settings.ui.fontScale),
+                               compact: app.settings.ui.density == "compact")
+                    .listRowInsets(EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18))
+            } header: {
+                SectionLabel(text: "Preview")
+            }
+
+            Section {
                 Picker("Theme", selection: $app.settings.ui.theme) {
                     ForEach(ThemeChoice.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
+                .pickerStyle(.segmented)
                 Picker("Reply typeface", selection: $app.settings.ui.readingFace) {
                     ForEach(ReadingFace.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
+                Picker("Reply size", selection: Binding(
+                    get: { ReadingSize(scale: app.settings.ui.fontScale) },
+                    set: { app.settings.ui.fontScale = $0.scale })) {
+                    ForEach(ReadingSize.allCases) { Text($0.label).tag($0) }
+                }
+                Picker("Density", selection: $app.settings.ui.density) {
+                    Text("Comfortable").tag("comfortable")
+                    Text("Compact").tag("compact")
+                }
             } footer: {
-                Text("Text size follows the system setting in Settings → Display & Brightness.")
+                Text("Reply size is relative to the system text size, so it follows Dynamic Type.")
             }
+
             Section {
                 Toggle("Show reasoning by default", isOn: $app.settings.ui.showReasoningByDefault)
                 Toggle("Show costs", isOn: $app.settings.ui.showCosts)
                 Toggle("Haptics", isOn: $app.settings.ui.hapticsEnabled)
+                Toggle("Return sends on a hardware keyboard", isOn: $app.settings.ui.sendOnEnter)
             } footer: {
-                Text("Costs show under replies, in the chat list and in Settings. Reasoning traces stay open while the model is still thinking either way.")
+                Text("Reasoning traces stay open while the model is still thinking either way. With a hardware keyboard, Shift-Return adds a line.")
             }
         }
         .scrollContentBackground(.hidden)
         .background(Color.qBase)
         .navigationTitle("Appearance")
         .navigationBarTitleDisplayMode(.inline)
+        .animation(Motion.standard, value: app.settings.ui)
+    }
+}
+
+/// A live sample of a reply in the chosen face and size.
+private struct ReadingPreview: View {
+    let face: ReadingFace
+    let size: ReadingSize
+    let compact: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 8 : 12) {
+            HStack(spacing: 10) {
+                Text("QUIRE")
+                    .font(.caption2.weight(.semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(Color.qInk2)
+                Rectangle().fill(Color.qRule).frame(height: 1)
+            }
+            Text("A quire is a gathering of sheets folded and bound together, the unit a book is sewn from. Replies here are set like pages: one column, generous leading, and a single accent for what's alive.")
+                .font(.system(.body, design: face.design))
+                .lineSpacing(4)
+                .foregroundStyle(Color.qInk)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 0) {
+                Spacer(minLength: 40)
+                Text("Which typeface reads best?")
+                    .font(.body)
+                    .foregroundStyle(Color.qInk)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .card(radius: 18)
+            }
+        }
+        .environment(\.dynamicTypeSize, size.apply(to: typeSize))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Preview of a reply in \(face.label), \(size.label)")
     }
 }
 
@@ -445,94 +856,142 @@ private struct DataSettings: View {
     @State private var share: SharedFile? = nil
     @State private var importing = false
     @State private var pendingImport: Data? = nil
-    @State private var resultMessage: String? = nil
+    @State private var showImportChoice = false
+    @State private var confirmReplace = false
     @State private var confirmWipe = false
     @State private var busy = false
+    @State private var messageCount = 0
+    @State private var bytes = 0
 
     var body: some View {
         Form {
+            Section {
+                LabeledContent("Chats") { Text("\(app.chats.count)").monospacedDigit() }
+                LabeledContent("Messages") { Text(messageCount.formatted()).monospacedDigit() }
+                LabeledContent("Memory facts") { Text("\(app.memory.count)").monospacedDigit() }
+                LabeledContent("Personas") { Text("\(app.presets.count)").monospacedDigit() }
+                LabeledContent("On this iPhone") { Text(Fmt.bytes(bytes)).monospacedDigit() }
+            } header: {
+                SectionLabel(text: "Storage")
+            } footer: {
+                Text("Kept in Quire's private storage, which iOS includes in your iPhone backups.")
+            }
+
             Section {
                 Toggle("Include API key", isOn: $includeKey)
                 Button {
                     Task {
                         busy = true
                         defer { busy = false }
-                        do { share = SharedFile(url: try await app.exportBackup(includeKey: includeKey)) }
-                        catch { resultMessage = error.localizedDescription }
+                        do {
+                            share = SharedFile(url: try await app.exportBackup(includeKey: includeKey))
+                            Haptics.success()
+                        } catch {
+                            app.toasts.show(error.localizedDescription, symbol: "exclamationmark.triangle")
+                        }
                     }
                 } label: {
-                    HStack { Label("Export backup", systemImage: "square.and.arrow.up"); if busy { Spacer(); ProgressView() } }
+                    HStack {
+                        Label("Export everything", systemImage: "square.and.arrow.up")
+                        if busy { Spacer(); ProgressView() }
+                    }
                 }
-                Button { importing = true } label: { Label("Import backup", systemImage: "square.and.arrow.down") }
+                Button { importing = true } label: { Label("Import a backup", systemImage: "square.and.arrow.down") }
             } header: {
-                Text("Backup")
+                SectionLabel(text: "Backup")
             } footer: {
-                Text(exportFooter)
-            }
-
-            Section("Storage") {
-                LabeledContent("Chats", value: "\(app.chats.count)")
-                LabeledContent("On this device", value: Fmt.bytes(app.store.diskUsage()))
+                Text(backupFooter)
             }
 
             Section {
-                Button("Erase everything", role: .destructive) { confirmWipe = true }
+                Button {
+                    Task {
+                        await app.clearModelCache()
+                        app.toasts.show("Model list refreshed", symbol: "arrow.clockwise")
+                    }
+                } label: { Label("Refresh the model catalogue", systemImage: "arrow.clockwise") }
+                Button(role: .destructive) { confirmWipe = true } label: { Label("Erase everything", systemImage: "trash") }
+            } header: {
+                SectionLabel(text: "Maintenance")
             } footer: {
-                Text("Deletes every chat, the key and all settings from this device.")
+                Text("Erasing removes every chat, persona, memory fact, setting and the key from this iPhone.")
             }
         }
         .scrollContentBackground(.hidden)
         .background(Color.qBase)
-        .navigationTitle("Data")
+        .navigationTitle("Data & backup")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(item: $share) { f in ShareSheet(items: [f.url]) }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .data]) { result in
-            switch result {
-            case .success(let url):
-                let scoped = url.startAccessingSecurityScopedResource()
-                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                do { pendingImport = try Data(contentsOf: url) }
-                catch { resultMessage = error.localizedDescription }
-            case .failure(let e):
-                resultMessage = e.localizedDescription
+        .task { await measure() }
+        .sheet(item: $share) { f in ShareSheet(items: [f.url]).presentationDetents([.medium, .large]) }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
+            guard case .success(let url) = result else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            if let data = try? Data(contentsOf: url) {
+                pendingImport = data
+                showImportChoice = true
+            } else {
+                app.toasts.show("Couldn't read that file", symbol: "exclamationmark.triangle")
             }
         }
-        .confirmationDialog("Import backup", isPresented: Binding(get: { pendingImport != nil }, set: { if !$0 { pendingImport = nil } }), titleVisibility: .visible) {
+        .confirmationDialog("Import backup", isPresented: $showImportChoice, titleVisibility: .visible) {
             Button("Merge with what's here") { runImport(replace: false) }
-            Button("Replace everything", role: .destructive) { runImport(replace: true) }
+            Button("Replace everything", role: .destructive) {
+                // Let the dialog finish dismissing before the confirmation sheet comes up.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(350))
+                    confirmReplace = true
+                }
+            }
             Button("Cancel", role: .cancel) { pendingImport = nil }
         } message: {
-            Text("Merging keeps your chats and adds or updates the ones in the file. Replacing deletes what's here first.")
+            Text("Merging adds chats from the file and updates ones with the same id. Replacing deletes what's here first.")
         }
-        .confirmationDialog("Erase everything?", isPresented: $confirmWipe, titleVisibility: .visible) {
-            Button("Erase", role: .destructive) { Task { await app.wipeEverything() } }
-        } message: {
-            Text("This can't be undone. Export a backup first if you might want these chats.")
+        .sheet(isPresented: $confirmReplace, onDismiss: { if pendingImport != nil { pendingImport = nil } }) {
+            TypedConfirmSheet(title: "Replace everything?",
+                              message: "Chats, memory and personas on this iPhone are deleted first, then the backup is restored.",
+                              word: "replace", actionLabel: "Replace") {
+                runImport(replace: true)
+            }
         }
-        .alert("Backup", isPresented: Binding(get: { resultMessage != nil }, set: { if !$0 { resultMessage = nil } })) {
-            Button("OK", role: .cancel) { resultMessage = nil }
-        } message: {
-            Text(resultMessage ?? "")
+        .sheet(isPresented: $confirmWipe) {
+            TypedConfirmSheet(title: "Erase everything?",
+                              message: "Chats, memory, personas, settings and the API key on this iPhone are erased. Export first if you want any of it.",
+                              word: "erase", actionLabel: "Erase") {
+                Task { await app.wipeEverything() }
+            }
         }
     }
 
-    private var exportFooter: String {
-        var s = "A JSON file in the same format as the Quire web app, so backups move between the two in either direction."
+    private var backupFooter: String {
+        var s = "A JSON file in the Quire web app's format, so backups move between the two in either direction."
         if let last = app.settings.lastExportAt, last > 0 {
             s += " Last export: \(Date(timeIntervalSince1970: last / 1000).formatted(date: .abbreviated, time: .omitted))."
+        } else {
+            s += " Never exported."
         }
         return s
+    }
+
+    private func measure() async {
+        await app.store.flush()
+        bytes = app.store.diskUsage()
+        messageCount = app.chats.reduce(0) { $0 + app.allMessages($1.id).count }
     }
 
     private func runImport(replace: Bool) {
         guard let data = pendingImport else { return }
         pendingImport = nil
+        confirmReplace = false
         Task {
             do {
                 let r = try await app.importBackup(data, replace: replace)
-                resultMessage = "Imported \(r.chats) chats and \(r.messages) messages."
+                Haptics.success()
+                app.toasts.show("Imported \(r.chats) chats, \(r.messages) messages, \(r.memory) facts", symbol: "checkmark")
+                await measure()
             } catch {
-                resultMessage = error.localizedDescription
+                Haptics.warning()
+                app.toasts.show(error.localizedDescription, symbol: "exclamationmark.triangle")
             }
         }
     }
@@ -541,6 +1000,8 @@ private struct DataSettings: View {
 // MARK: - About
 
 private struct AboutView: View {
+    @Environment(AppModel.self) private var app
+
     private var version: String {
         let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         let b = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
@@ -548,20 +1009,49 @@ private struct AboutView: View {
     }
 
     var body: some View {
-        Form {
+        List {
             Section {
-                LabeledContent("Version", value: version)
-                Link("OpenRouter activity", destination: URL(string: "https://openrouter.ai/activity")!)
+                VStack(spacing: 14) {
+                    QuireMark(width: 64, breathing: true)
+                    Text("Quire")
+                        .font(.system(.title, design: .serif).weight(.bold))
+                        .foregroundStyle(Color.qInk)
+                    Text("A gathering of sheets, bound together.")
+                        .font(.system(.subheadline, design: .serif).italic())
+                        .foregroundStyle(Color.qInk2)
+                    Text("Version \(version)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(Color.qInk2)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 18)
             }
-            Section("Privacy") {
-                Text("No accounts, no analytics. Chats and settings stay on this iPhone; the key is in the Keychain. The only network traffic is to OpenRouter (or the base URL you set).")
-                    .font(.footnote)
+            .listRowBackground(Color.clear)
+
+            Section {
+                Label("No accounts, no analytics, no server.", systemImage: "hand.raised")
+                Label("Chats, memory and settings stay on this iPhone.", systemImage: "iphone")
+                Label("The key lives in the Keychain.", systemImage: "key")
+                Label("The only network traffic is to OpenRouter, or the base URL you set.", systemImage: "network")
+            } header: {
+                SectionLabel(text: "Privacy")
             }
-            Section("Not in this build yet") {
-                Text("Memory, personas, folders, editing a sent message, and the full parameter editor. Personas and memory imported from the web app are kept and exported again unchanged.")
-                    .font(.footnote)
+            .font(.subheadline)
+            .foregroundStyle(Color.qInk)
+            .listRowBackground(Color.qRaised)
+
+            Section {
+                LabeledContent("Models in catalogue") { Text("\(app.models.count)").monospacedDigit() }
+                LabeledContent("Catalogue updated") {
+                    Text(app.catalogueFetchedAt > 0 ? Fmt.relative(app.catalogueFetchedAt) : "Never")
+                }
+                Link(destination: URL(string: "https://openrouter.ai/activity")!) {
+                    Label("OpenRouter activity", systemImage: "arrow.up.right.square")
+                }
             }
+            .listRowBackground(Color.qRaised)
         }
+        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(Color.qBase)
         .navigationTitle("About")

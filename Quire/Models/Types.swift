@@ -428,6 +428,8 @@ nonisolated struct AppSettings: Codable, Hashable, Sendable {
     var messagesSinceExport: Int?
     var keyMeta: KeyMeta?
     var seenModelIds: [String]?
+    /// iOS only: when the backup reminder was last put off.
+    var exportNudgeSnoozedUntil: Double?
 
     init() {
         defaultModelId = DefaultModels.chat.id
@@ -460,6 +462,7 @@ nonisolated struct AppSettings: Codable, Hashable, Sendable {
         messagesSinceExport = c.lenient(.messagesSinceExport, 0)
         keyMeta = c.lenient(.keyMeta, nil)
         seenModelIds = c.lenient(.seenModelIds, [])
+        exportNudgeSnoozedUntil = c.lenient(.exportNudgeSnoozedUntil, nil)
     }
 }
 
@@ -472,6 +475,8 @@ nonisolated struct ModelPricing: Codable, Hashable, Sendable {
     var image: String
     var webSearch: String
     var internalReasoning: String
+    var cacheRead: String?
+    var cacheWrite: String?
 }
 
 nonisolated struct ORModel: Codable, Identifiable, Hashable, Sendable {
@@ -487,6 +492,8 @@ nonisolated struct ORModel: Codable, Identifiable, Hashable, Sendable {
     var maxCompletionTokens: Int?
     var isModerated: Bool
     var supportedParameters: [String]
+    var tokenizer: String?
+    var topContextLength: Int?
 
     var provider: String { id.split(separator: "/", maxSplits: 1).first.map(String.init) ?? "" }
     var shortName: String {
@@ -497,6 +504,20 @@ nonisolated struct ORModel: Codable, Identifiable, Hashable, Sendable {
     var acceptsFiles: Bool { inputModalities.contains("file") }
     var supportsReasoning: Bool { supportedParameters.contains("reasoning") || supportedParameters.contains("include_reasoning") }
     var isFree: Bool { Pricing.parse(pricing.prompt) == 0 && Pricing.parse(pricing.completion) == 0 }
+    var supportsTools: Bool { supportedParameters.contains("tools") }
+    var supportsStructured: Bool { supportedParameters.contains("structured_outputs") || supportedParameters.contains("response_format") }
+
+    nonisolated enum PriceBand: String, Sendable { case free, cheap, mid, premium }
+
+    /// The PWA's bands, by price per million tokens.
+    var priceBand: PriceBand {
+        let c = Pricing.parse(pricing.completion) * 1_000_000
+        let p = Pricing.parse(pricing.prompt) * 1_000_000
+        if c == 0 && p == 0 { return .free }
+        if c <= 1.5 && p <= 0.5 { return .cheap }
+        if c <= 12 && p <= 4 { return .mid }
+        return .premium
+    }
 }
 
 nonisolated struct Catalogue: Codable, Sendable {
@@ -533,3 +554,147 @@ nonisolated enum DefaultModels {
     static let chat = ModelHint(id: "deepseek/deepseek-v4-flash-0731", pattern: "deepseek.*v4.*flash", previous: ["anthropic/claude-sonnet-4"])
     static let extraction = ModelHint(id: "z-ai/glm-5.3-flash", pattern: "glm.*5\\.3.*flash", previous: ["openai/gpt-4o-mini"])
 }
+
+// MARK: - Personas, memory, folders
+
+/// A saved system prompt, optionally with its own model and partial generation settings.
+/// The PWA calls these presets in code and personas in the interface.
+nonisolated struct Preset: Codable, Identifiable, Hashable, Sendable {
+    var id: String
+    var name: String
+    var systemPrompt: String
+    var modelId: String?
+    var settings: GenerationSettings
+    var icon: String?
+    var createdAt: Double
+
+    init(id: String = newID(), name: String = "", systemPrompt: String = "", modelId: String? = nil,
+         settings: GenerationSettings = GenerationSettings(), icon: String? = nil, createdAt: Double = nowMs()) {
+        self.id = id; self.name = name; self.systemPrompt = systemPrompt; self.modelId = modelId
+        self.settings = settings; self.icon = icon; self.createdAt = createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.lenient(.id, newID())
+        name = c.lenient(.name, "Persona")
+        systemPrompt = c.lenient(.systemPrompt, "")
+        modelId = c.lenient(.modelId, nil)
+        settings = c.lenient(.settings, GenerationSettings())
+        icon = c.lenient(.icon, nil)
+        createdAt = c.lenient(.createdAt, nowMs())
+    }
+}
+
+nonisolated enum MemoryCategory: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
+    case identity, preference, project, relationship, context
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .identity: "Identity"
+        case .preference: "Preferences"
+        case .project: "Projects"
+        case .relationship: "Relationships"
+        case .context: "Context"
+        }
+    }
+    var singular: String {
+        switch self {
+        case .identity: "Identity"
+        case .preference: "Preference"
+        case .project: "Project"
+        case .relationship: "Relationship"
+        case .context: "Context"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .identity: "person.text.rectangle"
+        case .preference: "heart.text.square"
+        case .project: "hammer"
+        case .relationship: "person.2"
+        case .context: "globe.desk"
+        }
+    }
+}
+
+nonisolated struct MemoryEntry: Codable, Identifiable, Hashable, Sendable {
+    var id: String
+    var text: String
+    var category: MemoryCategory
+    var createdAt: Double
+    var updatedAt: Double
+    var sourceChatId: String?
+    var sourceMessageId: String?
+    var pinned: Bool
+    var disabled: Bool
+
+    init(id: String = newID(), text: String, category: MemoryCategory, sourceChatId: String? = nil, sourceMessageId: String? = nil) {
+        let now = nowMs()
+        self.id = id; self.text = text; self.category = category; self.createdAt = now; self.updatedAt = now
+        self.sourceChatId = sourceChatId; self.sourceMessageId = sourceMessageId; self.pinned = false; self.disabled = false
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.lenient(.id, newID())
+        text = c.lenient(.text, "")
+        category = c.lenient(.category, .context)
+        createdAt = c.lenient(.createdAt, nowMs())
+        updatedAt = c.lenient(.updatedAt, createdAt)
+        sourceChatId = c.lenient(.sourceChatId, nil)
+        sourceMessageId = c.lenient(.sourceMessageId, nil)
+        pinned = c.lenient(.pinned, false)
+        disabled = c.lenient(.disabled, false)
+    }
+}
+
+nonisolated struct Folder: Codable, Identifiable, Hashable, Sendable {
+    var id: String
+    var name: String
+    var createdAt: Double
+    var order: Int
+    var collapsed: Bool?
+
+    init(id: String = newID(), name: String, order: Int) {
+        self.id = id; self.name = name; self.createdAt = nowMs(); self.order = order
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.lenient(.id, newID())
+        name = c.lenient(.name, "Folder")
+        createdAt = c.lenient(.createdAt, nowMs())
+        order = c.lenient(.order, 0)
+        collapsed = c.lenient(.collapsed, nil)
+    }
+}
+
+extension GenerationSettings {
+    /// True when nothing is set, so an override struct can be dropped entirely.
+    nonisolated var isEmpty: Bool { self == GenerationSettings() }
+
+    /// How many fields are set, for "Reset 3" buttons.
+    nonisolated var setCount: Int {
+        var n = 0
+        if temperature != nil { n += 1 }
+        if topP != nil { n += 1 }
+        if topK != nil { n += 1 }
+        if frequencyPenalty != nil { n += 1 }
+        if presencePenalty != nil { n += 1 }
+        if repetitionPenalty != nil { n += 1 }
+        if minP != nil { n += 1 }
+        if topA != nil { n += 1 }
+        if seed != nil { n += 1 }
+        if maxTokens != nil { n += 1 }
+        if stop != nil { n += 1 }
+        if stream != nil { n += 1 }
+        if reasoning != nil { n += 1 }
+        if provider != nil { n += 1 }
+        if webSearch != nil { n += 1 }
+        if transforms != nil { n += 1 }
+        if fallbackModels != nil { n += 1 }
+        return n
+    }
+}
+

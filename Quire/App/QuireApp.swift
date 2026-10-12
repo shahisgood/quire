@@ -5,6 +5,10 @@ struct QuireApp: App {
     @State private var app = AppModel()
     @Environment(\.scenePhase) private var phase
 
+    init() {
+        NavigationTypography.apply()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -32,9 +36,13 @@ struct RootView: View {
                     switch route {
                     case .chat(let id): ChatScreen(chatId: id)
                     case .settings: SettingsView()
+                    case .section(let s): SettingsSectionView(section: s)
+                    case .memory: MemoryView()
                     }
                 }
         }
+        .overlay(alignment: .top) { ToastOverlay(center: app.toasts) }
+        .background(Color.qBase.ignoresSafeArea())
     }
 }
 
@@ -50,6 +58,7 @@ struct ChatScreen: View {
         Group {
             if let session {
                 ChatView(session: session)
+                    .id(session.chat.id)
             } else if resolved {
                 ContentUnavailableView("Chat not found", systemImage: "text.bubble",
                                        description: Text("It may have been deleted."))
