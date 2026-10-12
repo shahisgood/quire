@@ -1,12 +1,12 @@
 import SwiftUI
 
-// Small pieces shared by the composer, the model picker and the empty chat: provider marks, the
+// Small pieces shared by the composer, the model picker and the empty chat: provider names, the
 // sliding segmented control, toggle chips, the context ring, entrance motion and the greeting.
 
 // MARK: - Providers
 
-/// Display names and colours for OpenRouter's provider prefixes ("openai/…", "deepseek/…").
-enum ProviderStyle {
+/// Display names for OpenRouter's provider prefixes ("openai/…", "deepseek/…").
+nonisolated enum ProviderStyle {
     private static let names: [String: String] = [
         "openai": "OpenAI", "anthropic": "Anthropic", "google": "Google", "meta-llama": "Meta",
         "mistralai": "Mistral", "deepseek": "DeepSeek", "x-ai": "xAI", "qwen": "Qwen",
@@ -20,38 +20,9 @@ enum ProviderStyle {
         "cognitivecomputations": "Cognitive", "eleutherai": "EleutherAI", "allenai": "Ai2", "stepfun-ai": "StepFun",
     ]
 
-    private static let palette: [Color] = [
-        .qTileBlue, .qTileTeal, .qTileViolet, .qTileAmber, .qTileRose, .qTileSlate,
-        Color(light: 0x2F6B8F, dark: 0x4A86A8), Color(light: 0x7A5C2E, dark: 0x9C7A45),
-    ]
-
     static func displayName(_ id: String) -> String {
         if let n = names[id] { return n }
         return id.split(separator: "-").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
-    }
-
-    static func initial(_ id: String) -> String { String(displayName(id).prefix(1)).uppercased() }
-
-    /// Stable across launches (unlike `hashValue`), so a provider keeps its colour.
-    static func color(_ id: String) -> Color {
-        var h: UInt64 = 5381
-        for b in id.utf8 { h = (h &* 33) &+ UInt64(b) }
-        return palette[Int(h % UInt64(palette.count))]
-    }
-}
-
-/// A provider's monogram: one letter on that provider's colour, the same everywhere it appears.
-struct ProviderMark: View {
-    let provider: String
-    var size: CGFloat = 32
-
-    var body: some View {
-        Text(ProviderStyle.initial(provider))
-            .font(.system(size: size * 0.46, weight: .semibold, design: .rounded))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(ProviderStyle.color(provider).gradient, in: .rect(cornerRadius: size * 0.3, style: .continuous))
-            .accessibilityHidden(true)
     }
 }
 

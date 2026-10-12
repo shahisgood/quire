@@ -433,7 +433,6 @@ private struct EmptyChatView: View {
         Button(action: openModels) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
-                    ProviderMark(provider: provider, size: 40)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(app.modelName(session.chat.modelId))
                             .font(.headline)

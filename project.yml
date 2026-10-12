@@ -11,7 +11,7 @@ options:
 settings:
   base:
     MARKETING_VERSION: "1.0.1"
-    CURRENT_PROJECT_VERSION: "2"
+    CURRENT_PROJECT_VERSION: "3"
     # Swift 5 language mode for the first builds: concurrency diagnostics are warnings rather than
     # errors while the port settles. Flip to "6.0" once the build log is clean (see DECISIONS.md).
     SWIFT_VERSION: "5.0"

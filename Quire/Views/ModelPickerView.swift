@@ -81,6 +81,7 @@ struct ModelPickerView: View {
     @State private var provider: String? = nil
     @State private var onlyNew = false
     @State private var card: ORModel? = nil
+    @Namespace private var providerSpace
 
     private struct ProviderCount: Identifiable {
         let id: String
@@ -188,9 +189,9 @@ struct ModelPickerView: View {
 
     private var filterPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            providerStrip
             abilityRow
             VStack(spacing: 8) {
+                filterLine("Provider") { providerTrack }
                 filterLine("Price") {
                     SlidingSegments(options: PriceFilter.allCases.map { (value: $0, label: $0.label) }, selection: $price)
                 }
@@ -215,62 +216,58 @@ struct ModelPickerView: View {
         }
     }
 
-    /// Every provider as a monogram, busiest first. Tap one to narrow to it; tap again for all.
-    private var providerStrip: some View {
+    /// Providers by name, busiest first, in the same track as price and context but scrolling
+    /// sideways. The highlight slides to the one you tap; tap it again (or All) to clear it.
+    private var providerTrack: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 10) {
-                providerItem(nil, count: app.models.count)
-                ForEach(providers) { p in providerItem(p.id, count: p.count) }
+            HStack(spacing: 2) {
+                providerSegment(nil, count: app.models.count)
+                ForEach(providers) { p in providerSegment(p.id, count: p.count) }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 6)
+            .padding(3)
+            .background(Color.qRaised, in: .capsule)
+            .overlay(Capsule().strokeBorder(Color.qRule, lineWidth: 1))
         }
+        .contentMargins(.horizontal, 10, for: .scrollContent)
+        // Soft edges say "there's more this way" without a scroll bar.
+        .mask {
+            LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.05),
+                                   .init(color: .black, location: 0.95), .init(color: .clear, location: 1)],
+                           startPoint: .leading, endPoint: .trailing)
+        }
+        .padding(.horizontal, -10)
     }
 
-    private func providerItem(_ p: String?, count: Int) -> some View {
+    private func providerSegment(_ p: String?, count: Int) -> some View {
         let on = provider == p
-        let name = p.map(ProviderStyle.displayName) ?? "All"
+        let name = p.map { ProviderStyle.displayName($0) } ?? "All"
         return Button {
             Haptics.selection()
             withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy) {
                 provider = (p == nil || on) ? nil : p
             }
         } label: {
-            VStack(spacing: 6) {
-                Group {
-                    if let p {
-                        ProviderMark(provider: p, size: 46)
-                    } else {
-                        Image(systemName: "square.grid.2x2.fill")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(on ? Color.qOnAccent : Color.qInk2)
-                            .frame(width: 46, height: 46)
-                            .background((on ? Color.qAccent : Color.qRaised).gradient, in: .rect(cornerRadius: 14, style: .continuous))
-                    }
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 17, style: .continuous)
-                        .strokeBorder(Color.qAccent, lineWidth: 2)
-                        .padding(-4)
-                        .opacity(on && p != nil ? 1 : 0)
-                        .scaleEffect(on ? 1 : 0.9)
-                }
-                .scaleEffect(on && p != nil ? 1.04 : 1)
-                VStack(spacing: 1) {
-                    Text(name)
-                        .font(.caption2.weight(on ? .semibold : .medium))
-                        .foregroundStyle(on ? Color.qInk : Color.qInk2)
-                        .lineLimit(1)
-                    Text("\(count)")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(Color.qInk2.opacity(0.7))
+            HStack(spacing: 5) {
+                Text(name)
+                    .font(.footnote.weight(on ? .semibold : .medium))
+                Text("\(count)")
+                    .font(.caption2.monospacedDigit())
+                    .opacity(0.7)
+            }
+            .foregroundStyle(on ? Color.qOnAccent : Color.qInk2)
+            .lineLimit(1)
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .background {
+                if on {
+                    Capsule()
+                        .fill(Color.qAccent.gradient)
+                        .matchedGeometryEffect(id: "provider", in: providerSpace)
                 }
             }
-            .frame(width: 62)
-            .opacity(provider == nil || on ? 1 : 0.5)
-            .contentShape(.rect)
+            .contentShape(.capsule)
         }
-        .buttonStyle(.pressable)
+        .buttonStyle(.plain)
         .accessibilityLabel("\(p == nil ? "All providers" : name), \(count) models")
         .accessibilityAddTraits(on ? .isSelected : [])
     }
@@ -366,7 +363,6 @@ struct ModelPickerView: View {
         let isFav = app.settings.favouriteModelIds.contains(m.id)
         return Button { pick(m.id) } label: {
             HStack(alignment: .center, spacing: 12) {
-                ProviderMark(provider: m.provider, size: 36)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(m.shortName)
@@ -383,7 +379,9 @@ struct ModelPickerView: View {
                         }
                     }
                     HStack(spacing: 6) {
-                        Text("\(Fmt.context(m.contextLength)) context")
+                        Text(ProviderStyle.displayName(m.provider))
+                        Text("·")
+                        Text(Fmt.context(m.contextLength))
                         Text("·")
                         if m.isFree {
                             Text("Free").foregroundStyle(Color.qTileTeal)
