@@ -22,6 +22,8 @@ struct ChatView: View {
 
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var pinned = true
+    @State private var atBottom = true
+    @State private var userScrolling = false
     @State private var visibleCount = 40
     @State private var flashId: String? = nil
 
@@ -77,12 +79,19 @@ struct ChatView: View {
         .defaultScrollAnchor(.bottom)
         .scrollDismissesKeyboard(.interactively)
         .background(Color.qBase)
-        // "Pinned" means near the bottom. Only while pinned does new text move the viewport; scrolling
-        // up to read stops the follow, as in the PWA, and a "Latest" pill brings it back.
+        // "Pinned" means following the bottom. Only while pinned does new text move the viewport;
+        // scrolling up to read stops the follow, as in the PWA, and a "Latest" pill brings it back.
+        // Only the reader's own scrolling un-pins: when a message is sent, the rows grow while the
+        // scroll to the bottom is still animating, and treating that as "scrolled away" left the
+        // pill stuck on screen at the bottom of the chat.
         .onScrollGeometryChange(for: Bool.self) { geo in
             geo.contentOffset.y + geo.containerSize.height >= geo.contentSize.height - 60
-        } action: { _, atBottom in
-            if pinned != atBottom { pinned = atBottom }
+        } action: { _, near in
+            atBottom = near
+            if near { pinned = true } else if userScrolling { pinned = false }
+        }
+        .onScrollPhaseChange { _, phase in
+            userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
         }
         .onChange(of: session.streamContent) { if pinned { position.scrollTo(edge: .bottom) } }
         .onChange(of: session.streamReasoning) { if pinned { position.scrollTo(edge: .bottom) } }
@@ -93,7 +102,10 @@ struct ChatView: View {
             }
         }
         .onAppear(perform: jumpToHighlight)
-        .overlay(alignment: .bottom) { jumpPill }
+        .overlay(alignment: .bottom) {
+            ZStack { jumpPill }
+                .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.quick, value: showsJumpPill)
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ComposerView(session: session,
                          openModels: { showModels = true },
@@ -164,9 +176,12 @@ struct ChatView: View {
         )
     }
 
+    /// Never while the bottom is already in view, whatever the follow state says.
+    private var showsJumpPill: Bool { !pinned && !atBottom && !session.path.isEmpty }
+
     @ViewBuilder
     private var jumpPill: some View {
-        if !pinned && !session.path.isEmpty {
+        if showsJumpPill {
             Button {
                 pinned = true
                 withAnimation(reduceMotion ? nil : Motion.standard) { position.scrollTo(edge: .bottom) }

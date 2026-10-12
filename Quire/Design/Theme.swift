@@ -146,6 +146,10 @@ enum Motion {
     static let standard = Animation.smooth(duration: 0.3)
     static let bouncy = Animation.spring(response: 0.38, dampingFraction: 0.78)
     static let sheet = Animation.spring(response: 0.42, dampingFraction: 0.86)
+    /// Full-screen layers sliding across, like a navigation push. No bounce, so it reads as a
+    /// screen moving rather than a toy; leaving is a touch quicker than arriving.
+    static let drawerIn = Animation.smooth(duration: 0.38)
+    static let drawerOut = Animation.smooth(duration: 0.3)
 }
 
 extension View {

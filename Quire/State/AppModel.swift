@@ -48,6 +48,11 @@ final class AppModel {
     /// Navigation, owned here so a cold launch can resume the last chat and search hits can deep-link.
     var path: [Route] = []
 
+    /// Settings opens as its own layer that slides in from the leading edge (the gear sits top-left),
+    /// with its own stack for the sections inside it.
+    var settingsOpen = false
+    var settingsPath: [Route] = []
+
     private static let staleMs: Double = 6 * 60 * 60 * 1000
 
     init() {
@@ -95,14 +100,28 @@ final class AppModel {
     func openChat(_ id: String, highlight: String? = nil) {
         if let highlight { session(for: id)?.highlightId = highlight }
         path = [.chat(id)]
+        closeSettings()
     }
 
     func startNewChat(persona: Preset? = nil, incognito: Bool = false) {
         let s = newChat(persona: persona, incognito: incognito)
         path = [.chat(s.chat.id)]
+        closeSettings()
     }
 
-    func push(_ route: Route) { path.append(route) }
+    /// Pushes onto whichever stack is on screen: the settings layer when it's open, else the main one.
+    func push(_ route: Route) {
+        if settingsOpen { settingsPath.append(route) } else { path.append(route) }
+    }
+
+    /// Always opens at the top of settings, wherever it was left last time.
+    func openSettings() {
+        guard !settingsOpen else { return }
+        settingsPath = []
+        settingsOpen = true
+    }
+
+    func closeSettings() { if settingsOpen { settingsOpen = false } }
 
     // MARK: Sessions
 

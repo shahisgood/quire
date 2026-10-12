@@ -3,6 +3,8 @@ import SwiftUI
 /// Everything Quire will tell a model about you, grouped by kind. Pinned facts always go first;
 /// disabled ones are kept but never sent.
 struct MemoryView: View {
+    /// Off when Memory settings is the screen underneath, where the gear would only lead back.
+    var showsSettingsLink = true
     @Environment(AppModel.self) private var app
     @State private var adding = false
     @State private var newText = ""
@@ -35,8 +37,16 @@ struct MemoryView: View {
                     EmptyState(title: "Nothing remembered yet",
                                message: "Facts you state in chats appear here after a reply. You can add one yourself, too.",
                                showMark: false) {
-                        Button { startAdding() } label: { Label("Add a fact", systemImage: "plus") }
-                            .buttonStyle(.glassProminent)
+                        // An HStack rather than a Label: in a list row a Label's icon is tinted with the
+                        // accent colour, which disappears against this accent-filled button and left
+                        // the title sitting off-centre next to an invisible plus.
+                        Button(action: startAdding) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "plus")
+                                Text("Add a fact")
+                            }
+                        }
+                        .buttonStyle(.glassProminent)
                     }
                     .padding(.vertical, 20)
                 }
@@ -75,13 +85,19 @@ struct MemoryView: View {
         .animation(Motion.standard, value: app.memory)
         .animation(Motion.quick, value: adding)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { app.push(.section(.memory)) } label: { Image(systemName: "gearshape") }
-                    .accessibilityLabel("Memory settings")
+            if showsSettingsLink {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink(value: Route.section(.memory)) { Image(systemName: "gearshape") }
+                        .accessibilityLabel("Memory settings")
+                }
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: startAdding) { Image(systemName: "plus") }
-                    .accessibilityLabel("Add a fact")
+            // Only once there are facts: the empty state carries its own Add button, and with the
+            // form already open there's nothing for this one to do.
+            if !app.memory.isEmpty && !adding {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: startAdding) { Image(systemName: "plus") }
+                        .accessibilityLabel("Add a fact")
+                }
             }
         }
         .sheet(isPresented: $confirmClear) {

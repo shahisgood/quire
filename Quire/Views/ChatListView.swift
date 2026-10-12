@@ -5,6 +5,7 @@ struct ChatListView: View {
     @State private var query = ""
     @State private var hits: [SearchHit] = []
     @State private var searching = false
+    @State private var searchActive = false
     @State private var showArchived = false
     @State private var editMode: EditMode = .inactive
     @State private var selection: Set<String> = []
@@ -35,7 +36,13 @@ struct ChatListView: View {
         .background(Color.qBase)
         .environment(\.editMode, $editMode)
         .navigationTitle(showArchived ? "Archived" : "Quire")
-        .searchable(text: $query, prompt: "Search every message")
+        // Pinned under the title rather than hide-on-scroll: the automatic mode keeps the field out of
+        // navigation transitions and then drops it in once they finish. The placement is explicit so
+        // iOS never moves the field between the top and the bottom bar mid-search, and the toolbar
+        // stays put while searching so settings and the menu are always reachable.
+        .searchable(text: $query, isPresented: $searchActive, placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: "Search every message")
+        .searchPresentationToolbarBehavior(.avoidHidingContent)
         .task(id: query) { await runSearch() }
         .toolbar { toolbarContent }
         .overlay {
@@ -105,8 +112,13 @@ struct ChatListView: View {
                 Button("Done") { withAnimation { editMode = .inactive; selection = [] } }
                     .fontWeight(.semibold)
             } else {
-                NavigationLink(value: Route.settings) { Image(systemName: "gearshape") }
-                    .accessibilityLabel("Settings")
+                Button {
+                    searchActive = false
+                    app.openSettings()
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .accessibilityLabel("Settings")
             }
         }
         if !isEditing {
@@ -165,7 +177,9 @@ struct ChatListView: View {
                 .disabled(selection.isEmpty)
             }
         }
-        if !isEditing && !isSearching {
+        // Not tied to search: adding and removing bar items while the search field is active is what
+        // left the toolbar half-empty.
+        if !isEditing {
             ToolbarItem(placement: .status) {
                 statusLine
             }
