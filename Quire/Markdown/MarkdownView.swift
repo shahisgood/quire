@@ -9,17 +9,30 @@ struct MarkdownView: View {
     var design: Font.Design = .serif
     var caret = false
     var compact = false
+    /// For a whole reply: blocks are built as they scroll near, each on its own layer. A very long
+    /// reply drawn as one stack could outgrow the largest layer the GPU will draw, and everything
+    /// past that point rendered as a blank black area.
+    var lazy = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 8 : 12) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { i, block in
-                BlockView(block: block, design: design, caret: caret && i == blocks.count - 1)
-            }
-            if caret && !lastBlockTakesCaret {
-                Caret()
+        Group {
+            if lazy {
+                LazyVStack(alignment: .leading, spacing: compact ? 8 : 12) { content }
+            } else {
+                VStack(alignment: .leading, spacing: compact ? 8 : 12) { content }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        ForEach(Array(blocks.enumerated()), id: \.offset) { i, block in
+            BlockView(block: block, design: design, caret: caret && i == blocks.count - 1)
+        }
+        if caret && !lastBlockTakesCaret {
+            Caret()
+        }
     }
 
     private var lastBlockTakesCaret: Bool {
@@ -253,42 +266,139 @@ private struct TableBlockView: View {
     let alignments: [MDAlign]
     let rows: [[String]]
     let design: Font.Design
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var available: CGFloat = 0
+
+    private let spacing: CGFloat = 18
+    private let inset: CGFloat = 14
 
     var body: some View {
+        // Every column gets an exact width up front, so each row grows to its tallest wrapped cell.
+        // (A Grid with capped widths measured long cells as one line and then drew them wrapped,
+        // which is how rows ended up on top of each other.)
+        let widths = columnWidths
         ScrollView(.horizontal, showsIndicators: false) {
-            Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 10) {
-                GridRow {
-                    ForEach(Array(header.enumerated()), id: \.offset) { i, cell in
-                        Text(Inline.attributed(cell))
-                            .font(.system(.subheadline, design: design).weight(.semibold))
-                            .foregroundStyle(Color.qInk)
-                            .gridColumnAlignment(alignment(i))
+            VStack(alignment: .leading, spacing: 10) {
+                row(header, widths: widths, bold: true)
+                Rectangle().fill(Color.qRule).frame(height: 1)
+                ForEach(Array(rows.enumerated()), id: \.offset) { n, cells in
+                    if n > 0 {
+                        Rectangle().fill(Color.qRule.opacity(0.5)).frame(height: 1)
                     }
-                }
-                Rectangle().fill(Color.qRule).frame(height: 1).gridCellUnsizedAxes(.horizontal)
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                    GridRow {
-                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            Text(Inline.attributed(cell))
-                                .font(.system(.subheadline, design: design))
-                                .foregroundStyle(Color.qInk)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: 260, alignment: .leading)
-                        }
-                    }
+                    row(cells, widths: widths, bold: false)
                 }
             }
-            .padding(14)
+            .padding(inset)
         }
         .card(radius: 12)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { available = $0 }
     }
 
-    private func alignment(_ i: Int) -> HorizontalAlignment {
-        let a: MDAlign = i < alignments.count ? alignments[i] : .leading
-        switch a {
+    private func row(_ cells: [String], widths: [CGFloat], bold: Bool) -> some View {
+        HStack(alignment: .top, spacing: spacing) {
+            ForEach(0..<header.count, id: \.self) { i in
+                Text(Inline.attributed(i < cells.count ? cells[i] : ""))
+                    .font(.system(.subheadline, design: design).weight(bold ? .semibold : .regular))
+                    .foregroundStyle(Color.qInk)
+                    .multilineTextAlignment(textAlignment(i))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: i < widths.count ? widths[i] : 80, alignment: frameAlignment(i))
+            }
+        }
+    }
+
+    /// Natural single-line widths (capped), then, if the table is wider than the message column,
+    /// the widest columns give way until it fits: narrow columns keep their width and the rest share
+    /// what's left. Only a table that still can't fit at a readable width scrolls sideways.
+    private var columnWidths: [CGFloat] {
+        let natural = TableMetrics.naturalWidths(header: header, rows: rows, design: design, size: typeSize)
+        guard available > 0 else { return natural }
+        let target = available - inset * 2 - spacing * CGFloat(max(0, natural.count - 1))
+        return TableMetrics.fit(natural, into: target, floor: 88)
+    }
+
+    private func textAlignment(_ i: Int) -> TextAlignment {
+        switch columnAlignment(i) {
         case .leading: return .leading
         case .center: return .center
         case .trailing: return .trailing
+        }
+    }
+
+    private func frameAlignment(_ i: Int) -> Alignment {
+        switch columnAlignment(i) {
+        case .leading: return .leading
+        case .center: return .center
+        case .trailing: return .trailing
+        }
+    }
+
+    private func columnAlignment(_ i: Int) -> MDAlign {
+        i < alignments.count ? alignments[i] : .leading
+    }
+}
+
+/// Text measurement for tables, with UIKit's metrics at the reading size in effect.
+private enum TableMetrics {
+    static func naturalWidths(header: [String], rows: [[String]], design: Font.Design, size: DynamicTypeSize) -> [CGFloat] {
+        let traits = UITraitCollection(preferredContentSizeCategory: category(size))
+        let base = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits)
+        let regular = font(base, design: design, bold: false)
+        let bold = font(base, design: design, bold: true)
+        return header.indices.map { i in
+            var w = measure(header[i], bold)
+            for r in rows where i < r.count { w = max(w, measure(r[i], regular)) }
+            return min(320, max(48, ceil(w) + 2))
+        }
+    }
+
+    static func fit(_ natural: [CGFloat], into target: CGFloat, floor: CGFloat) -> [CGFloat] {
+        guard target > 0, natural.reduce(0, +) > target else { return natural }
+        var widths = natural
+        var remaining = target
+        var flexible = Array(natural.indices)
+        var changed = true
+        while changed && !flexible.isEmpty {
+            changed = false
+            let share = remaining / CGFloat(flexible.count)
+            for i in flexible where natural[i] <= share {
+                remaining -= natural[i]
+                flexible.removeAll { $0 == i }
+                changed = true
+            }
+        }
+        let share = max(floor, remaining / CGFloat(max(1, flexible.count)))
+        for i in flexible { widths[i] = share }
+        return widths
+    }
+
+    private static func measure(_ cell: String, _ font: UIFont) -> CGFloat {
+        let plain = String(Inline.attributed(cell).characters)
+        return (plain as NSString).size(withAttributes: [.font: font]).width
+    }
+
+    private static func font(_ base: UIFont, design: Font.Design, bold: Bool) -> UIFont {
+        var d = base.fontDescriptor
+        if design == .serif, let serif = d.withDesign(.serif) { d = serif }
+        if bold, let b = d.withSymbolicTraits(.traitBold) { d = b }
+        return UIFont(descriptor: d, size: base.pointSize)
+    }
+
+    private static func category(_ size: DynamicTypeSize) -> UIContentSizeCategory {
+        switch size {
+        case .xSmall: return .extraSmall
+        case .small: return .small
+        case .medium: return .medium
+        case .large: return .large
+        case .xLarge: return .extraLarge
+        case .xxLarge: return .extraExtraLarge
+        case .xxxLarge: return .extraExtraExtraLarge
+        case .accessibility1: return .accessibilityMedium
+        case .accessibility2: return .accessibilityLarge
+        case .accessibility3: return .accessibilityExtraLarge
+        case .accessibility4: return .accessibilityExtraExtraLarge
+        case .accessibility5: return .accessibilityExtraExtraExtraLarge
+        @unknown default: return .large
         }
     }
 }

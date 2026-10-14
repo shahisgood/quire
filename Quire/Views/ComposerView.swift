@@ -81,6 +81,18 @@ struct ComposerView: View {
         .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy, value: showsAction)
         .animation(Motion.quick, value: focused)
         .onChange(of: focused) { _, isFocused in if isFocused { onFocus() } }
+        .onChange(of: session.prefill) { _, new in
+            guard let new else { return }
+            session.prefill = nil
+            // An empty box (or one holding only another starter) takes it; otherwise it leads.
+            let current = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if current.isEmpty || StarterPrompt.all.contains(where: { $0.text == text }) {
+                text = new
+            } else {
+                text = new + text
+            }
+            focused = true
+        }
         .onAppear { text = session.draft }
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 6, matching: .images)
         .onChange(of: photoItems) { _, items in
@@ -170,23 +182,13 @@ struct ComposerView: View {
 
     // MARK: Model and thinking
 
-    /// "DeepSeek V4 Flash · High". Opens a menu: recent and favourite models, the full picker, and
-    /// the thinking level when the model can think.
+    /// "DeepSeek V4 Flash · High". For a model that can think, a short menu: the thinking levels and
+    /// a way into the model picker. For one that can't, a tap goes straight to the picker.
+    @ViewBuilder
     private var modelMenu: some View {
-        Menu {
-            Section("Model") {
-                ForEach(quickModels) { m in
-                    Button {
-                        session.setModel(m.id)
-                        Haptics.selection()
-                    } label: {
-                        if m.id == session.chat.modelId { Label(m.shortName, systemImage: "checkmark") } else { Text(m.shortName) }
-                    }
-                }
-                Button(action: openModels) { Label("All models…", systemImage: "square.grid.2x2") }
-            }
-            if model?.supportsReasoning == true {
-                let style = ReasoningStyle.detect(model)
+        if model?.supportsReasoning == true {
+            let style = ReasoningStyle.detect(model)
+            Menu {
                 Section("Thinking") {
                     if style.canDisable {
                         Button {
@@ -205,45 +207,52 @@ struct ComposerView: View {
                         }
                     }
                 }
+                Button(action: openModels) { Label("Change model…", systemImage: "square.grid.2x2") }
+            } label: {
+                modelPill
             }
-        } label: {
-            HStack(spacing: 5) {
-                Text(app.modelName(session.chat.modelId))
-                    .foregroundStyle(Color.qInk)
-                    .lineLimit(1)
-                    .contentTransition(.opacity)
-                if let t = session.thinkingLabel {
-                    Text(t)
-                        .foregroundStyle(Color.qInk2)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .contentTransition(.opacity)
-                        .transition(.opacity)
-                }
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(Color.qInk2)
-            }
-            .font(.subheadline.weight(.medium))
-            .padding(.horizontal, 12)
-            .frame(height: 34)
-            .background(Color.qInk.opacity(0.08), in: .capsule)
-            .contentShape(.capsule)
-            .animation(Motion.quick, value: session.chat.modelId)
-            .animation(Motion.quick, value: session.thinkingLabel)
+            .accessibilityLabel(modelAccessibilityLabel)
+            .accessibilityHint("Choose a thinking level or change model")
+        } else {
+            Button(action: openModels) { modelPill }
+                .buttonStyle(.pressable)
+                .accessibilityLabel(modelAccessibilityLabel)
+                .accessibilityHint("Change model")
         }
-        .accessibilityLabel("Model: \(app.modelName(session.chat.modelId))\(session.thinkingLabel.map { ", thinking \($0)" } ?? "")")
-        .accessibilityHint("Switch model or thinking level")
+    }
+
+    private var modelPill: some View {
+        HStack(spacing: 5) {
+            Text(app.modelName(session.chat.modelId))
+                .foregroundStyle(Color.qInk)
+                .lineLimit(1)
+                .contentTransition(.opacity)
+            if let t = session.thinkingLabel {
+                Text(t)
+                    .foregroundStyle(Color.qInk2)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .contentTransition(.opacity)
+                    .transition(.opacity)
+            }
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Color.qInk2)
+        }
+        .font(.subheadline.weight(.medium))
+        .padding(.horizontal, 12)
+        .frame(height: 34)
+        .background(Color.qInk.opacity(0.08), in: .capsule)
+        .contentShape(.capsule)
+        .animation(Motion.quick, value: session.chat.modelId)
+        .animation(Motion.quick, value: session.thinkingLabel)
+    }
+
+    private var modelAccessibilityLabel: String {
+        "Model: \(app.modelName(session.chat.modelId))\(session.thinkingLabel.map { ", thinking \($0)" } ?? "")"
     }
 
     private var currentReasoning: ReasoningSettings? { session.effectiveSettings.reasoning }
-
-    /// The current model, then recents and favourites: the handful you actually switch between.
-    private var quickModels: [ORModel] {
-        var seen = Set<String>()
-        let ids = [session.chat.modelId] + app.settings.recentModelIds + app.settings.favouriteModelIds
-        return Array(ids.filter { seen.insert($0).inserted }.compactMap { app.model($0) }.prefix(5))
-    }
 
     @ViewBuilder
     private func checkLabel(_ title: String, on: Bool) -> some View {

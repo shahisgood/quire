@@ -164,7 +164,7 @@ private struct AssistantMessageView: View {
             }
 
             if !content.isEmpty {
-                MarkdownView(blocks: MarkdownCache.blocks(content, live: isStreaming), design: design, caret: isStreaming)
+                MarkdownView(blocks: MarkdownCache.blocks(content, live: isStreaming), design: design, caret: isStreaming, lazy: true)
             }
 
             if !isStreaming { statusBlock }

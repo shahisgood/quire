@@ -12,7 +12,11 @@ Requires **iOS 26**. Built on GitHub's macOS runners, so you don't need a Mac.
 - Branch any message into a new chat, duplicate a chat, share it as Markdown or JSON.
 - Markdown rendered natively: headings, lists, task lists, tables, quotes, rules, and code blocks with syntax colouring and a copy button. Display math is shown as TeX.
 - Attachments from Photos, the camera, Files or the clipboard. Images are resized to 1600 px, as in the web app.
-- A status line in the composer: model, context meter, chat cost. Offline is detected and your draft waits.
+- A composer after Claude's: attach, the model with its thinking level, a context ring (tap for details and the chat's cost), and a send button that appears once there's something to send. Offline is detected and your draft waits.
+- A greeting on every new chat that follows the time of day, with starter prompts (Explain, Write, Summarize, Brainstorm, Code, Plan) that fill the message box without sending.
+- **Live Activity**: leave Quire while a reply is being written and it follows you onto the Lock Screen and into the Dynamic Island (status, timer, tokens, the latest lines); a tap opens the chat. Switch it off under Settings → Appearance.
+- Chats are named a moment after their first message (Settings → Models & generation → Name new chats).
+- Home Screen quick actions: press and hold the icon for New chat, Incognito chat, or one of your two most recent chats.
 - Long-press any message for copy, select text, edit, branch, details (tokens, cost, the exact request sent) and delete.
 
 **Memory**
@@ -67,6 +71,8 @@ Then on the phone:
 
 1. **Settings → General → VPN & Device Management**: trust your Apple ID's developer profile.
 2. **Settings → Privacy & Security → Developer Mode**: turn it on (the phone restarts).
+
+Quire includes a small widget extension (`QuireLive`) that draws the Live Activity. Sideloadly, AltStore and SideStore sign it along with the app; keep it in (don't tick an option to remove app extensions), or the Live Activity won't appear. It needs one extra App ID, which counts toward a free Apple ID's limit of 10 per week.
 
 With a **free Apple ID** the app stops opening after **7 days** and needs re-signing (AltStore and SideStore can do it automatically), and you can have at most 3 sideloaded apps. A paid Apple Developer account ($99/year) signs for a year.
 

@@ -53,7 +53,9 @@ struct ChatView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: density) {
+                // Lazy, so each message is built (and drawn on its own layer) only as it nears the
+                // screen: a long chat in one plain stack could outgrow what the GPU will draw.
+                LazyVStack(alignment: .leading, spacing: density) {
                     if session.path.isEmpty {
                         EmptyChatView(session: session, openModels: { showModels = true }, openSettings: { showSettings = true })
                             .containerRelativeFrame(.vertical, alignment: .center)
@@ -400,6 +402,7 @@ private struct EmptyChatView: View {
                 }
                 modelCard
                     .entrance(shown, delay: 0.14)
+                starters
                 HStack(spacing: 10) {
                     if let p = session.persona {
                         Text("\(p.icon ?? "◦")  \(p.name)")
@@ -413,12 +416,45 @@ private struct EmptyChatView: View {
                     Button(action: openSettings) { Label("Chat settings", systemImage: "slider.horizontal.3") }
                         .buttonStyle(.glass)
                 }
-                .entrance(shown, delay: 0.2)
+                .entrance(shown, delay: 0.46)
             }
             .frame(maxWidth: 380)
             .padding(.horizontal, 20)
             .frame(maxWidth: .infinity)
             .onAppear { shown = true }
+        }
+    }
+
+    /// A few ways in. Each one only fills the message box (and brings up the keyboard); the rest of
+    /// the sentence is yours, and nothing is sent until you send it.
+    private var starters: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+            ForEach(Array(StarterPrompt.all.enumerated()), id: \.element.id) { i, s in
+                Button {
+                    Haptics.selection()
+                    session.prefill = s.text
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: s.symbol)
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Color.qAccent)
+                        Text(s.title)
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(Color.qInk)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 38)
+                    .background(Color.qRaised, in: .capsule)
+                    .overlay(Capsule().strokeBorder(Color.qRule, lineWidth: 1))
+                    .contentShape(.capsule)
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel(s.title)
+                .accessibilityHint("Starts your message with “\(s.text.trimmingCharacters(in: .whitespaces))”")
+                .entrance(shown, delay: 0.2 + Double(i) * 0.04)
+            }
         }
     }
 

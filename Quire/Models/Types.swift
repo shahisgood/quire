@@ -430,6 +430,10 @@ nonisolated struct AppSettings: Codable, Hashable, Sendable {
     var seenModelIds: [String]?
     /// iOS only: when the backup reminder was last put off.
     var exportNudgeSnoozedUntil: Double?
+    /// iOS only: how new chats get their names (nil is Smart).
+    var chatTitles: ChatTitleMode?
+    /// iOS only: a Live Activity while a reply is being written (nil is on).
+    var liveActivities: Bool?
 
     init() {
         defaultModelId = DefaultModels.chat.id
@@ -463,6 +467,26 @@ nonisolated struct AppSettings: Codable, Hashable, Sendable {
         keyMeta = c.lenient(.keyMeta, nil)
         seenModelIds = c.lenient(.seenModelIds, [])
         exportNudgeSnoozedUntil = c.lenient(.exportNudgeSnoozedUntil, nil)
+        chatTitles = c.lenient(.chatTitles, nil)
+        liveActivities = c.lenient(.liveActivities, nil)
+    }
+}
+
+/// How a new chat gets its name.
+nonisolated enum ChatTitleMode: String, Codable, CaseIterable, Hashable, Sendable {
+    /// A short title written by the titles model, right after the first message is sent.
+    case smart
+    /// The opening message itself, trimmed.
+    case firstMessage
+    /// Stays "New chat" until renamed.
+    case off
+
+    var label: String {
+        switch self {
+        case .smart: "Smart"
+        case .firstMessage: "First message"
+        case .off: "Off"
+        }
     }
 }
 

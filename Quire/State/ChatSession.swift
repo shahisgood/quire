@@ -16,6 +16,10 @@ final class ChatSession {
     private(set) var generating = false
     /// Set when the chat is deleted, so late callbacks (cost reconciliation, a sheet closing) can't resurrect it.
     @ObservationIgnored private(set) var deleted = false
+    /// A title request is in flight (so the send-time and reply-time attempts don't race).
+    @ObservationIgnored private var titling = false
+    /// Text for the message box to take (a starter prompt); the composer consumes it and clears it.
+    var prefill: String? = nil
 
     // Live view of the streaming reply, published at most 20 times a second so the message list
     // doesn't re-render per token.
@@ -259,7 +263,8 @@ final class ChatSession {
         let user = Message(chatId: chat.id, parentId: path.last, role: .user, content: trimmed,
                            attachments: attachments.isEmpty ? nil : attachments, createdAt: now, status: .complete)
         let asst = Message(chatId: chat.id, parentId: user.id, role: .assistant, content: "", modelId: chat.modelId, createdAt: now + 1, status: .streaming)
-        if path.isEmpty, chat.title == "New chat" {
+        let opening = path.isEmpty && chat.title == "New chat"
+        if opening && titleMode != .off {
             chat.title = TextUtil.stripMarkdown(trimmed.isEmpty ? (attachments.first?.name ?? "New chat") : trimmed, max: 48)
         }
         messages[user.id] = user
@@ -275,6 +280,10 @@ final class ChatSession {
         saveMessages()
         app.touchRecent(chat.modelId)
         startGeneration(assistantId: asst.id, modelId: chat.modelId)
+        // Name it now from the opening message, rather than after the whole reply has arrived.
+        if opening && !trimmed.isEmpty {
+            Task { [weak self] in await self?.smartTitle(userText: trimmed, assistantText: nil) }
+        }
     }
 
     func stop() { task?.cancel() }
@@ -406,9 +415,31 @@ final class ChatSession {
 
     private func startGeneration(assistantId: String, modelId: String, continueMode: Bool = false) {
         generating = true
+        if app.settings.liveActivities ?? true {
+            ReplyActivities.shared.start(chatId: chat.id, title: activityTitle, model: app.modelName(modelId))
+        }
         task = Task { [weak self] in
             await self?.generate(assistantId: assistantId, modelId: modelId, continueMode: continueMode)
+            // Every way out of a reply (done, stopped, failed, no key, offline, out of background
+            // time) passes here, so the Live Activity always gets its ending.
+            self?.endActivity(assistantId: assistantId)
         }
+    }
+
+    /// Incognito chats don't put their name or words on the Lock Screen.
+    private var activityTitle: String { chat.memoryEnabled ? chat.title : "Incognito chat" }
+
+    private func endActivity(assistantId: String) {
+        let m = messages[assistantId]
+        let phase: ReplyPhase
+        switch m?.status {
+        case .complete?: phase = .done
+        case .interrupted?: phase = m?.error?.message.contains("background") == true ? .paused : .stopped
+        default: phase = .failed
+        }
+        let tokens = m?.usage?.completionTokens ?? Tokens.estimate(m?.content ?? "")
+        ReplyActivities.shared.end(chatId: chat.id, phase: phase, title: activityTitle, tokens: tokens,
+                                   text: chat.memoryEnabled ? (m?.content ?? "") : "")
     }
 
     private func requestMessages(upTo assistantId: String, continueMode: Bool) -> [JSONValue] {
@@ -539,6 +570,10 @@ final class ChatSession {
                 streamCompletionTokens = ct
                 streamReasoningTokens = rt
                 streamEstCost = Double(promptEst) * pPrompt + Double(ct) * pComp + Double(rt) * pReason
+                ReplyActivities.shared.update(chatId: chat.id,
+                                              phase: content.isEmpty ? (reasoning.isEmpty ? .waiting : .thinking) : .writing,
+                                              title: activityTitle, tokens: ct + rt,
+                                              text: chat.memoryEnabled ? content : "")
             }
             if now.timeIntervalSince(lastPersist) > 1.5 {
                 lastPersist = now
@@ -674,7 +709,7 @@ final class ChatSession {
         if status == .complete, let lastUser {
             if chat.titleAuto != false && !continueMode {
                 let userText = lastUser.content
-                Task { [weak self] in await self?.autoTitle(userText: userText, assistantText: finalContent) }
+                Task { [weak self] in await self?.smartTitle(userText: userText, assistantText: finalContent) }
             }
             if chat.memoryEnabled, let final = messages[assistantId] {
                 app.extractor.schedule(app: app, chatId: chat.id, user: lastUser, assistant: final)
@@ -711,25 +746,42 @@ final class ChatSession {
         app.applyCostDelta(chatId: chat.id, delta: (usage.costUsd ?? 0) - prev)
     }
 
-    /// A short title from the first exchange, via the extraction model. Never overwrites a manual rename.
-    private func autoTitle(userText: String, assistantText: String) async {
+    private var titleMode: ChatTitleMode { app.settings.chatTitles ?? .smart }
+
+    /// A short title for the chat, written by the titles model (then this chat's own model, which has
+    /// just been shown to work, if that one fails). Runs as soon as the first message is sent, and
+    /// again after a reply only while the chat still carries its first-message name. Never touches a
+    /// chat you've renamed; if every attempt fails, the first-message name stays.
+    private func smartTitle(userText: String, assistantText: String?) async {
         let fallback = TextUtil.stripMarkdown(userText, max: 48)
-        guard chat.titleAuto != false, chat.title == "New chat" || chat.title == fallback || chat.title.hasSuffix("…") else { return }
-        let body: [String: JSONValue] = [
-            "model": .string(app.settings.memory.extractionModelId),
-            "messages": [
-                ["role": "system", "content": "Write a title for this conversation: two to six words, sentence case, no quotes, no trailing punctuation. Reply with the title only."],
-                ["role": "user", "content": .string("User: \(userText.prefix(1500))\n\nAssistant: \(assistantText.prefix(1500))")],
-            ],
-            "max_tokens": 24,
-            "temperature": 0.3,
-        ]
-        guard let r = try? await app.client.complete(body: body) else { return }
-        var title = r.content.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n").first ?? ""
-        title = title.trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”.*#").union(.whitespaces))
-        guard !title.isEmpty, chat.titleAuto != false, !deleted else { return }
-        chat.title = String(title.prefix(60))
-        saveChat()
+        guard titleMode == .smart, !titling, chat.titleAuto != false,
+              chat.title == "New chat" || chat.title == fallback else { return }
+        titling = true
+        defer { titling = false }
+        var exchange = "User: \(userText.prefix(2000))"
+        if let assistantText, !assistantText.isEmpty { exchange += "\n\nAssistant: \(assistantText.prefix(1500))" }
+        var candidates = [app.settings.memory.extractionModelId]
+        if chat.modelId != candidates[0] { candidates.append(chat.modelId) }
+        for modelId in candidates {
+            let body: [String: JSONValue] = [
+                "model": .string(modelId),
+                "messages": [
+                    ["role": "system", "content": "Write a title for this conversation: two to six words, sentence case, no quotes, no trailing punctuation. Reply with the title only."],
+                    ["role": "user", "content": .string(exchange)],
+                ],
+                "max_tokens": 40,
+                "temperature": 0.3,
+            ]
+            guard let r = try? await app.client.complete(body: body) else { continue }
+            var title = r.content.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n").first ?? ""
+            title = title.trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”.*#").union(.whitespaces))
+            guard !title.isEmpty else { continue }
+            // The chat may have been renamed (or deleted) while we waited.
+            guard chat.titleAuto != false, !deleted, chat.title == "New chat" || chat.title == fallback else { return }
+            chat.title = String(title.prefix(60))
+            saveChat()
+            return
+        }
     }
 
     private static func snapshot(_ body: [String: JSONValue]) -> String {

@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct QuireApp: App {
+    @UIApplicationDelegateAdaptor(QuireAppDelegate.self) private var appDelegate
     @State private var app = AppModel()
     @Environment(\.scenePhase) private var phase
 
@@ -17,8 +18,15 @@ struct QuireApp: App {
                 .tint(Color.qAccent)
                 .onChange(of: app.settings) { app.persistSettings() }
                 .onChange(of: phase) { _, newPhase in
-                    if newPhase == .background { app.didEnterBackground() }
-                    if newPhase == .active { Task { await app.refreshModels() } }
+                    if newPhase == .background {
+                        app.didEnterBackground()
+                        QuickActions.refresh(chats: app.chats)
+                    }
+                    if newPhase == .active {
+                        // Back in Quire: finished replies' Live Activities have done their job.
+                        ReplyActivities.shared.dismissFinished()
+                        Task { await app.refreshModels() }
+                    }
                 }
                 .task { await app.refreshModels() }
         }
@@ -74,6 +82,22 @@ struct RootView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .overlay(alignment: .top) { ToastOverlay(center: app.toasts) }
         .background(Color.qBase.ignoresSafeArea())
+        // Home Screen quick actions, including one that launched the app before this view existed.
+        .onChange(of: QuickActions.shared.pending, initial: true) { _, action in
+            guard let action else { return }
+            QuickActions.shared.pending = nil
+            switch action {
+            case .newChat: app.startNewChat()
+            case .incognito: app.startNewChat(incognito: true)
+            case .open(let id): if app.chat(id) != nil { app.openChat(id) }
+            }
+        }
+        // quire://chat/<id>, from a Live Activity.
+        .onOpenURL { url in
+            guard url.scheme == "quire", url.host == "chat",
+                  let id = url.pathComponents.dropFirst().first, app.chat(id) != nil else { return }
+            app.openChat(id)
+        }
     }
 
     /// Swipe settings away from its trailing edge, the mirror of the system's back swipe. A quick

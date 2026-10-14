@@ -421,12 +421,16 @@ private struct GenerationSettingsView: View {
                 Button { pickTitleModel = true } label: {
                     modelRow("Titles & memory", id: app.settings.memory.extractionModelId, symbol: "text.badge.star", color: .qTileTeal)
                 }
+                Picker("Name new chats", selection: Binding(get: { app.settings.chatTitles ?? .smart },
+                                                             set: { app.settings.chatTitles = $0 })) {
+                    ForEach(ChatTitleMode.allCases, id: \.self) { m in Text(m.label).tag(m) }
+                }
             } footer: {
                 if !app.models.isEmpty && defaultModel == nil {
                     Text("The default model isn't in OpenRouter's catalogue right now. It's still sent as-is; pick another if requests fail.")
                         .foregroundStyle(Color.qDanger)
                 } else {
-                    Text("New chats start with the default model. The second one names chats and extracts memory: a cheap, fast model is best.")
+                    Text("New chats start with the default model. The second one names chats and extracts memory: a cheap, fast model is best. Smart names a chat a moment after its first message; First message uses that message as the name.")
                 }
             }
 
@@ -799,8 +803,10 @@ private struct AppearanceSettings: View {
                 Toggle("Show costs", isOn: $app.settings.ui.showCosts)
                 Toggle("Haptics", isOn: $app.settings.ui.hapticsEnabled)
                 Toggle("Return sends on a hardware keyboard", isOn: $app.settings.ui.sendOnEnter)
+                Toggle("Live Activity while replying", isOn: Binding(get: { app.settings.liveActivities ?? true },
+                                                                       set: { app.settings.liveActivities = $0 }))
             } footer: {
-                Text("Reasoning traces stay open while the model is still thinking either way. With a hardware keyboard, Shift-Return adds a line.")
+                Text("Reasoning traces stay open while the model is still thinking either way. With a hardware keyboard, Shift-Return adds a line. The Live Activity follows a reply on the Lock Screen and in the Dynamic Island when you leave Quire.")
             }
         }
         .scrollContentBackground(.hidden)

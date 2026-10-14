@@ -239,3 +239,23 @@ struct LiveDot: View {
         }
     }
 }
+
+// MARK: - Starter prompts
+
+/// The openings offered on an empty chat. Tapping one only fills the message box; you finish the
+/// sentence and send it yourself.
+struct StarterPrompt: Identifiable, Hashable {
+    let title: String
+    let symbol: String
+    let text: String
+    var id: String { title }
+
+    static let all: [StarterPrompt] = [
+        StarterPrompt(title: "Explain", symbol: "lightbulb", text: "Explain "),
+        StarterPrompt(title: "Write", symbol: "pencil.line", text: "Help me write "),
+        StarterPrompt(title: "Summarize", symbol: "text.alignleft", text: "Summarize this: "),
+        StarterPrompt(title: "Brainstorm", symbol: "sparkles", text: "Brainstorm ideas for "),
+        StarterPrompt(title: "Code", symbol: "chevron.left.forwardslash.chevron.right", text: "Write code that "),
+        StarterPrompt(title: "Plan", symbol: "checklist", text: "Help me plan "),
+    ]
+}
