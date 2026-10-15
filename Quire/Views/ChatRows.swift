@@ -3,8 +3,8 @@ import SwiftUI
 // A chat as a row in a list, with its swipe actions and menu, shared by the chat list and project
 // screens. The alerts and sheets a row can ask for live on the screen, through `ListSheets`.
 
-/// The screen-level prompts behind a list of chats: rename, delete, share, the project editor and
-/// deleting a project.
+/// The screen-level prompts behind a list of chats: rename, delete, share, the project editor, a
+/// project's instructions, and deleting a project.
 @Observable
 final class ListSheets {
     var renaming: Chat? = nil
@@ -12,7 +12,13 @@ final class ListSheets {
     var deletingChats: Set<String>? = nil
     var share: SharedFile? = nil
     var editor: ProjectEditorRequest? = nil
+    var instructionsFor: Project? = nil
     var deletingProject: Project? = nil
+    /// What to do once the editor sheet has finished closing: open the project it just made, or
+    /// ask about deleting the one it was editing. Done then, not straight away, so a push or a
+    /// dialog never starts while the sheet is still on its way down.
+    var openWhenClosed: String? = nil
+    var deleteWhenClosed: Project? = nil
 
     func rename(_ chat: Chat) {
         renameText = chat.title
@@ -78,7 +84,10 @@ struct ChatListRow: View {
                 Label(chat.archived ? "Unarchive" : "Archive", systemImage: "archivebox")
             }
             .tint(Color.qTileSlate)
-            Button(role: .destructive) { sheets.deletingChats = [chat.id] } label: { Label("Delete", systemImage: "trash") }
+            // Not role: .destructive. That role tells the list the row is already gone, but deleting
+            // asks first; the list and the data then disagree, and the app crashes.
+            Button { sheets.deletingChats = [chat.id] } label: { Label("Delete", systemImage: "trash") }
+                .tint(.red)
         }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button { ChatOps.togglePin(app, chat) } label: {
@@ -184,19 +193,16 @@ private struct ListSheetsHost: ViewModifier {
                 Text("Every message and branch is removed from this iPhone. This can't be undone.")
             }
             .sheet(item: $sheets.share) { f in ShareSheet(items: [f.url]).presentationDetents([.medium, .large]) }
-            .sheet(item: $sheets.editor) { r in
-                ProjectEditor(project: r.project, focusInstructions: r.focusInstructions,
+            .sheet(item: $sheets.editor, onDismiss: editorClosed) { r in
+                ProjectEditor(project: r.project,
                               newTint: .suggested(after: app.folders.count),
                               onSave: { p in saved(p, request: r) },
                               onDelete: { p in
+                                  sheets.deleteWhenClosed = p
                                   sheets.editor = nil
-                                  // Let the sheet go before the confirmation comes up.
-                                  Task {
-                                      try? await Task.sleep(for: .milliseconds(450))
-                                      sheets.deletingProject = p
-                                  }
                               })
             }
+            .sheet(item: $sheets.instructionsFor) { p in ProjectInstructionsSheet(project: p) }
             .projectDeletion($sheets.deletingProject)
     }
 
@@ -210,11 +216,18 @@ private struct ListSheetsHost: ViewModifier {
         if !r.moving.isEmpty {
             ChatOps.move(app, r.moving, to: p.id)
         } else if r.openAfterCreate {
-            // Into the new project once its sheet is down, so it zooms out of its fresh row.
-            Task {
-                try? await Task.sleep(for: .milliseconds(450))
-                app.push(.project(p.id))
-            }
+            sheets.openWhenClosed = p.id
+        }
+    }
+
+    private func editorClosed() {
+        if let p = sheets.deleteWhenClosed {
+            sheets.deleteWhenClosed = nil
+            sheets.deletingProject = p
+        }
+        if let id = sheets.openWhenClosed {
+            sheets.openWhenClosed = nil
+            if app.project(id) != nil { app.push(.project(id)) }
         }
     }
 }

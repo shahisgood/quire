@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct ChatListView: View {
-    /// Project rows are the sources their screens zoom out of.
-    let zoom: Namespace.ID
     @Environment(AppModel.self) private var app
     @State private var query = ""
     @State private var hits: [SearchHit] = []
@@ -14,7 +12,8 @@ struct ChatListView: View {
     @State private var editMode: EditMode = .inactive
     @State private var selection: Set<String> = []
     @State private var sheets = ListSheets()
-    @State private var expandedKinds: Set<ProjectKind> = []
+    @State private var projectsExpanded = false
+    @State private var confirmBulkDelete = false
 
     private static let collapsedProjects = 4
 
@@ -28,6 +27,10 @@ struct ChatListView: View {
     /// Not while archived or selecting, and not on a first run, where the empty state offers both.
     private var showsProjects: Bool {
         !showArchived && !isEditing && !(listed.isEmpty && app.folders.isEmpty)
+    }
+
+    private var bulkDeleteTitle: String {
+        selection.count == 1 ? "Delete this chat?" : "Delete \(selection.count) chats?"
     }
 
     var body: some View {
@@ -64,12 +67,19 @@ struct ChatListView: View {
         .animation(Motion.standard, value: showArchived)
         .animation(Motion.standard, value: isEditing)
         .listSheets(sheets)
-        // Chats that leave the list mid-selection (deleted, or moved into a project) leave the
-        // selection too; if that empties it, selecting is over.
-        .onChange(of: Set(listed.map(\.id))) { _, ids in
-            guard isEditing, !selection.isSubset(of: ids) else { return }
-            selection.formIntersection(ids)
-            if selection.isEmpty { withAnimation { editMode = .inactive } }
+        // Deleting a selection ends selecting in the same update, so the list changes once.
+        .confirmationDialog(bulkDeleteTitle, isPresented: $confirmBulkDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                let ids = selection
+                withAnimation(Motion.standard) {
+                    app.deleteChats(ids)
+                    selection = []
+                    editMode = .inactive
+                }
+                Haptics.warning()
+            }
+        } message: {
+            Text("Every message and branch is removed from this iPhone. This can't be undone.")
         }
     }
 
@@ -117,7 +127,9 @@ struct ChatListView: View {
         if isEditing {
             ToolbarItemGroup(placement: .bottomBar) {
                 ProjectMoveMenu(app, ids: selection, title: "Move", onMoved: finishBulk) {
-                    sheets.editor = ProjectEditorRequest(moving: selection)
+                    let ids = selection
+                    finishBulk()
+                    sheets.editor = ProjectEditorRequest(moving: ids)
                 }
                 .disabled(selection.isEmpty)
                 Spacer()
@@ -137,7 +149,7 @@ struct ChatListView: View {
                     Button { withAnimation(Motion.standard) { app.patchChats(selection) { $0.pinned = true } }; finishBulk() } label: { Label("Pin", systemImage: "pin") }
                     Button { withAnimation(Motion.standard) { app.patchChats(selection) { $0.pinned = false } }; finishBulk() } label: { Label("Unpin", systemImage: "pin.slash") }
                     Divider()
-                    Button(role: .destructive) { sheets.deletingChats = selection } label: { Label("Delete", systemImage: "trash") }
+                    Button(role: .destructive) { confirmBulkDelete = true } label: { Label("Delete", systemImage: "trash") }
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
                 }
@@ -256,38 +268,30 @@ struct ChatListView: View {
 
     // MARK: Projects
 
-    /// Projects, then areas (each its own section once there are any), most recently used first.
-    /// Long lists fold to their first few. With none yet, a single row invites the first.
-    @ViewBuilder
+    /// Most recently used first. A long list folds to its first few; with none yet, the one row
+    /// invites the first.
     private var projectSections: some View {
         let all = app.projects
-        let kinds = ProjectKind.allCases.filter { k in all.contains { $0.projectKind == k } }
-        if all.isEmpty {
-            Section { newProjectRow(invite: true) } header: { SectionLabel(text: "Projects") }
-        }
-        ForEach(kinds, id: \.self) { kind in
-            let items = all.filter { $0.projectKind == kind }
-            let folds = items.count > Self.collapsedProjects + 1
-            let open = !folds || expandedKinds.contains(kind)
-            Section {
-                ForEach(open ? items : Array(items.prefix(Self.collapsedProjects))) { projectRow($0) }
-                if folds { foldRow(kind, hidden: items.count - Self.collapsedProjects, open: open) }
-                if kind == kinds.last { newProjectRow(invite: false) }
-            } header: {
-                SectionLabel(text: kind.plural)
-            }
+        let folds = all.count > Self.collapsedProjects + 1
+        let open = !folds || projectsExpanded
+        return Section {
+            ForEach(open ? all : Array(all.prefix(Self.collapsedProjects))) { projectRow($0) }
+            if folds { foldRow(hidden: all.count - Self.collapsedProjects, open: open) }
+            newProjectRow(invite: all.isEmpty)
+        } header: {
+            SectionLabel(text: "Projects")
         }
     }
 
     private func projectRow(_ p: Project) -> some View {
         NavigationLink(value: Route.project(p.id)) {
             ProjectRow(project: p)
-                .matchedTransitionSource(id: p.id, in: zoom)
         }
         .listRowBackground(Color.qRaised)
-        .selectionDisabled()
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button(role: .destructive) { sheets.deletingProject = p } label: { Label("Delete", systemImage: "trash") }
+            // Not role: .destructive, which tells the list the row is already gone; deleting asks first.
+            Button { sheets.deletingProject = p } label: { Label("Delete", systemImage: "trash") }
+                .tint(.red)
             Button { sheets.editor = ProjectEditorRequest(project: p) } label: { Label("Edit", systemImage: "pencil") }
                 .tint(Color.qTileSlate)
         }
@@ -302,31 +306,26 @@ struct ChatListView: View {
         }
         .contextMenu {
             Button { app.startNewChat(projectId: p.id) } label: { Label("New chat", systemImage: "square.and.pencil") }
-            Button { sheets.editor = ProjectEditorRequest(project: p) } label: { Label("Edit \(p.projectKind.noun)", systemImage: "pencil") }
-            if !p.hasInstructions {
-                Button { sheets.editor = ProjectEditorRequest(project: p, focusInstructions: true) } label: {
-                    Label("Add instructions", systemImage: "text.badge.plus")
-                }
+            Button { sheets.editor = ProjectEditorRequest(project: p) } label: { Label("Edit project", systemImage: "pencil") }
+            Button { sheets.instructionsFor = p } label: {
+                Label(p.hasInstructions ? "Edit instructions" : "Add instructions", systemImage: "text.quote")
             }
             Divider()
             Button(role: .destructive) { sheets.deletingProject = p } label: {
-                Label("Delete \(p.projectKind.noun)…", systemImage: "trash")
+                Label("Delete project…", systemImage: "trash")
             }
         }
     }
 
-    private func foldRow(_ kind: ProjectKind, hidden: Int, open: Bool) -> some View {
+    private func foldRow(hidden: Int, open: Bool) -> some View {
         Button {
             Haptics.selection()
-            withAnimation(Motion.standard) {
-                if open { expandedKinds.remove(kind) } else { expandedKinds.insert(kind) }
-            }
+            withAnimation(Motion.standard) { projectsExpanded.toggle() }
         } label: {
             HStack {
                 Text(open ? "Show fewer" : "Show \(hidden) more")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(Color.qInk2)
-                    .contentTransition(.opacity)
                 Spacer()
                 Image(systemName: "chevron.down")
                     .font(.caption.weight(.semibold))
@@ -336,7 +335,6 @@ struct ChatListView: View {
             .contentShape(.rect)
         }
         .listRowBackground(Color.qRaised)
-        .selectionDisabled()
     }
 
     private func newProjectRow(invite: Bool) -> some View {
@@ -346,15 +344,12 @@ struct ChatListView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Color.qAccent)
-                    .frame(width: 40, height: 40)
-                    .background {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(Color.qAccent.opacity(0.5), style: StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
-                    }
+                    .frame(width: 38, height: 38)
+                    .background(Color.qAccentSoft, in: .rect(cornerRadius: 11, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(app.folders.contains { $0.projectKind == .area } ? "New project or area" : "New project")
+                    Text("New project")
                         .font(.body.weight(.medium))
                         .foregroundStyle(Color.qAccent)
                     if invite {
@@ -365,11 +360,10 @@ struct ChatListView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 3)
+            .padding(.vertical, 2)
             .contentShape(.rect)
         }
         .listRowBackground(Color.qRaised)
-        .selectionDisabled()
     }
 
     // MARK: Chats
@@ -608,7 +602,7 @@ struct NewChatButton: View {
                     Label("Incognito chat", systemImage: "eye.slash")
                 }
                 Button { app.startNewChat() } label: {
-                    Label("New chat outside \(project.projectKind.noun)", systemImage: "tray")
+                    Label("New chat outside project", systemImage: "tray")
                 }
             } else {
                 Button { app.startNewChat() } label: { Label("New chat", systemImage: "square.and.pencil") }

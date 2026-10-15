@@ -35,8 +35,6 @@ struct RootView: View {
     @State private var width: CGFloat = 390
     /// How far the settings layer has been swiped back toward the leading edge (≤ 0).
     @State private var dragX: CGFloat = 0
-    /// Project screens zoom out of their rows in the chat list.
-    @Namespace private var zoom
 
     /// 0 with settings closed, 1 with it covering the chats; follows the finger mid-swipe.
     private var reveal: CGFloat {
@@ -54,8 +52,8 @@ struct RootView: View {
         @Bindable var app = app
         ZStack {
             NavigationStack(path: $app.path) {
-                ChatListView(zoom: zoom)
-                    .navigationDestination(for: Route.self) { RouteDestination(route: $0, stack: app.path, zoom: zoom) }
+                ChatListView()
+                    .navigationDestination(for: Route.self) { RouteDestination(route: $0, stack: app.path) }
             }
             .background(Color.qBase.ignoresSafeArea())
             // A push in mirror image: the chats give way a little in the direction settings travels,
@@ -162,18 +160,11 @@ private struct SettingsLayer<G: Gesture>: View {
 struct RouteDestination: View {
     let route: Route
     let stack: [Route]
-    var zoom: Namespace.ID? = nil
 
     var body: some View {
         switch route {
         case .chat(let id): ChatScreen(chatId: id)
-        case .project(let id):
-            if let zoom {
-                ProjectView(projectId: id)
-                    .navigationTransition(.zoom(sourceID: id, in: zoom))
-            } else {
-                ProjectView(projectId: id)
-            }
+        case .project(let id): ProjectView(projectId: id)
         case .settings: SettingsView()
         case .section(let s): SettingsSectionView(section: s)
         case .memory: MemoryView(showsSettingsLink: !stack.contains(.section(.memory)))
