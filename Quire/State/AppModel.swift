@@ -8,12 +8,13 @@ nonisolated enum SettingsSection: String, Hashable, Sendable, CaseIterable {
 
 nonisolated enum Route: Hashable, Sendable {
     case chat(String)
+    case project(String)
     case settings
     case section(SettingsSection)
     case memory
 }
 
-/// App-wide state: settings, the API key, the model catalogue, chats, personas, memory, folders
+/// App-wide state: settings, the API key, the model catalogue, chats, personas, memory, projects
 /// and day costs. One instance for the app's lifetime. The open thread and its stream engine live
 /// in `ChatSession`.
 @Observable
@@ -92,20 +93,29 @@ final class AppModel {
 
     private func resumeLastChat() {
         let visible = chats.filter { !$0.archived }
-        if let last = settings.lastChatId, visible.contains(where: { $0.id == last }) { path = [.chat(last)] }
-        else if let newest = visible.first { path = [.chat(newest.id)] }
+        if let last = settings.lastChatId, visible.contains(where: { $0.id == last }) { path = stack(for: last) }
+        else if let newest = visible.first { path = stack(for: newest.id) }
         else { path = [.chat(newChat().chat.id)] }
     }
 
     func openChat(_ id: String, highlight: String? = nil) {
         if let highlight { session(for: id)?.highlightId = highlight }
-        path = [.chat(id)]
+        path = stack(for: id)
         closeSettings()
     }
 
-    func startNewChat(persona: Preset? = nil, incognito: Bool = false) {
-        let s = newChat(persona: persona, incognito: incognito)
-        path = [.chat(s.chat.id)]
+    /// A chat in a project opens over its project, so going back lands there rather than on a list
+    /// the chat isn't in.
+    private func stack(for chatId: String, projectId: String? = nil) -> [Route] {
+        let pid = projectId ?? chat(chatId)?.folderId
+        if let p = project(pid) { return [.project(p.id), .chat(chatId)] }
+        return [.chat(chatId)]
+    }
+
+    /// Opens a fresh chat; one started in a project opens over the project.
+    func startNewChat(persona: Preset? = nil, incognito: Bool = false, projectId: String? = nil) {
+        let s = newChat(persona: persona, incognito: incognito, projectId: projectId)
+        path = stack(for: s.chat.id, projectId: s.chat.folderId)
         closeSettings()
     }
 
@@ -147,11 +157,13 @@ final class AppModel {
     }
 
     @discardableResult
-    func newChat(persona: Preset? = nil, incognito: Bool = false, modelId: String? = nil) -> ChatSession {
+    func newChat(persona: Preset? = nil, incognito: Bool = false, modelId: String? = nil, projectId: String? = nil) -> ChatSession {
         evictIdleSessions(keeping: nil)
-        var chat = Chat(modelId: modelId ?? persona?.modelId ?? settings.defaultModelId,
+        let project = self.project(projectId)
+        var chat = Chat(modelId: modelId ?? persona?.modelId ?? project?.modelId ?? settings.defaultModelId,
                         memoryEnabled: !incognito && settings.memory.enabled)
         chat.systemPromptId = persona?.id
+        chat.folderId = project?.id
         let s = ChatSession(app: self, chat: chat, persisted: false)
         sessions[chat.id] = s
         return s
@@ -203,7 +215,7 @@ final class AppModel {
         }
         chats.removeAll { ids.contains($0.id) }
         store.saveChats(chats)
-        if case .chat(let open)? = path.last, ids.contains(open) { path = [] }
+        if case .chat(let open)? = path.last, ids.contains(open) { path.removeLast() }
     }
 
     /// Add a complete chat (from duplicate or branch) and its messages.
@@ -240,39 +252,77 @@ final class AppModel {
         return copy.id
     }
 
-    // MARK: Folders
+    // MARK: Projects
 
-    @discardableResult
-    func createFolder(_ name: String) -> Folder {
-        let f = Folder(name: name, order: (folders.map(\.order).max() ?? -1) + 1)
-        folders.append(f)
-        store.saveFolders(folders)
-        return f
+    /// Most recently active first: a project rises when any chat in it moves.
+    var projects: [Project] {
+        let latest = latestActivity
+        return folders.sorted { (latest[$0.id] ?? $0.createdAt) > (latest[$1.id] ?? $1.createdAt) }
     }
 
-    func renameFolder(_ id: String, to name: String) {
-        guard let i = folders.firstIndex(where: { $0.id == id }) else { return }
-        folders[i].name = name
-        store.saveFolders(folders)
+    /// The newest `updatedAt` among each project's chats, in one pass.
+    private var latestActivity: [String: Double] {
+        var out: [String: Double] = [:]
+        for c in chats {
+            guard let id = c.folderId else { continue }
+            out[id] = max(out[id] ?? 0, c.updatedAt)
+        }
+        return out
     }
 
-    func toggleFolder(_ id: String) {
-        guard let i = folders.firstIndex(where: { $0.id == id }) else { return }
-        folders[i].collapsed = !(folders[i].collapsed ?? false)
-        store.saveFolders(folders)
-    }
-
-    /// Deleting a folder keeps its chats; they move back to the main list.
-    func deleteFolder(_ id: String) {
-        let inside = Set(chats.filter { $0.folderId == id }.map(\.id))
-        if !inside.isEmpty { patchChats(inside) { $0.folderId = nil } }
-        folders.removeAll { $0.id == id }
-        store.saveFolders(folders)
-    }
-
-    func folder(_ id: String?) -> Folder? {
+    func project(_ id: String?) -> Project? {
         guard let id else { return nil }
         return folders.first(where: { $0.id == id })
+    }
+
+    /// The project a chat is in, if it still exists (a deleted one leaves no dangling links, but
+    /// a backup from elsewhere might).
+    func project(of chat: Chat) -> Project? { project(chat.folderId) }
+
+    func chats(inProject id: String, archived: Bool = false) -> [Chat] {
+        chats.filter { $0.folderId == id && $0.archived == archived }
+    }
+
+    @discardableResult
+    func createProject(_ draft: Project) -> Project {
+        var p = draft
+        p.order = (folders.map(\.order).max() ?? -1) + 1
+        p.createdAt = nowMs()
+        folders.append(p)
+        store.saveFolders(folders)
+        return p
+    }
+
+    func updateProject(_ p: Project) {
+        guard let i = folders.firstIndex(where: { $0.id == p.id }) else { return }
+        folders[i] = p
+        store.saveFolders(folders)
+    }
+
+    /// Removes a project. Its chats either go with it or move back to the main list.
+    func deleteProject(_ id: String, deletingChats: Bool) {
+        let inside = Set(chats.filter { $0.folderId == id }.map(\.id))
+        if !inside.isEmpty {
+            if deletingChats { deleteChats(inside) } else { patchChats(inside) { $0.folderId = nil } }
+        }
+        folders.removeAll { $0.id == id }
+        store.saveFolders(folders)
+        if let i = path.firstIndex(of: .project(id)) { path = Array(path.prefix(upTo: i)) }
+    }
+
+    /// Puts a deleted project back, with the chats it had (the undo after a delete that kept them).
+    func restoreProject(_ p: Project, chatIds: Set<String>) {
+        guard project(p.id) == nil else { return }
+        folders.append(p)
+        store.saveFolders(folders)
+        let still = chatIds.filter { id in chats.contains { $0.id == id && $0.folderId == nil } }
+        if !still.isEmpty { patchChats(Set(still)) { $0.folderId = p.id } }
+    }
+
+    /// Moves chats into a project (or out of any, with nil).
+    func moveChats(_ ids: Set<String>, toProject id: String?) {
+        guard !ids.isEmpty else { return }
+        patchChats(ids) { $0.folderId = id }
     }
 
     // MARK: Personas

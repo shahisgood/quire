@@ -29,7 +29,8 @@ Requires **iOS 26**. Built on GitHub's macOS runners, so you don't need a Mac.
 **Models and settings**
 - A model picker over the live OpenRouter catalogue: fuzzy search, Vision/Files/Tools/Reasoning/Structured, price bands, context sizes, provider filter, a "New" filter for models that appeared since you last looked, favourites, recents, and a full model card.
 - A generation editor that only shows what the model supports: sampling presets (Precise, Balanced, Creative), every sampling parameter, seed, max tokens, stop sequences, reasoning effort or budget per model family, provider routing, fallback models, web search and middle-out trimming. It works at three levels (global, persona, chat), with an Inherit button and a dot on anything set at that level.
-- Chat list with pinned chats, collapsible folders, Today/Yesterday/This week/Earlier, swipe to archive (with Undo) or pin, multi-select to move, archive, export, pin or delete, and search across every message that jumps to the match.
+- Chat list with pinned chats, Today/Yesterday/This week/Earlier, swipe to archive (with Undo) or pin, multi-select to move, archive, export, pin or delete, and search across every message that jumps to the match.
+- Projects and areas: homes for related chats, each with its own symbol and colour. Give one instructions and every chat in it follows them (added after the system prompt), or leave it as a plain group. A project can also choose the model its new chats start with. Swipe a project to edit or delete it (keeping its chats or not, with Undo for the first), or to start a chat in it; chats move in and out from their menu or in bulk. Stored as the web app's folders, so backups still round-trip.
 - Costs: a live estimate while streaming, replaced by OpenRouter's authoritative figure a few seconds later, and per-chat, per-day and 14-day totals with a chart.
 - Appearance: dark, light or auto; serif or sans replies; reply size on top of Dynamic Type; comfortable or compact; haptics.
 - Backups in the web app's format, so you can move between the two in either direction. A reminder appears after 200 messages or 30 days.
@@ -87,7 +88,7 @@ Quire/
   Models/     data types (mirroring the web app's) and JSONValue
   Core/       OpenRouter client and SSE parsing, request builder, memory logic, storage,
               Keychain, attachments, formatting, connectivity, haptics
-  State/      AppModel (settings, catalogue, chats, personas, memory, folders, costs),
+  State/      AppModel (settings, catalogue, chats, personas, memory, projects, costs),
               ChatSession (one thread and its stream engine), memory extraction, backups
   Markdown/   block parser, native renderer, code highlighter
   Design/     palette, type, motion tokens, shared components

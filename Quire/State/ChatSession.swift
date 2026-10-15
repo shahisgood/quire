@@ -70,6 +70,7 @@ final class ChatSession {
     var thread: [Message] { path.compactMap { messages[$0] } }
     var model: ORModel? { app.model(chat.modelId) }
     var persona: Preset? { app.preset(chat.systemPromptId) }
+    var project: Project? { app.project(chat.folderId) }
 
     // MARK: Tree helpers
 
@@ -121,8 +122,15 @@ final class ChatSession {
         return inheritedSystemPrompt
     }
 
+    /// The project's instructions as the model reads them, after the chat's own system prompt. They
+    /// stay out of `effectiveSystemPrompt` so editing a chat's prompt never copies them into it.
+    var projectInstructions: String? {
+        guard let p = project, p.hasInstructions else { return nil }
+        return "Project instructions (\(p.name)). Follow these in this conversation:\n\(p.trimmedInstructions)"
+    }
+
     var contextTokens: Int {
-        var n = Tokens.estimate(effectiveSystemPrompt)
+        var n = Tokens.estimate(effectiveSystemPrompt) + Tokens.estimate(projectInstructions ?? "")
         for m in thread {
             n += Tokens.estimate(m.content) + 4
             for a in m.attachments ?? [] { n += Tokens.estimate(a) }
@@ -206,6 +214,12 @@ final class ChatSession {
     func setPersona(_ id: String?) {
         chat.systemPromptId = id
         if let p = app.preset(id), let m = p.modelId { chat.modelId = m }
+        saveChat()
+    }
+
+    /// Moves the chat into a project (or out, with nil). Its instructions apply from the next reply.
+    func setProject(_ id: String?) {
+        chat.folderId = id
         saveChat()
     }
 
@@ -433,6 +447,7 @@ final class ChatSession {
         var system: [String] = []
         let sp = effectiveSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         if !sp.isEmpty { system.append(sp) }
+        if let pi = projectInstructions { system.append(pi) }
         if chat.memoryEnabled && app.settings.memory.enabled {
             let lastUser = history.last(where: { $0.role == .user })?.content ?? ""
             let plan = MemoryLogic.plan(app.memory, userText: lastUser, budget: app.settings.memory.maxInjectedChars)

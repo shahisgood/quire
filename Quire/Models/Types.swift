@@ -670,12 +670,24 @@ nonisolated struct MemoryEntry: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
+/// A project (or area): a home for related chats, optionally with instructions every chat in it
+/// follows. Stored as a folder, the web app's word, so backups round-trip both ways: the iOS fields
+/// are optional, and a web-app folder arrives as a plain project without instructions.
 nonisolated struct Folder: Codable, Identifiable, Hashable, Sendable {
     var id: String
     var name: String
     var createdAt: Double
     var order: Int
     var collapsed: Bool?
+    /// SF Symbol on the project's tile.
+    var symbol: String?
+    /// A `ProjectTint` name.
+    var tint: String?
+    var kind: ProjectKind?
+    /// Followed by every chat in the project, after the usual system prompt. Empty means none.
+    var instructions: String?
+    /// The model new chats in the project start with; nil means the app default.
+    var modelId: String?
 
     init(id: String = newID(), name: String, order: Int) {
         self.id = id; self.name = name; self.createdAt = nowMs(); self.order = order
@@ -688,6 +700,31 @@ nonisolated struct Folder: Codable, Identifiable, Hashable, Sendable {
         createdAt = c.lenient(.createdAt, nowMs())
         order = c.lenient(.order, 0)
         collapsed = c.lenient(.collapsed, nil)
+        symbol = c.lenient(.symbol, nil)
+        tint = c.lenient(.tint, nil)
+        kind = c.lenient(.kind, nil)
+        instructions = c.lenient(.instructions, nil)
+        modelId = c.lenient(.modelId, nil)
+    }
+
+    nonisolated var symbolName: String { symbol ?? "folder.fill" }
+    nonisolated var projectKind: ProjectKind { kind ?? .project }
+    nonisolated var trimmedInstructions: String { (instructions ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+    nonisolated var hasInstructions: Bool { !trimmedInstructions.isEmpty }
+}
+
+/// What the interface calls them.
+typealias Project = Folder
+
+/// A project has an end (a trip, a launch); an area is ongoing (health, work). Only the label differs.
+nonisolated enum ProjectKind: String, Codable, CaseIterable, Hashable, Sendable {
+    case project, area
+
+    var label: String {
+        switch self {
+        case .project: "Project"
+        case .area: "Area"
+        }
     }
 }
 

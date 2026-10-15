@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Settings for one chat: model, persona, its own system prompt, memory, and generation overrides.
+/// Settings for one chat: model, persona, its own system prompt, project, memory, and generation
+/// overrides.
 /// Resolution order is global → persona → this chat, as in the PWA.
 struct ChatSettingsSheet: View {
     let session: ChatSession
@@ -46,13 +47,39 @@ struct ChatSettingsSheet: View {
                                   symbol: "text.quote", color: .qTileAmber,
                                   detail: promptDetail)
                     }
+                    NavigationLink {
+                        ProjectPickerList(selected: session.chat.folderId) { id in
+                            withAnimation(Motion.standard) { session.setProject(id) }
+                        }
+                    } label: {
+                        HStack(spacing: 14) {
+                            if let p = session.project {
+                                ProjectTile(project: p, size: 30)
+                            } else {
+                                IconTile(symbol: "folder", color: .qTileSlate)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Project").foregroundStyle(Color.qInk)
+                                Text(projectDetail)
+                                    .font(.footnote)
+                                    .foregroundStyle(Color.qInk2)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
                     Toggle(isOn: Binding(get: { session.chat.memoryEnabled }, set: { session.setMemoryEnabled($0) })) {
                         TileLabel(title: "Memory", symbol: "brain", color: .qTileTeal,
                                   detail: session.chat.memoryEnabled ? "Reads and writes remembered facts" : "Incognito: neither reads nor writes")
                     }
                     .disabled(!app.settings.memory.enabled)
                 } footer: {
-                    if !app.settings.memory.enabled { Text("Memory is off for the whole app in Settings → Memory.") }
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let p = session.project, p.hasInstructions {
+                            Text("“\(p.name)” instructions are added after the system prompt.")
+                        }
+                        if !app.settings.memory.enabled { Text("Memory is off for the whole app in Settings → Memory.") }
+                    }
                 }
 
                 ParamsEditor(model: session.model,
@@ -84,6 +111,11 @@ struct ChatSettingsSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+
+    private var projectDetail: String {
+        guard let p = session.project else { return "None" }
+        return p.hasInstructions ? "\(p.name) · Instructions apply" : p.name
     }
 
     private var promptDetail: String {

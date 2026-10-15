@@ -278,7 +278,7 @@ private struct ChatCornerAction: View {
                 IncognitoToggle(session: session)
                     .transition(reduceMotion ? .opacity : .pop)
             } else {
-                NewChatButton()
+                NewChatButton(projectId: session.chat.folderId)
                     .transition(reduceMotion ? .opacity : .pop)
             }
         }
@@ -344,6 +344,11 @@ private struct EmptyChatView: View {
                             .transition(.opacity.combined(with: .scale(scale: 0.95)))
                             .entrance(shown, delay: 0.1)
                     }
+                    if let p = session.project {
+                        projectChip(p)
+                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                            .entrance(shown, delay: 0.1)
+                    }
                 }
                 modelCard
                     .entrance(shown, delay: 0.14)
@@ -368,6 +373,37 @@ private struct EmptyChatView: View {
             .frame(maxWidth: .infinity)
             .onAppear { shown = true }
         }
+    }
+
+    /// Which project this chat is in, and whether its instructions are in play. Tapping it opens
+    /// chat settings, where the chat can move.
+    private func projectChip(_ p: Project) -> some View {
+        Button(action: openSettings) {
+            HStack(spacing: 7) {
+                ProjectTile(project: p, size: 20)
+                Text(p.name)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.qInk)
+                    .lineLimit(1)
+                if p.hasInstructions {
+                    Text("·")
+                        .foregroundStyle(Color.qInk2)
+                    Text("Instructions on")
+                        .foregroundStyle(Color.qInk2)
+                        .lineLimit(1)
+                }
+            }
+            .font(.footnote)
+            .padding(.leading, 6)
+            .padding(.trailing, 12)
+            .frame(height: 32)
+            .background(p.tintColor.opacity(0.14), in: .capsule)
+            .overlay(Capsule().strokeBorder(p.tintColor.opacity(0.25), lineWidth: 1))
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(p.hasInstructions ? "In \(p.name), following its instructions" : "In \(p.name)")
+        .accessibilityHint("Opens chat settings")
     }
 
     /// A few ways in. Each one only fills the message box (and brings up the keyboard); the rest of

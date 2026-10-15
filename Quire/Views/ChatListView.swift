@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ChatListView: View {
+    /// Project rows are the sources their screens zoom out of.
+    let zoom: Namespace.ID
     @Environment(AppModel.self) private var app
     @State private var query = ""
     @State private var hits: [SearchHit] = []
@@ -11,18 +13,22 @@ struct ChatListView: View {
     @State private var showArchived = false
     @State private var editMode: EditMode = .inactive
     @State private var selection: Set<String> = []
-    @State private var renaming: Chat? = nil
-    @State private var renameText = ""
-    @State private var newFolderFor: Set<String>? = nil
-    @State private var newFolderName = ""
-    @State private var renamingFolder: Folder? = nil
-    @State private var folderName = ""
-    @State private var confirmDelete: Set<String>? = nil
-    @State private var share: SharedFile? = nil
+    @State private var sheets = ListSheets()
+    @State private var expandedKinds: Set<ProjectKind> = []
+
+    private static let collapsedProjects = 4
 
     private var isSearching: Bool { query.trimmingCharacters(in: .whitespaces).count > 0 }
     private var isEditing: Bool { editMode.isEditing }
     private var visible: [Chat] { app.chats.filter { $0.archived == showArchived } }
+    /// What the main list shows: chats outside any project (each project has its own screen).
+    /// Archived shows everything archived, with the project named on each row.
+    private var listed: [Chat] { showArchived ? visible : visible.filter { app.project(of: $0) == nil } }
+
+    /// Not while archived or selecting, and not on a first run, where the empty state offers both.
+    private var showsProjects: Bool {
+        !showArchived && !isEditing && !(listed.isEmpty && app.folders.isEmpty)
+    }
 
     var body: some View {
         List(selection: $selection) {
@@ -30,6 +36,7 @@ struct ChatListView: View {
                 searchSections
             } else {
                 if app.exportNudgeDue && !showArchived && !isEditing { backupNudge }
+                if showsProjects { projectSections }
                 listSections
             }
         }
@@ -52,61 +59,18 @@ struct ChatListView: View {
         .task(id: query) { await runSearch() }
         .toolbar { toolbarContent }
         .overlay {
-            if visible.isEmpty && !isSearching && (showArchived || app.folders.isEmpty) { emptyState }
+            if listed.isEmpty && !isSearching && (showArchived || app.folders.isEmpty) { emptyState }
         }
         .animation(Motion.standard, value: showArchived)
-        .alert("Rename chat", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("Title", text: $renameText)
-            Button("Rename") {
-                if let c = renaming {
-                    let t = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !t.isEmpty { app.patchChat(c.id) { $0.title = t; $0.titleAuto = false } }
-                }
-                renaming = nil
-            }
-            Button("Cancel", role: .cancel) { renaming = nil }
+        .animation(Motion.standard, value: isEditing)
+        .listSheets(sheets)
+        // Chats that leave the list mid-selection (deleted, or moved into a project) leave the
+        // selection too; if that empties it, selecting is over.
+        .onChange(of: Set(listed.map(\.id))) { _, ids in
+            guard isEditing, !selection.isSubset(of: ids) else { return }
+            selection.formIntersection(ids)
+            if selection.isEmpty { withAnimation { editMode = .inactive } }
         }
-        .alert("New folder", isPresented: Binding(get: { newFolderFor != nil }, set: { if !$0 { newFolderFor = nil } })) {
-            TextField("Name", text: $newFolderName)
-            Button("Create") {
-                let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !name.isEmpty {
-                    let f = app.createFolder(name)
-                    if let ids = newFolderFor, !ids.isEmpty { move(ids, to: f.id) }
-                }
-                newFolderFor = nil
-                newFolderName = ""
-            }
-            Button("Cancel", role: .cancel) { newFolderFor = nil; newFolderName = "" }
-        }
-        .alert("Rename folder", isPresented: Binding(get: { renamingFolder != nil }, set: { if !$0 { renamingFolder = nil } })) {
-            TextField("Name", text: $folderName)
-            Button("Rename") {
-                let name = folderName.trimmingCharacters(in: .whitespacesAndNewlines)
-                if let f = renamingFolder, !name.isEmpty { app.renameFolder(f.id, to: name) }
-                renamingFolder = nil
-            }
-            Button("Cancel", role: .cancel) { renamingFolder = nil }
-        }
-        .confirmationDialog(deleteTitle, isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
-                if let ids = confirmDelete {
-                    withAnimation(Motion.standard) { app.deleteChats(ids) }
-                    selection.subtract(ids)
-                    Haptics.warning()
-                    if isEditing && selection.isEmpty { editMode = .inactive }
-                }
-                confirmDelete = nil
-            }
-        } message: {
-            Text("Every message and branch is removed from this iPhone. This can't be undone.")
-        }
-        .sheet(item: $share) { f in ShareSheet(items: [f.url]).presentationDetents([.medium, .large]) }
-    }
-
-    private var deleteTitle: String {
-        let n = confirmDelete?.count ?? 0
-        return n == 1 ? "Delete this chat?" : "Delete \(n) chats?"
     }
 
     // MARK: Toolbar
@@ -135,7 +99,7 @@ struct ChatListView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button { withAnimation { editMode = .active } } label: { Label("Select chats", systemImage: "checkmark.circle") }
-                    Button { newFolderFor = []; newFolderName = "" } label: { Label("New folder", systemImage: "folder.badge.plus") }
+                    Button { sheets.editor = ProjectEditorRequest(openAfterCreate: true) } label: { Label("New project", systemImage: "folder.badge.plus") }
                     Divider()
                     Button { app.push(.memory) } label: { Label("Memory", systemImage: "brain") }
                     Toggle(isOn: $showArchived) {
@@ -152,25 +116,18 @@ struct ChatListView: View {
         }
         if isEditing {
             ToolbarItemGroup(placement: .bottomBar) {
-                Menu {
-                    Button { move(selection, to: nil) } label: { Label("No folder", systemImage: "tray") }
-                    ForEach(app.folders) { f in
-                        Button { move(selection, to: f.id) } label: { Label(f.name, systemImage: "folder") }
-                    }
-                    Divider()
-                    Button { newFolderFor = selection; newFolderName = "" } label: { Label("New folder…", systemImage: "folder.badge.plus") }
-                } label: {
-                    Label("Move", systemImage: "folder")
+                ProjectMoveMenu(app, ids: selection, title: "Move", onMoved: finishBulk) {
+                    sheets.editor = ProjectEditorRequest(moving: selection)
                 }
                 .disabled(selection.isEmpty)
                 Spacer()
-                Button { archive(selection, to: !showArchived) } label: {
+                Button { ChatOps.archive(app, selection, to: !showArchived); finishBulk() } label: {
                     Label(showArchived ? "Unarchive" : "Archive", systemImage: "archivebox")
                 }
                 .disabled(selection.isEmpty)
                 Spacer()
                 Button {
-                    if let url = try? app.exportChats(selection) { share = SharedFile(url: url) }
+                    if let url = try? app.exportChats(selection) { sheets.share = SharedFile(url: url) }
                 } label: {
                     Label("Export", systemImage: "square.and.arrow.up")
                 }
@@ -180,7 +137,7 @@ struct ChatListView: View {
                     Button { withAnimation(Motion.standard) { app.patchChats(selection) { $0.pinned = true } }; finishBulk() } label: { Label("Pin", systemImage: "pin") }
                     Button { withAnimation(Motion.standard) { app.patchChats(selection) { $0.pinned = false } }; finishBulk() } label: { Label("Unpin", systemImage: "pin.slash") }
                     Divider()
-                    Button(role: .destructive) { confirmDelete = selection } label: { Label("Delete", systemImage: "trash") }
+                    Button(role: .destructive) { sheets.deletingChats = selection } label: { Label("Delete", systemImage: "trash") }
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
                 }
@@ -258,6 +215,9 @@ struct ChatListView: View {
     private var statusText: String {
         let count = visible.count
         var parts = ["\(count) \(count == 1 ? "chat" : "chats")"]
+        if !showArchived && !app.folders.isEmpty {
+            parts.append("\(app.folders.count) \(app.folders.count == 1 ? "project" : "projects")")
+        }
         if app.settings.ui.showCosts && app.todayCost > 0 { parts.append("\(Fmt.usd(app.todayCost)) today") }
         if !app.connectivity.online { parts.append("Offline") }
         return parts.joined(separator: " · ")
@@ -294,33 +254,133 @@ struct ChatListView: View {
         .listRowBackground(Color.qAccentSoft)
     }
 
+    // MARK: Projects
+
+    /// Projects, then areas (each its own section once there are any), most recently used first.
+    /// Long lists fold to their first few. With none yet, a single row invites the first.
     @ViewBuilder
-    private var listSections: some View {
-        let inFolders = visible.filter { $0.folderId != nil && app.folder($0.folderId) != nil }
-        let loose = visible.filter { $0.folderId == nil || app.folder($0.folderId) == nil }
-        ForEach(app.folders) { f in
-            let items = inFolders.filter { $0.folderId == f.id }
-            if !showArchived || !items.isEmpty {
-                Section {
-                    if !(f.collapsed ?? false) {
-                        ForEach(items) { row($0) }
-                        if items.isEmpty {
-                            Text("Empty. Move chats here from their menu.")
-                                .font(.footnote)
-                                .foregroundStyle(Color.qInk2)
-                                .selectionDisabled()
-                        }
-                    }
-                } header: {
-                    folderHeader(f, count: items.count)
-                }
+    private var projectSections: some View {
+        let all = app.projects
+        let kinds = ProjectKind.allCases.filter { k in all.contains { $0.projectKind == k } }
+        if all.isEmpty {
+            Section { newProjectRow(invite: true) } header: { SectionLabel(text: "Projects") }
+        }
+        ForEach(kinds, id: \.self) { kind in
+            let items = all.filter { $0.projectKind == kind }
+            let folds = items.count > Self.collapsedProjects + 1
+            let open = !folds || expandedKinds.contains(kind)
+            Section {
+                ForEach(open ? items : Array(items.prefix(Self.collapsedProjects))) { projectRow($0) }
+                if folds { foldRow(kind, hidden: items.count - Self.collapsedProjects, open: open) }
+                if kind == kinds.last { newProjectRow(invite: false) }
+            } header: {
+                SectionLabel(text: kind.plural)
             }
         }
-        let pinned = loose.filter(\.pinned)
+    }
+
+    private func projectRow(_ p: Project) -> some View {
+        NavigationLink(value: Route.project(p.id)) {
+            ProjectRow(project: p)
+                .matchedTransitionSource(id: p.id, in: zoom)
+        }
+        .listRowBackground(Color.qRaised)
+        .selectionDisabled()
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) { sheets.deletingProject = p } label: { Label("Delete", systemImage: "trash") }
+            Button { sheets.editor = ProjectEditorRequest(project: p) } label: { Label("Edit", systemImage: "pencil") }
+                .tint(Color.qTileSlate)
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button {
+                Haptics.tap()
+                app.startNewChat(projectId: p.id)
+            } label: {
+                Label("New chat", systemImage: "square.and.pencil")
+            }
+            .tint(p.tintColor)
+        }
+        .contextMenu {
+            Button { app.startNewChat(projectId: p.id) } label: { Label("New chat", systemImage: "square.and.pencil") }
+            Button { sheets.editor = ProjectEditorRequest(project: p) } label: { Label("Edit \(p.projectKind.noun)", systemImage: "pencil") }
+            if !p.hasInstructions {
+                Button { sheets.editor = ProjectEditorRequest(project: p, focusInstructions: true) } label: {
+                    Label("Add instructions", systemImage: "text.badge.plus")
+                }
+            }
+            Divider()
+            Button(role: .destructive) { sheets.deletingProject = p } label: {
+                Label("Delete \(p.projectKind.noun)…", systemImage: "trash")
+            }
+        }
+    }
+
+    private func foldRow(_ kind: ProjectKind, hidden: Int, open: Bool) -> some View {
+        Button {
+            Haptics.selection()
+            withAnimation(Motion.standard) {
+                if open { expandedKinds.remove(kind) } else { expandedKinds.insert(kind) }
+            }
+        } label: {
+            HStack {
+                Text(open ? "Show fewer" : "Show \(hidden) more")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Color.qInk2)
+                    .contentTransition(.opacity)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.qInk2)
+                    .rotationEffect(.degrees(open ? 180 : 0))
+            }
+            .contentShape(.rect)
+        }
+        .listRowBackground(Color.qRaised)
+        .selectionDisabled()
+    }
+
+    private func newProjectRow(invite: Bool) -> some View {
+        Button {
+            Haptics.tap()
+            sheets.editor = ProjectEditorRequest(openAfterCreate: true)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "plus")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.qAccent)
+                    .frame(width: 40, height: 40)
+                    .background {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(Color.qAccent.opacity(0.5), style: StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
+                    }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(app.folders.contains { $0.projectKind == .area } ? "New project or area" : "New project")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(Color.qAccent)
+                    if invite {
+                        Text("Group related chats, with instructions they all follow")
+                            .font(.caption)
+                            .foregroundStyle(Color.qInk2)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 3)
+            .contentShape(.rect)
+        }
+        .listRowBackground(Color.qRaised)
+        .selectionDisabled()
+    }
+
+    // MARK: Chats
+
+    @ViewBuilder
+    private var listSections: some View {
+        let pinned = listed.filter(\.pinned)
         if !pinned.isEmpty {
             Section { ForEach(pinned) { row($0) } } header: { SectionLabel(text: "Pinned") }
         }
-        let rest = loose.filter { !$0.pinned }
+        let rest = listed.filter { !$0.pinned }
         ForEach(Fmt.DayGroup.allCases, id: \.self) { group in
             let items = rest.filter { Fmt.dayGroup($0.updatedAt) == group }
             if !items.isEmpty {
@@ -329,46 +389,16 @@ struct ChatListView: View {
         }
     }
 
-    private func folderHeader(_ f: Folder, count: Int) -> some View {
-        Button {
-            withAnimation(Motion.standard) { app.toggleFolder(f.id) }
-            Haptics.selection()
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: (f.collapsed ?? false) ? "folder" : "folder.fill")
-                    .foregroundStyle(Color.qAccent)
-                Text(f.name.uppercased())
-                    .font(.caption.weight(.semibold))
-                    .tracking(1.1)
-                    .foregroundStyle(Color.qInk2)
-                Text("\(count)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(Color.qInk2.opacity(0.7))
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.qInk2)
-                    .rotationEffect(.degrees((f.collapsed ?? false) ? 0 : 90))
-            }
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(f.name), \(count) chats")
-        .accessibilityValue((f.collapsed ?? false) ? "Collapsed" : "Expanded")
-        .contextMenu {
-            Button { folderName = f.name; renamingFolder = f } label: { Label("Rename folder", systemImage: "pencil") }
-            Button(role: .destructive) { withAnimation { app.deleteFolder(f.id) } } label: {
-                Label("Delete folder (keeps chats)", systemImage: "folder.badge.minus")
-            }
-        }
-    }
-
     @ViewBuilder
     private var searchSections: some View {
         let q = query.trimmingCharacters(in: .whitespaces)
+        let projectMatches = app.projects.filter { $0.name.localizedCaseInsensitiveContains(q) }
+        if !projectMatches.isEmpty {
+            Section { ForEach(projectMatches) { projectRow($0) } } header: { SectionLabel(text: "Projects") }
+        }
         let titleMatches = app.chats.filter { $0.title.localizedCaseInsensitiveContains(q) }
         if !titleMatches.isEmpty {
-            Section { ForEach(titleMatches) { row($0) } } header: { SectionLabel(text: "Chats") }
+            Section { ForEach(titleMatches) { row($0, showsProject: true) } } header: { SectionLabel(text: "Chats") }
         }
         Section {
             if hits.isEmpty {
@@ -414,8 +444,14 @@ struct ChatListView: View {
         EmptyState(title: showArchived ? "Nothing archived" : "No chats yet",
                    message: showArchived ? "Swipe a chat to archive it. It stays searchable." : "Everything you write stays on this iPhone until you export it.") {
             if !showArchived {
-                Button { app.startNewChat() } label: { Label("New chat", systemImage: "square.and.pencil") }
-                    .buttonStyle(.glassProminent)
+                HStack(spacing: 10) {
+                    Button { app.startNewChat() } label: { Label("New chat", systemImage: "square.and.pencil") }
+                        .buttonStyle(.glassProminent)
+                    Button { sheets.editor = ProjectEditorRequest(openAfterCreate: true) } label: {
+                        Label("New project", systemImage: "folder.badge.plus")
+                    }
+                    .buttonStyle(.glass)
+                }
             }
         }
         .entrance(emptyShown)
@@ -426,81 +462,11 @@ struct ChatListView: View {
 
     // MARK: Row
 
-    private func row(_ chat: Chat) -> some View {
-        NavigationLink(value: Route.chat(chat.id)) {
-            ChatRow(chat: chat)
-        }
-        .listRowBackground(Color.qRaised)
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button { archive([chat.id], to: !chat.archived) } label: {
-                Label(chat.archived ? "Unarchive" : "Archive", systemImage: "archivebox")
-            }
-            .tint(Color.qTileSlate)
-            Button(role: .destructive) { confirmDelete = [chat.id] } label: { Label("Delete", systemImage: "trash") }
-        }
-        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button {
-                withAnimation(Motion.standard) { app.patchChat(chat.id) { $0.pinned.toggle() } }
-                Haptics.selection()
-            } label: {
-                Label(chat.pinned ? "Unpin" : "Pin", systemImage: chat.pinned ? "pin.slash" : "pin")
-            }
-            .tint(Color.qAccent)
-        }
-        .contextMenu {
-            Button { renameText = chat.title; renaming = chat } label: { Label("Rename", systemImage: "pencil") }
-            Button { withAnimation(Motion.standard) { app.patchChat(chat.id) { $0.pinned.toggle() } } } label: {
-                Label(chat.pinned ? "Unpin" : "Pin", systemImage: chat.pinned ? "pin.slash" : "pin")
-            }
-            Menu {
-                Button { move([chat.id], to: nil) } label: { Label("No folder", systemImage: "tray") }
-                ForEach(app.folders) { f in
-                    Button { move([chat.id], to: f.id) } label: {
-                        Label(f.name, systemImage: chat.folderId == f.id ? "checkmark" : "folder")
-                    }
-                }
-                Divider()
-                Button { newFolderFor = [chat.id]; newFolderName = "" } label: { Label("New folder…", systemImage: "folder.badge.plus") }
-            } label: {
-                Label("Move to folder", systemImage: "folder")
-            }
-            Button {
-                if let id = app.duplicateChat(chat.id) { app.toasts.show("Duplicated", symbol: "plus.square.on.square"); _ = id }
-            } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
-            Button {
-                if let url = try? app.exportChats([chat.id]) { share = SharedFile(url: url) }
-            } label: { Label("Export as JSON", systemImage: "square.and.arrow.up") }
-            Button { archive([chat.id], to: !chat.archived) } label: {
-                Label(chat.archived ? "Unarchive" : "Archive", systemImage: "archivebox")
-            }
-            Divider()
-            Button(role: .destructive) { confirmDelete = [chat.id] } label: { Label("Delete", systemImage: "trash") }
-        }
+    private func row(_ chat: Chat, showsProject: Bool = false) -> some View {
+        ChatListRow(chat: chat, sheets: sheets, showsProject: showsProject || showArchived)
     }
 
     // MARK: Actions
-
-    private func archive(_ ids: Set<String>, to archived: Bool) {
-        guard !ids.isEmpty else { return }
-        withAnimation(Motion.standard) { app.patchChats(ids) { $0.archived = archived } }
-        Haptics.tap()
-        let n = ids.count
-        let noun = n == 1 ? "Chat" : "\(n) chats"
-        app.toasts.show(archived ? "\(noun) archived" : "\(noun) unarchived", symbol: "archivebox",
-                        action: (label: "Undo", run: { [app] in
-                            withAnimation(Motion.standard) { app.patchChats(ids) { $0.archived = !archived } }
-                        }))
-        finishBulk()
-    }
-
-    private func move(_ ids: Set<String>, to folderId: String?) {
-        guard !ids.isEmpty else { return }
-        withAnimation(Motion.standard) { app.patchChats(ids) { $0.folderId = folderId } }
-        Haptics.tap()
-        let name = app.folder(folderId)?.name
-        app.toasts.show(name.map { "Moved to \($0)" } ?? "Removed from folder", symbol: "folder")
-        finishBulk()
-    }
 
     private func finishBulk() {
         guard isEditing else { return }
@@ -535,9 +501,11 @@ struct ChatListView: View {
     }
 }
 
-/// One chat in the list: serif title, two lines of preview, a quiet meta line.
+/// One chat in the list: serif title, two lines of preview, a quiet meta line (which names the
+/// chat's project where the list mixes chats from several).
 struct ChatRow: View {
     let chat: Chat
+    var showsProject = false
     @Environment(AppModel.self) private var app
 
     var body: some View {
@@ -578,6 +546,15 @@ struct ChatRow: View {
                     .transition(.opacity)
             }
             HStack(spacing: 6) {
+                if showsProject, let p = app.project(of: chat) {
+                    HStack(spacing: 3) {
+                        Image(systemName: p.symbolName)
+                            .foregroundStyle(p.tintColor)
+                        Text(p.name)
+                            .lineLimit(1)
+                    }
+                    Text("·")
+                }
                 if let p = app.preset(chat.systemPromptId) {
                     Text("\(p.icon ?? "◦") \(p.name)")
                         .lineLimit(1)
@@ -613,18 +590,43 @@ struct ChatRow: View {
     }
 }
 
-/// Compose: tap for a new chat; hold for an incognito chat or one started from a persona.
+/// Compose: tap for a new chat; hold for an incognito chat, one in a project, or one started from a
+/// persona. Given a project (a chat in one, or the project's own screen), the new chat starts there
+/// too, with a way out of it in the menu.
 struct NewChatButton: View {
+    var projectId: String? = nil
     @Environment(AppModel.self) private var app
 
     var body: some View {
+        let project = app.project(projectId)
         Menu {
-            Button { app.startNewChat() } label: { Label("New chat", systemImage: "square.and.pencil") }
-            Button { app.startNewChat(incognito: true) } label: { Label("Incognito chat", systemImage: "eye.slash") }
+            if let project {
+                Button { app.startNewChat(projectId: project.id) } label: {
+                    Label("New chat in \(project.name)", systemImage: "square.and.pencil")
+                }
+                Button { app.startNewChat(incognito: true, projectId: project.id) } label: {
+                    Label("Incognito chat", systemImage: "eye.slash")
+                }
+                Button { app.startNewChat() } label: {
+                    Label("New chat outside \(project.projectKind.noun)", systemImage: "tray")
+                }
+            } else {
+                Button { app.startNewChat() } label: { Label("New chat", systemImage: "square.and.pencil") }
+                Button { app.startNewChat(incognito: true) } label: { Label("Incognito chat", systemImage: "eye.slash") }
+                if !app.folders.isEmpty {
+                    Menu {
+                        ForEach(app.projects) { p in
+                            Button { app.startNewChat(projectId: p.id) } label: { Label(p.name, systemImage: p.symbolName) }
+                        }
+                    } label: {
+                        Label("In a project", systemImage: "folder")
+                    }
+                }
+            }
             if !app.presets.isEmpty {
                 Section("Personas") {
                     ForEach(app.presets) { p in
-                        Button { app.startNewChat(persona: p) } label: { Text("\(p.icon ?? "◦")  \(p.name)") }
+                        Button { app.startNewChat(persona: p, projectId: project?.id) } label: { Text("\(p.icon ?? "◦")  \(p.name)") }
                     }
                 }
             }
@@ -634,9 +636,9 @@ struct NewChatButton: View {
             Image(systemName: "square.and.pencil")
         } primaryAction: {
             Haptics.tap()
-            app.startNewChat()
+            app.startNewChat(projectId: project?.id)
         }
-        .accessibilityLabel("New chat")
-        .accessibilityHint("Hold for incognito or a persona")
+        .accessibilityLabel(project.map { "New chat in \($0.name)" } ?? "New chat")
+        .accessibilityHint("Hold for incognito, a persona or a project")
     }
 }
