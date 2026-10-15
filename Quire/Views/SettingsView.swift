@@ -803,10 +803,8 @@ private struct AppearanceSettings: View {
                 Toggle("Show costs", isOn: $app.settings.ui.showCosts)
                 Toggle("Haptics", isOn: $app.settings.ui.hapticsEnabled)
                 Toggle("Return sends on a hardware keyboard", isOn: $app.settings.ui.sendOnEnter)
-                Toggle("Live Activity while replying", isOn: Binding(get: { app.settings.liveActivities ?? true },
-                                                                       set: { app.settings.liveActivities = $0 }))
             } footer: {
-                Text("Reasoning traces stay open while the model is still thinking either way. With a hardware keyboard, Shift-Return adds a line. The Live Activity follows a reply on the Lock Screen and in the Dynamic Island when you leave Quire.")
+                Text("Reasoning traces stay open while the model is still thinking either way. With a hardware keyboard, Shift-Return adds a line.")
             }
         }
         .scrollContentBackground(.hidden)

@@ -42,7 +42,7 @@ private struct UserMessageView: View {
                         AttachmentStrip(attachments: atts, onTap: actions.viewImage)
                     }
                     if !message.content.isEmpty {
-                        Text(message.content)
+                        ChunkedText(text: message.content)
                             .font(.body)
                             .foregroundStyle(Color.qInk)
                             .fixedSize(horizontal: false, vertical: true)
@@ -453,7 +453,7 @@ private struct ReasoningView: View {
                 .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
 
                 if isOpen {
-                    Text(text)
+                    ChunkedText(text: text)
                         .font(.footnote)
                         .lineSpacing(2)
                         .foregroundStyle(Color.qInk2)

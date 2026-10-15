@@ -69,7 +69,7 @@ private struct BlockView: View {
                 .accessibilityAddTraits(.isHeader)
 
         case .paragraph(let text):
-            Text(Inline.attributed(text, caret: caret))
+            ParagraphText(text: text, caret: caret)
                 .font(.system(.body, design: design))
                 .lineSpacing(4)
                 .foregroundStyle(Color.qInk)
@@ -188,6 +188,7 @@ private struct CodeBlockView: View {
     let lang: String
     let code: String
     @State private var copied = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -210,13 +211,21 @@ private struct CodeBlockView: View {
 
             Rectangle().fill(Color.qRule).frame(height: 1)
 
+            // Drawn in 60-line pieces: one text view for a long block outgrew what the GPU will
+            // draw, and the whole block came out blank. The column is as wide as the longest line,
+            // measured up front, so sideways scrolling doesn't shift as pieces load.
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(Highlighter.highlight(code, lang: lang))
-                    .font(.system(.footnote, design: .monospaced))
-                    .lineSpacing(3)
-                    .foregroundStyle(Color.qInk)
-                    .padding(12)
-                    .fixedSize(horizontal: true, vertical: false)
+                LazyVStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(Highlighter.chunks(code, lang: lang).enumerated()), id: \.offset) { _, piece in
+                        Text(piece)
+                            .fixedSize(horizontal: true, vertical: true)
+                    }
+                }
+                .font(.system(.footnote, design: .monospaced))
+                .lineSpacing(3)
+                .foregroundStyle(Color.qInk)
+                .frame(minWidth: TextMetrics.monospacedWidth(code, style: .footnote, size: typeSize), alignment: .leading)
+                .padding(12)
             }
         }
         .card(radius: 12, fill: .qSunken)
@@ -341,7 +350,7 @@ private struct TableBlockView: View {
 /// Text measurement for tables, with UIKit's metrics at the reading size in effect.
 private enum TableMetrics {
     static func naturalWidths(header: [String], rows: [[String]], design: Font.Design, size: DynamicTypeSize) -> [CGFloat] {
-        let traits = UITraitCollection(preferredContentSizeCategory: category(size))
+        let traits = UITraitCollection(preferredContentSizeCategory: TextMetrics.category(size))
         let base = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits)
         let regular = font(base, design: design, bold: false)
         let bold = font(base, design: design, bold: true)
@@ -383,8 +392,26 @@ private enum TableMetrics {
         if bold, let b = d.withSymbolicTraits(.traitBold) { d = b }
         return UIFont(descriptor: d, size: base.pointSize)
     }
+}
 
-    private static func category(_ size: DynamicTypeSize) -> UIContentSizeCategory {
+/// Text measurement shared by tables and code blocks.
+enum TextMetrics {
+    /// The width of the longest line of `text` in the monospaced system font (tabs as four spaces).
+    static func monospacedWidth(_ text: String, style: UIFont.TextStyle, size: DynamicTypeSize) -> CGFloat {
+        let traits = UITraitCollection(preferredContentSizeCategory: category(size))
+        let point = UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).pointSize
+        let font = UIFont.monospacedSystemFont(ofSize: point, weight: .regular)
+        let advance = ("M" as NSString).size(withAttributes: [.font: font]).width
+        var longest = 0
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            var n = 0
+            for ch in line { n += ch == "\t" ? 4 : 1 }
+            longest = max(longest, n)
+        }
+        return ceil(CGFloat(longest) * advance) + 2
+    }
+
+    static func category(_ size: DynamicTypeSize) -> UIContentSizeCategory {
         switch size {
         case .xSmall: return .extraSmall
         case .small: return .small
@@ -399,6 +426,90 @@ private enum TableMetrics {
         case .accessibility4: return .accessibilityExtraExtraLarge
         case .accessibility5: return .accessibilityExtraExtraExtraLarge
         @unknown default: return .large
+        }
+    }
+}
+
+/// Long text as a column of shorter text views. One text view taller than the largest layer the
+/// GPU will draw comes out blank (all of it, not just the overflow), so anything long is split at
+/// line breaks into pieces that each stay well inside that limit.
+enum TextChunks {
+    static func split(_ s: String, maxChars: Int = 2000) -> [String] {
+        guard s.count > maxChars else { return [s] }
+        var chunks: [String] = []
+        var lines: [Substring] = []
+        var size = 0
+        func flush() {
+            guard !lines.isEmpty else { return }
+            chunks.append(lines.joined(separator: "\n"))
+            lines = []
+            size = 0
+        }
+        for line in s.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.count > maxChars {
+                flush()
+                chunks.append(contentsOf: wrap(line, maxChars))
+                continue
+            }
+            if size + line.count > maxChars { flush() }
+            lines.append(line)
+            size += line.count + 1
+        }
+        flush()
+        return chunks
+    }
+
+    /// One very long line, broken at spaces.
+    private static func wrap(_ line: Substring, _ maxChars: Int) -> [String] {
+        var out: [String] = []
+        var rest = line
+        while rest.count > maxChars {
+            let limit = rest.index(rest.startIndex, offsetBy: maxChars)
+            var cut = rest[..<limit].lastIndex(of: " ") ?? limit
+            if cut == rest.startIndex { cut = limit }
+            out.append(String(rest[..<cut]))
+            rest = rest[cut...].drop(while: { $0 == " " })
+        }
+        if !rest.isEmpty { out.append(String(rest)) }
+        return out
+    }
+}
+
+/// Plain text that may be long (a reasoning trace, a pasted message): one text view when short,
+/// a lazy column of pieces when not. Font and colour come from the caller.
+struct ChunkedText: View {
+    let text: String
+
+    var body: some View {
+        let pieces = TextChunks.split(text)
+        if pieces.count == 1 {
+            Text(text)
+        } else {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(pieces.enumerated()), id: \.offset) { _, piece in
+                    Text(piece).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
+/// A paragraph, split the same way only when it's enormous; the caret goes on the last piece.
+private struct ParagraphText: View {
+    let text: String
+    var caret = false
+
+    var body: some View {
+        let pieces = TextChunks.split(text, maxChars: 3000)
+        if pieces.count == 1 {
+            Text(Inline.attributed(text, caret: caret))
+        } else {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(pieces.enumerated()), id: \.offset) { i, piece in
+                    Text(Inline.attributed(piece, caret: caret && i == pieces.count - 1))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
     }
 }

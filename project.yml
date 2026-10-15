@@ -11,7 +11,7 @@ options:
 settings:
   base:
     MARKETING_VERSION: "1.0.2"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "2"
     # Swift 5 language mode for the first builds: concurrency diagnostics are warnings rather than
     # errors while the port settles. Flip to "6.0" once the build log is clean (see DECISIONS.md).
     SWIFT_VERSION: "5.0"
@@ -26,10 +26,6 @@ targets:
     platform: iOS
     sources:
       - path: Quire
-      - path: Shared
-    dependencies:
-      # The Live Activity's widget extension, embedded in the app (PlugIns/QuireLive.appex).
-      - target: QuireLive
     info:
       path: Support/Info.plist
       properties:
@@ -49,13 +45,6 @@ targets:
         UIFileSharingEnabled: false
         NSCameraUsageDescription: Take a photo to attach to a message.
         UIStatusBarStyle: UIStatusBarStyleDefault
-        # A Live Activity follows a reply on the Lock Screen and in the Dynamic Island.
-        NSSupportsLiveActivities: true
-        # quire://chat/<id> opens a chat (a tap on the Live Activity).
-        CFBundleURLTypes:
-          - CFBundleURLName: app.quire.ios
-            CFBundleURLSchemes:
-              - quire
         # Press and hold the icon. Recent chats are added at runtime.
         UIApplicationShortcutItems:
           - UIApplicationShortcutItemType: app.quire.new
@@ -72,29 +61,6 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         CODE_SIGN_STYLE: Automatic
-
-  # Draws the Live Activity. Its bundle ID must sit under the app's for iOS to pair them.
-  QuireLive:
-    type: app-extension
-    platform: iOS
-    sources:
-      - path: QuireLive
-      - path: Shared
-    info:
-      path: Support/QuireLive-Info.plist
-      properties:
-        CFBundleDisplayName: Quire
-        CFBundleShortVersionString: $(MARKETING_VERSION)
-        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.widgetkit-extension
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.quire.ios.live
-        PRODUCT_NAME: QuireLive
-        TARGETED_DEVICE_FAMILY: "1"
-        CODE_SIGN_STYLE: Automatic
-        SKIP_INSTALL: YES
 
 schemes:
   Quire:

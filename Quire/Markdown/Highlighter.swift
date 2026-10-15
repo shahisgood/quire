@@ -48,6 +48,37 @@ enum Highlighter {
         return result
     }
 
+    private static var chunkCache: [String: [AttributedString]] = [:]
+
+    /// The highlighted code in pieces of `lines` lines each. A single text view taller than the
+    /// largest layer the GPU will draw comes out blank, so long blocks are drawn as a column of these.
+    /// Highlighting runs over the whole block first, so colours stay right across the joins.
+    static func chunks(_ code: String, lang: String, lines: Int = 60) -> [AttributedString] {
+        let key = lang + "\u{1}" + code
+        if let hit = chunkCache[key] { return hit }
+        let whole = highlight(code, lang: lang)
+        let chars = whole.characters
+        var out: [AttributedString] = []
+        var start = chars.startIndex
+        var count = 0
+        var i = chars.startIndex
+        while i < chars.endIndex {
+            if chars[i] == "\n" {
+                count += 1
+                if count == lines {
+                    out.append(AttributedString(whole[start..<i]))
+                    start = chars.index(after: i)
+                    count = 0
+                }
+            }
+            i = chars.index(after: i)
+        }
+        if start < chars.endIndex || out.isEmpty { out.append(AttributedString(whole[start..<chars.endIndex])) }
+        if chunkCache.count > 60 { chunkCache.removeAll(keepingCapacity: true) }
+        chunkCache[key] = out
+        return out
+    }
+
     private enum Kind { case comment, string, number, keyword }
 
     private static func compute(_ code: String, lang: String) -> AttributedString {

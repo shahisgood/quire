@@ -37,9 +37,6 @@ struct ChatView: View {
     @State private var deleting: Message? = nil
     @State private var viewingImage: Attachment? = nil
     @State private var share: SharedFile? = nil
-    @State private var renaming = false
-    @State private var renameText = ""
-    @State private var confirmDeleteChat = false
 
     private var visiblePath: ArraySlice<String> { session.path.suffix(visibleCount) }
     private var hiddenCount: Int { max(0, session.path.count - visibleCount) }
@@ -164,16 +161,6 @@ struct ChatView: View {
         } message: {
             Text("Later messages on this branch are deleted with it.")
         }
-        .confirmationDialog("Delete this chat?", isPresented: $confirmDeleteChat, titleVisibility: .visible) {
-            Button("Delete chat", role: .destructive) { app.deleteChats([session.chat.id]) }
-        } message: {
-            Text("Every message and branch in it is removed. This can't be undone.")
-        }
-        .alert("Rename chat", isPresented: $renaming) {
-            TextField("Title", text: $renameText)
-            Button("Rename") { session.rename(renameText) }
-            Button("Cancel", role: .cancel) {}
-        }
     }
 
     // MARK: Pieces
@@ -230,98 +217,13 @@ struct ChatView: View {
         }
     }
 
+    /// No title, no settings button: the bar stays quiet. A new chat offers incognito in the corner;
+    /// once the first message is sent, that corner becomes the new-chat button. It's one toolbar
+    /// item whose contents change, so the bar itself never rearranges.
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .principal) {
-            Menu { titleMenu } label: { titleLabel }
-                .accessibilityLabel("\(session.chat.title), chat options")
-        }
         ToolbarItem(placement: .topBarTrailing) {
-            Button { showSettings = true } label: { Image(systemName: "slider.horizontal.3") }
-                .accessibilityLabel("Chat settings")
-        }
-        ToolbarItem(placement: .topBarTrailing) {
-            NewChatButton()
-        }
-    }
-
-    private var titleLabel: some View {
-        VStack(spacing: 1) {
-            HStack(spacing: 5) {
-                if !session.chat.memoryEnabled {
-                    Image(systemName: "eye.slash").font(.caption).foregroundStyle(Color.qInk2)
-                }
-                Text(session.chat.title)
-                    .font(.system(.headline, design: .serif))
-                    .foregroundStyle(Color.qInk)
-                    .lineLimit(1)
-                    .contentTransition(.opacity)
-                Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(Color.qInk2)
-            }
-            Text(subtitle)
-                .font(.caption2)
-                .foregroundStyle(session.generating ? Color.qAccent : Color.qInk2)
-                .lineLimit(1)
-                .contentTransition(.opacity)
-        }
-        .frame(maxWidth: 250)
-        .animation(Motion.quick, value: session.generating)
-        .animation(Motion.standard, value: session.chat.title)
-    }
-
-    private var subtitle: String {
-        if session.generating { return session.streamFirstTokenAt == nil ? "Waiting for \(app.modelName(session.chat.modelId))" : "Writing…" }
-        if let p = session.persona { return "\(p.icon ?? "◦") \(p.name) · \(app.modelName(session.chat.modelId))" }
-        return app.modelName(session.chat.modelId)
-    }
-
-    @ViewBuilder
-    private var titleMenu: some View {
-        Section {
-            Button { renameText = session.chat.title; renaming = true } label: { Label("Rename", systemImage: "pencil") }
-            Button { showSettings = true } label: { Label("Chat settings", systemImage: "slider.horizontal.3") }
-            Button { showModels = true } label: { Label("Model: \(app.modelName(session.chat.modelId))", systemImage: "cpu") }
-            Toggle(isOn: Binding(get: { session.chat.memoryEnabled }, set: { session.setMemoryEnabled($0) })) {
-                Label("Memory for this chat", systemImage: "brain")
-            }
-        }
-        if session.persisted {
-            Section {
-                Menu {
-                    Button { app.patchChat(session.chat.id) { $0.folderId = nil } } label: { Label("No folder", systemImage: "tray") }
-                    ForEach(app.folders) { f in
-                        Button { app.patchChat(session.chat.id) { $0.folderId = f.id } } label: {
-                            Label(f.name, systemImage: session.chat.folderId == f.id ? "checkmark" : "folder")
-                        }
-                    }
-                } label: {
-                    Label("Folder: \(app.folder(session.chat.folderId)?.name ?? "None")", systemImage: "folder")
-                }
-                Button { app.patchChat(session.chat.id) { $0.pinned.toggle() } } label: {
-                    Label(session.chat.pinned ? "Unpin" : "Pin", systemImage: session.chat.pinned ? "pin.slash" : "pin")
-                }
-                Button {
-                    let archived = !session.chat.archived
-                    app.patchChat(session.chat.id) { $0.archived = archived }
-                    app.toasts.show(archived ? "Archived" : "Unarchived", symbol: "archivebox")
-                } label: {
-                    Label(session.chat.archived ? "Unarchive" : "Archive", systemImage: "archivebox")
-                }
-            }
-            Section {
-                Button(action: shareMarkdown) { Label("Share as Markdown", systemImage: "doc.richtext") }
-                Button {
-                    if let url = try? app.exportChats([session.chat.id]) { share = SharedFile(url: url) }
-                } label: { Label("Export as JSON", systemImage: "curlybraces") }
-                Button {
-                    if let id = app.duplicateChat(session.chat.id) { app.openChat(id) }
-                } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
-            }
-            Section {
-                Button(role: .destructive) { confirmDeleteChat = true } label: { Label("Delete chat", systemImage: "trash") }
-            }
+            ChatCornerAction(session: session)
         }
     }
 
@@ -364,6 +266,47 @@ struct ChatView: View {
     }
 }
 
+// MARK: - Top bar
+
+private struct ChatCornerAction: View {
+    let session: ChatSession
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack {
+            if session.path.isEmpty {
+                IncognitoToggle(session: session)
+                    .transition(reduceMotion ? .opacity : .pop)
+            } else {
+                NewChatButton()
+                    .transition(reduceMotion ? .opacity : .pop)
+            }
+        }
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy, value: session.path.isEmpty)
+    }
+}
+
+/// Before anything is said: make this chat incognito (nothing read from or written to memory), or
+/// not. The eye fills in with the accent while it's on.
+private struct IncognitoToggle: View {
+    let session: ChatSession
+
+    var body: some View {
+        let on = !session.chat.memoryEnabled
+        Button {
+            Haptics.selection()
+            withAnimation(Motion.standard) { session.setMemoryEnabled(on) }
+        } label: {
+            Image(systemName: on ? "eye.slash.fill" : "eye.slash")
+                .foregroundStyle(on ? Color.qAccent : Color.qInk)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .accessibilityLabel("Incognito")
+        .accessibilityValue(on ? "On" : "Off")
+        .accessibilityHint(on ? "This chat won't use or add to memory" : "Keep this chat out of memory")
+    }
+}
+
 // MARK: - Empty chat
 
 private struct EmptyChatView: View {
@@ -392,11 +335,13 @@ private struct EmptyChatView: View {
                         .foregroundStyle(Color.qInk)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
+                        .contentTransition(.opacity)
                         .entrance(shown, delay: 0.06)
                     if !session.chat.memoryEnabled {
                         Label("Incognito. Nothing here is remembered.", systemImage: "eye.slash")
                             .font(.footnote)
                             .foregroundStyle(Color.qInk2)
+                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
                             .entrance(shown, delay: 0.1)
                     }
                 }
@@ -459,7 +404,8 @@ private struct EmptyChatView: View {
     }
 
     private var greeting: String {
-        Greeting.line(seed: session.chat.id, returning: app.chats.contains { $0.id != session.chat.id })
+        guard session.chat.memoryEnabled else { return "Off the record." }
+        return Greeting.line(seed: session.chat.id, returning: app.chats.contains { $0.id != session.chat.id })
     }
 
     private var provider: String {

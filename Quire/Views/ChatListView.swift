@@ -5,7 +5,8 @@ struct ChatListView: View {
     @State private var query = ""
     @State private var hits: [SearchHit] = []
     @State private var searching = false
-    @State private var searchActive = false
+    @State private var searchOpen = false
+    @FocusState private var searchFocused: Bool
     @State private var emptyShown = false
     @State private var showArchived = false
     @State private var editMode: EditMode = .inactive
@@ -38,13 +39,16 @@ struct ChatListView: View {
         .environment(\.editMode, $editMode)
         .navigationTitle(showArchived ? "Archived" : "Quire")
         .navigationSubtitle(statusText)
-        // Pinned under the title rather than hide-on-scroll: the automatic mode keeps the field out of
-        // navigation transitions and then drops it in once they finish. The placement is explicit so
-        // iOS never moves the field between the top and the bottom bar mid-search, and the toolbar
-        // stays put while searching so settings and the menu are always reachable.
-        .searchable(text: $query, isPresented: $searchActive, placement: .navigationBarDrawer(displayMode: .always),
-                    prompt: "Search every message")
-        .searchPresentationToolbarBehavior(.avoidHidingContent)
+        // Search is a button. It slides its own field in where the title bar was (which steps aside),
+        // rather than using the system search controller, whose bar dropped in late and once left
+        // the toolbar half-empty.
+        .toolbar(searchOpen ? .hidden : .visible, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if searchOpen {
+                searchBar
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .task(id: query) { await runSearch() }
         .toolbar { toolbarContent }
         .overlay {
@@ -115,7 +119,6 @@ struct ChatListView: View {
                     .fontWeight(.semibold)
             } else {
                 Button {
-                    searchActive = false
                     app.openSettings()
                 } label: {
                     Image(systemName: "gearshape")
@@ -124,6 +127,11 @@ struct ChatListView: View {
             }
         }
         if !isEditing {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: openSearch) { Image(systemName: "magnifyingglass") }
+                    .accessibilityLabel("Search")
+                    .accessibilityHint("Searches every message")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button { withAnimation { editMode = .active } } label: { Label("Select chats", systemImage: "checkmark.circle") }
@@ -178,6 +186,71 @@ struct ChatListView: View {
                 }
                 .disabled(selection.isEmpty)
             }
+        }
+    }
+
+    // MARK: Search
+
+    /// A glass field with the keyboard up and Cancel beside it. Results replace the list as you type
+    /// (titles first, then matches inside messages); with nothing typed, your chats stay in view.
+    private var searchBar: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(Color.qInk2)
+                TextField("Search every message", text: $query)
+                    .focused($searchFocused)
+                    .submitLabel(.search)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .foregroundStyle(Color.qInk)
+                    .tint(Color.qAccent)
+                if !query.isEmpty {
+                    Button { query = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Color.qInk2)
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.pop)
+                    .accessibilityLabel("Clear search")
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .glassEffect(.regular, in: .capsule)
+
+            Button("Cancel", action: closeSearch)
+                .font(.body.weight(.medium))
+                .foregroundStyle(Color.qAccent)
+                .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
+        .background {
+            // The list fades out under the field instead of running into it.
+            LinearGradient(stops: [.init(color: Color.qBase, location: 0), .init(color: Color.qBase, location: 0.7),
+                                   .init(color: Color.qBase.opacity(0), location: 1)],
+                           startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea(edges: .top)
+        }
+        .animation(Motion.quick, value: query.isEmpty)
+    }
+
+    private func openSearch() {
+        Haptics.selection()
+        withAnimation(Motion.drawerIn) { searchOpen = true }
+        Task {
+            try? await Task.sleep(for: .milliseconds(150))
+            searchFocused = true
+        }
+    }
+
+    private func closeSearch() {
+        searchFocused = false
+        withAnimation(Motion.drawerOut) {
+            searchOpen = false
+            query = ""
         }
     }
 

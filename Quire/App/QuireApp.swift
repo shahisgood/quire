@@ -22,11 +22,7 @@ struct QuireApp: App {
                         app.didEnterBackground()
                         QuickActions.refresh(chats: app.chats)
                     }
-                    if newPhase == .active {
-                        // Back in Quire: finished replies' Live Activities have done their job.
-                        ReplyActivities.shared.dismissFinished()
-                        Task { await app.refreshModels() }
-                    }
+                    if newPhase == .active { Task { await app.refreshModels() } }
                 }
                 .task { await app.refreshModels() }
         }
@@ -91,12 +87,6 @@ struct RootView: View {
             case .incognito: app.startNewChat(incognito: true)
             case .open(let id): if app.chat(id) != nil { app.openChat(id) }
             }
-        }
-        // quire://chat/<id>, from a Live Activity.
-        .onOpenURL { url in
-            guard url.scheme == "quire", url.host == "chat",
-                  let id = url.pathComponents.dropFirst().first, app.chat(id) != nil else { return }
-            app.openChat(id)
         }
     }
 

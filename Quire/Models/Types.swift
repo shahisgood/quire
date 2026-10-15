@@ -432,8 +432,6 @@ nonisolated struct AppSettings: Codable, Hashable, Sendable {
     var exportNudgeSnoozedUntil: Double?
     /// iOS only: how new chats get their names (nil is Smart).
     var chatTitles: ChatTitleMode?
-    /// iOS only: a Live Activity while a reply is being written (nil is on).
-    var liveActivities: Bool?
 
     init() {
         defaultModelId = DefaultModels.chat.id
@@ -468,7 +466,6 @@ nonisolated struct AppSettings: Codable, Hashable, Sendable {
         seenModelIds = c.lenient(.seenModelIds, [])
         exportNudgeSnoozedUntil = c.lenient(.exportNudgeSnoozedUntil, nil)
         chatTitles = c.lenient(.chatTitles, nil)
-        liveActivities = c.lenient(.liveActivities, nil)
     }
 }
 

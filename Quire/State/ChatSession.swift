@@ -263,7 +263,9 @@ final class ChatSession {
         let user = Message(chatId: chat.id, parentId: path.last, role: .user, content: trimmed,
                            attachments: attachments.isEmpty ? nil : attachments, createdAt: now, status: .complete)
         let asst = Message(chatId: chat.id, parentId: user.id, role: .assistant, content: "", modelId: chat.modelId, createdAt: now + 1, status: .streaming)
-        let opening = path.isEmpty && chat.title == "New chat"
+        // The opening message names the chat (First message and Smart both start here; Smart then
+        // asks for a better name). A chat you've renamed keeps your name.
+        let opening = path.isEmpty && chat.titleAuto != false
         if opening && titleMode != .off {
             chat.title = TextUtil.stripMarkdown(trimmed.isEmpty ? (attachments.first?.name ?? "New chat") : trimmed, max: 48)
         }
@@ -415,31 +417,9 @@ final class ChatSession {
 
     private func startGeneration(assistantId: String, modelId: String, continueMode: Bool = false) {
         generating = true
-        if app.settings.liveActivities ?? true {
-            ReplyActivities.shared.start(chatId: chat.id, title: activityTitle, model: app.modelName(modelId))
-        }
         task = Task { [weak self] in
             await self?.generate(assistantId: assistantId, modelId: modelId, continueMode: continueMode)
-            // Every way out of a reply (done, stopped, failed, no key, offline, out of background
-            // time) passes here, so the Live Activity always gets its ending.
-            self?.endActivity(assistantId: assistantId)
         }
-    }
-
-    /// Incognito chats don't put their name or words on the Lock Screen.
-    private var activityTitle: String { chat.memoryEnabled ? chat.title : "Incognito chat" }
-
-    private func endActivity(assistantId: String) {
-        let m = messages[assistantId]
-        let phase: ReplyPhase
-        switch m?.status {
-        case .complete?: phase = .done
-        case .interrupted?: phase = m?.error?.message.contains("background") == true ? .paused : .stopped
-        default: phase = .failed
-        }
-        let tokens = m?.usage?.completionTokens ?? Tokens.estimate(m?.content ?? "")
-        ReplyActivities.shared.end(chatId: chat.id, phase: phase, title: activityTitle, tokens: tokens,
-                                   text: chat.memoryEnabled ? (m?.content ?? "") : "")
     }
 
     private func requestMessages(upTo assistantId: String, continueMode: Bool) -> [JSONValue] {
@@ -570,10 +550,6 @@ final class ChatSession {
                 streamCompletionTokens = ct
                 streamReasoningTokens = rt
                 streamEstCost = Double(promptEst) * pPrompt + Double(ct) * pComp + Double(rt) * pReason
-                ReplyActivities.shared.update(chatId: chat.id,
-                                              phase: content.isEmpty ? (reasoning.isEmpty ? .waiting : .thinking) : .writing,
-                                              title: activityTitle, tokens: ct + rt,
-                                              text: chat.memoryEnabled ? content : "")
             }
             if now.timeIntervalSince(lastPersist) > 1.5 {
                 lastPersist = now
@@ -707,6 +683,11 @@ final class ChatSession {
             }
         }
         if status == .complete, let lastUser {
+            // Belt and braces: a chat that reached its first reply still unnamed takes its opening line.
+            if titleMode != .off, chat.titleAuto != false, chat.title == "New chat", !lastUser.content.isEmpty {
+                chat.title = TextUtil.stripMarkdown(lastUser.content, max: 48)
+                saveChat()
+            }
             if chat.titleAuto != false && !continueMode {
                 let userText = lastUser.content
                 Task { [weak self] in await self?.smartTitle(userText: userText, assistantText: finalContent) }
