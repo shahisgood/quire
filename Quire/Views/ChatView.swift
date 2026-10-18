@@ -23,6 +23,8 @@ struct ChatView: View {
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var pinned = true
     @State private var nearBottom = true
+    /// Close to the bottom, though not at it: letting go here mid-reply rejoins the stream.
+    @State private var withinReach = true
     @State private var tailVisible = true
     @State private var userScrolling = false
     @State private var visibleCount = 40
@@ -47,15 +49,32 @@ struct ChatView: View {
     /// can't get stuck when the geometry reads differently (with the keyboard, say).
     private var atBottom: Bool { nearBottom || tailVisible }
 
+    /// The thread as rows: a message you sent is one, a reply is several (see `ThreadRow`).
+    private var rows: [ThreadRow] {
+        visiblePath.flatMap { id -> [ThreadRow] in
+            guard let m = session.messages[id] else { return [] }
+            return ThreadRow.rows(for: m, in: session)
+        }
+    }
+
+    /// Starters sit just above the message box on an empty chat, until you've written something of
+    /// your own (a starter's opening still counts as nothing yet, so you can swap it for another).
+    private var showsStarters: Bool {
+        guard session.path.isEmpty, app.apiKey != nil else { return false }
+        let d = session.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return d.isEmpty || StarterPrompt.all.contains { $0.text == session.draft }
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                // Lazy, so each message is built (and drawn on its own layer) only as it nears the
-                // screen: a long chat in one plain stack could outgrow what the GPU will draw.
-                LazyVStack(alignment: .leading, spacing: density) {
+                // One lazy list of small rows (a reply is split into its blocks), so only what's
+                // near the screen is built, each row on its own layer, and rows above the screen
+                // settle at their real height quickly instead of shifting the view as they load.
+                LazyVStack(alignment: .leading, spacing: 0) {
                     if session.path.isEmpty {
-                        EmptyChatView(session: session, openModels: { showModels = true }, openSettings: { showSettings = true })
-                            .containerRelativeFrame(.vertical, alignment: .center)
+                        EmptyChatView(session: session, openSettings: { showSettings = true })
+                            .containerRelativeFrame(.vertical, alignment: Alignment(horizontal: .center, vertical: .opticalCenter))
                     }
                     if hiddenCount > 0 {
                         Button(action: showEarlier) {
@@ -66,17 +85,16 @@ struct ChatView: View {
                         }
                         .buttonStyle(.glass)
                         .frame(maxWidth: .infinity)
+                        .padding(.top, 4)
                     }
-                    ForEach(Array(visiblePath), id: \.self) { id in
-                        if let m = session.messages[id] {
-                            MessageRow(session: session, message: m, highlighted: flashId == id, actions: actions)
-                                .id(id)
-                                .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .offset(y: 8)), removal: .opacity))
-                        }
+                    ForEach(rows) { row in
+                        ThreadRowView(row: row, session: session, highlighted: flashId == row.messageId,
+                                      gap: density, actions: actions)
+                            .id(row.id)
+                            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .offset(y: 8)), removal: .opacity))
                     }
                 }
                 .padding(.horizontal, 18)
-                .padding(.top, 12)
                 .padding(.bottom, 12)
                 .environment(\.dynamicTypeSize, ReadingSize(scale: app.settings.ui.fontScale).apply(to: typeSize))
                 .animation(reduceMotion ? nil : Motion.standard, value: session.path)
@@ -91,30 +109,35 @@ struct ChatView: View {
             }
         }
         .scrollPosition($position)
-        .defaultScrollAnchor(.bottom)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        // While following, growth keeps the bottom in place (new text pushes up into view). While
+        // you're reading further up, growth happens below you and the text you're on stays still.
+        .defaultScrollAnchor(pinned ? .bottom : .top, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
         .background(Color.qBase)
-        // "Pinned" means following the bottom. Only while pinned does new text move the viewport;
-        // scrolling up to read stops the follow, as in the PWA, and a "Latest" pill brings it back.
-        // Only the reader's own scrolling un-pins: when a message is sent, the rows grow while the
-        // scroll to the bottom is still animating, and treating that as "scrolled away" left the
-        // pill stuck on screen at the bottom of the chat.
-        .onScrollGeometryChange(for: Bool.self) { geo in
-            geo.visibleRect.maxY >= geo.contentSize.height - 40
-        } action: { _, near in
-            nearBottom = near
+        // "Pinned" means following the bottom. Only while pinned does new text move the viewport.
+        // The moment your finger takes hold of the thread, following stops, so a streaming reply
+        // never pulls the page out from under you; it picks up again if you let go at the bottom.
+        .onScrollGeometryChange(for: BottomReach.self) { geo in
+            let gap = geo.contentSize.height - geo.visibleRect.maxY
+            return gap <= 40 ? .at : (gap <= 160 ? .near : .away)
+        } action: { _, reach in
+            nearBottom = reach == .at
+            withinReach = reach != .away
             updateFollow()
         }
         .onScrollPhaseChange { old, new in
-            let wasDragging = Self.isUserPhase(old)
             userScrolling = Self.isUserPhase(new)
-            // A drag or fling that comes to rest away from the bottom stops the follow, even if
-            // the last position update arrived after the finger lifted.
-            if wasDragging && !userScrolling && !atBottom { pinned = false }
-            updateFollow()
+            if new == .tracking || new == .interacting { pinned = false }
+            // Let go at the bottom, or (while a reply streams) just short of it, and following picks
+            // up again; a reply moving on under your thumb shouldn't strand you above it.
+            if Self.isUserPhase(old) && new == .idle && (atBottom || (session.generating && withinReach)) {
+                pinned = true
+                if !atBottom { withAnimation(reduceMotion ? nil : Motion.quick) { position.scrollTo(edge: .bottom) } }
+            }
         }
-        .onChange(of: session.streamContent) { if pinned { position.scrollTo(edge: .bottom) } }
-        .onChange(of: session.streamReasoning) { if pinned { position.scrollTo(edge: .bottom) } }
+        .onChange(of: session.streamContent) { followIfPinned() }
+        .onChange(of: session.streamReasoning) { followIfPinned() }
         .onChange(of: session.path.count) { old, new in
             if new > old {
                 pinned = true
@@ -127,17 +150,14 @@ struct ChatView: View {
                 .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.quick, value: showsJumpPill)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ComposerView(session: session,
-                         openModels: { showModels = true },
-                         openSettings: { showSettings = true },
-                         onFocus: {
-                             if pinned {
-                                 Task {
-                                     try? await Task.sleep(for: .milliseconds(300))
-                                     withAnimation(Motion.quick) { position.scrollTo(edge: .bottom) }
-                                 }
-                             }
-                         })
+            VStack(spacing: 10) {
+                if showsStarters {
+                    StarterRow(session: session)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 10)))
+                }
+                composer
+            }
+            .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.standard, value: showsStarters)
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
@@ -165,6 +185,20 @@ struct ChatView: View {
 
     // MARK: Pieces
 
+    private var composer: some View {
+        ComposerView(session: session,
+                     openModels: { showModels = true },
+                     openSettings: { showSettings = true },
+                     onFocus: {
+                         if pinned {
+                             Task {
+                                 try? await Task.sleep(for: .milliseconds(300))
+                                 withAnimation(Motion.quick) { position.scrollTo(edge: .bottom) }
+                             }
+                         }
+                     })
+    }
+
     private var actions: MessageActions {
         MessageActions(
             edit: { editing = $0 },
@@ -189,8 +223,14 @@ struct ChatView: View {
     /// Never while the bottom is already in view, whatever the follow state says.
     private var showsJumpPill: Bool { !pinned && !atBottom && !session.path.isEmpty }
 
+    /// Resumes following when the bottom comes into view by itself (not mid-drag).
     private func updateFollow() {
-        if atBottom { pinned = true } else if userScrolling { pinned = false }
+        if atBottom && !userScrolling { pinned = true }
+    }
+
+    private func followIfPinned() {
+        guard pinned, !userScrolling else { return }
+        position.scrollTo(edge: .bottom)
     }
 
     private static func isUserPhase(_ phase: ScrollPhase) -> Bool {
@@ -218,12 +258,18 @@ struct ChatView: View {
     }
 
     /// No title, no settings button: the bar stays quiet. A new chat offers incognito in the corner;
-    /// once the first message is sent, that corner becomes the new-chat button. It's one toolbar
-    /// item whose contents change, so the bar itself never rearranges.
+    /// once the first message is sent, that corner becomes the new-chat button. Each is a toolbar
+    /// item of its own, so each gets the bar's own button and sits centred in it.
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            ChatCornerAction(session: session)
+        if session.path.isEmpty {
+            ToolbarItem(placement: .topBarTrailing) {
+                IncognitoToggle(session: session)
+            }
+        } else {
+            ToolbarItem(placement: .topBarTrailing) {
+                NewChatButton(projectId: session.chat.folderId)
+            }
         }
     }
 
@@ -266,25 +312,10 @@ struct ChatView: View {
     }
 }
 
+/// How far the end of the thread is from the bottom of the screen, in the three steps that matter.
+nonisolated private enum BottomReach: Equatable { case at, near, away }
+
 // MARK: - Top bar
-
-private struct ChatCornerAction: View {
-    let session: ChatSession
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        ZStack {
-            if session.path.isEmpty {
-                IncognitoToggle(session: session)
-                    .transition(reduceMotion ? .opacity : .pop)
-            } else {
-                NewChatButton(projectId: session.chat.folderId)
-                    .transition(reduceMotion ? .opacity : .pop)
-            }
-        }
-        .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy, value: session.path.isEmpty)
-    }
-}
 
 /// Before anything is said: make this chat incognito (nothing read from or written to memory), or
 /// not. The eye fills in with the accent while it's on.
@@ -309,9 +340,12 @@ private struct IncognitoToggle: View {
 
 // MARK: - Empty chat
 
+/// A new chat says only what you need before you start: a greeting, what's different about this
+/// chat (incognito, a project, a persona) if anything, and a way back to what you were last doing.
+/// The model lives in the message box, the starters sit just above it, and the rest of the screen is
+/// left quiet.
 private struct EmptyChatView: View {
     let session: ChatSession
-    let openModels: () -> Void
     let openSettings: () -> Void
     @Environment(AppModel.self) private var app
     @State private var shown = false
@@ -324,118 +358,48 @@ private struct EmptyChatView: View {
                     .buttonStyle(.glassProminent)
             }
         } else {
-            // A greeting that follows the clock, then the model you're about to talk to, then the
-            // way into this chat's settings. Each arrives a beat after the one above it.
-            VStack(spacing: 22) {
-                VStack(spacing: 14) {
-                    QuireMark(width: 48, breathing: true)
-                        .entrance(shown)
-                    Text(greeting)
-                        .font(.system(.title2, design: .serif).weight(.semibold))
-                        .foregroundStyle(Color.qInk)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .contentTransition(.opacity)
-                        .entrance(shown, delay: 0.06)
-                    if !session.chat.memoryEnabled {
-                        Label("Incognito. Nothing here is remembered.", systemImage: "eye.slash")
-                            .font(.footnote)
-                            .foregroundStyle(Color.qInk2)
-                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                            .entrance(shown, delay: 0.1)
-                    }
-                    if let p = session.project {
-                        projectChip(p)
-                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                            .entrance(shown, delay: 0.1)
-                    }
-                }
-                modelCard
-                    .entrance(shown, delay: 0.14)
-                starters
-                HStack(spacing: 10) {
-                    if let p = session.persona {
-                        Text("\(p.icon ?? "◦")  \(p.name)")
-                            .font(.subheadline.weight(.medium))
-                            .lineLimit(1)
-                            .padding(.horizontal, 12)
-                            .frame(height: 34)
-                            .background(Color.qAccentSoft, in: .capsule)
-                            .foregroundStyle(Color.qInk)
-                    }
-                    Button(action: openSettings) { Label("Chat settings", systemImage: "slider.horizontal.3") }
-                        .buttonStyle(.glass)
-                }
-                .entrance(shown, delay: 0.46)
-            }
-            .frame(maxWidth: 380)
-            .padding(.horizontal, 20)
-            .frame(maxWidth: .infinity)
-            .onAppear { shown = true }
-        }
-    }
+            VStack(spacing: 0) {
+                QuireMark(width: 40, breathing: true)
+                    .padding(.bottom, 22)
+                    .entrance(shown)
 
-    /// Which project this chat is in, and whether its instructions are in play. Tapping it opens
-    /// chat settings, where the chat can move.
-    private func projectChip(_ p: Project) -> some View {
-        Button(action: openSettings) {
-            HStack(spacing: 7) {
-                ProjectTile(project: p, size: 20)
-                Text(p.name)
-                    .fontWeight(.semibold)
+                Text(greeting)
+                    .font(.system(.title, design: .serif).weight(.semibold))
+                    .tracking(-0.4)
                     .foregroundStyle(Color.qInk)
-                    .lineLimit(1)
-                if p.hasInstructions {
-                    Text("·")
-                        .foregroundStyle(Color.qInk2)
-                    Text("Instructions on")
-                        .foregroundStyle(Color.qInk2)
-                        .lineLimit(1)
-                }
-            }
-            .font(.footnote)
-            .padding(.leading, 6)
-            .padding(.trailing, 12)
-            .frame(height: 32)
-            .background(p.tintColor.opacity(0.14), in: .capsule)
-            .overlay(Capsule().strokeBorder(p.tintColor.opacity(0.25), lineWidth: 1))
-            .contentShape(.capsule)
-        }
-        .buttonStyle(.pressable)
-        .accessibilityLabel(p.hasInstructions ? "In \(p.name), following its instructions" : "In \(p.name)")
-        .accessibilityHint("Opens chat settings")
-    }
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
+                    .accessibilityAddTraits(.isHeader)
+                    .entrance(shown, delay: 0.06)
 
-    /// A few ways in. Each one only fills the message box (and brings up the keyboard); the rest of
-    /// the sentence is yours, and nothing is sent until you send it.
-    private var starters: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-            ForEach(Array(StarterPrompt.all.enumerated()), id: \.element.id) { i, s in
-                Button {
-                    Haptics.selection()
-                    session.prefill = s.text
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: s.symbol)
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(Color.qAccent)
-                        Text(s.title)
-                            .font(.footnote.weight(.medium))
-                            .foregroundStyle(Color.qInk)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 38)
-                    .background(Color.qRaised, in: .capsule)
-                    .overlay(Capsule().strokeBorder(Color.qRule, lineWidth: 1))
-                    .contentShape(.capsule)
+                if let note {
+                    Text(note)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.qInk2)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 10)
+                        .transition(.opacity)
+                        .entrance(shown, delay: 0.1)
                 }
-                .buttonStyle(.pressable)
-                .accessibilityLabel(s.title)
-                .accessibilityHint("Starts your message with “\(s.text.trimmingCharacters(in: .whitespaces))”")
-                .entrance(shown, delay: 0.2 + Double(i) * 0.04)
+
+                if session.project != nil || session.persona != nil {
+                    contextChips
+                        .padding(.top, 18)
+                        .entrance(shown, delay: 0.14)
+                }
+
+                if let last = lastChat {
+                    pickUp(last)
+                        .padding(.top, 28)
+                        .entrance(shown, delay: 0.2)
+                }
             }
+            .frame(maxWidth: 360)
+            .padding(.horizontal, 28)
+            .frame(maxWidth: .infinity)
+            .animation(Motion.standard, value: session.chat.memoryEnabled)
+            .onAppear { shown = true }
         }
     }
 
@@ -444,74 +408,152 @@ private struct EmptyChatView: View {
         return Greeting.line(seed: session.chat.id, returning: app.chats.contains { $0.id != session.chat.id })
     }
 
-    private var provider: String {
-        session.model?.provider ?? session.chat.modelId.split(separator: "/").first.map(String.init) ?? ""
+    private var note: String? {
+        session.chat.memoryEnabled ? nil : "Nothing in this chat is remembered."
     }
 
-    /// The model, where it's from, and what it costs and can do: tap to choose another.
-    private var modelCard: some View {
-        Button(action: openModels) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(app.modelName(session.chat.modelId))
-                            .font(.headline)
+    /// The project and persona this chat starts with. Either opens chat settings, where both change.
+    private var contextChips: some View {
+        HStack(spacing: 8) {
+            if let p = session.project {
+                chip {
+                    HStack(spacing: 7) {
+                        ProjectTile(project: p, size: 20)
+                        Text(p.name)
+                            .fontWeight(.semibold)
                             .foregroundStyle(Color.qInk)
                             .lineLimit(1)
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(Color.qInk2)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.qInk2)
-                }
-                if !tags.isEmpty {
-                    ViewThatFits(in: .horizontal) {
-                        tagRow(tags)
-                        tagRow(Array(tags.prefix(2)))
-                        tagRow(Array(tags.prefix(1)))
+                        if p.hasInstructions {
+                            Image(systemName: "text.quote")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(p.tintColor)
+                                .accessibilityLabel("with instructions")
+                        }
                     }
                 }
+                .accessibilityLabel(p.hasInstructions ? "Project \(p.name), following its instructions" : "Project \(p.name)")
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .card(radius: 20)
-            .contentShape(.rect(cornerRadius: 20))
+            if let persona = session.persona {
+                chip {
+                    Text("\(persona.icon ?? "◦")  \(persona.name)")
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.qInk)
+                        .lineLimit(1)
+                }
+                .accessibilityLabel("Persona \(persona.name)")
+            }
+        }
+        .font(.footnote)
+    }
+
+    private func chip<Content: View>(@ViewBuilder _ label: () -> Content) -> some View {
+        Button(action: openSettings) {
+            label()
+                .padding(.leading, 7)
+                .padding(.trailing, 12)
+                .frame(minHeight: 32)
+                .background(Color.qRaised, in: .capsule)
+                .overlay(Capsule().strokeBorder(Color.qRule, lineWidth: 1))
+                .contentShape(.capsule)
         }
         .buttonStyle(.pressable)
-        .accessibilityLabel("Model: \(app.modelName(session.chat.modelId)). \(subtitle)")
-        .accessibilityHint("Choose a different model")
+        .accessibilityHint("Opens chat settings")
     }
 
-    private func tagRow(_ items: [String]) -> some View {
-        HStack(spacing: 6) {
-            ForEach(items, id: \.self) { t in
-                Text(t)
-                    .font(.caption.weight(.medium))
-                    .lineLimit(1)
-                    .fixedSize()
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(Color.qSunken, in: .capsule)
-                    .foregroundStyle(Color.qInk2)
-            }
+    // MARK: Pick up where you left off
+
+    /// The chat you were last in, if it was recent: in this chat's project when there is one.
+    private var lastChat: Chat? {
+        let dayAgo = nowMs() - 86_400_000
+        return app.chats.first {
+            $0.id != session.chat.id && !$0.archived && $0.folderId == session.chat.folderId
+                && $0.updatedAt > dayAgo && $0.title != "New chat"
         }
     }
 
-    private var subtitle: String {
-        guard let m = session.model else { return ProviderStyle.displayName(provider) }
-        return "\(ProviderStyle.displayName(m.provider)) · \(Fmt.context(m.contextLength)) context"
+    private func pickUp(_ c: Chat) -> some View {
+        Button {
+            Haptics.tap()
+            app.openChat(c.id)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color.qAccent)
+                Text("Continue \(Text(c.title).foregroundStyle(Color.qInk))")
+                    .foregroundStyle(Color.qInk2)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 36)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("Continue your last chat, \(c.title)")
+    }
+}
+
+/// Ways to begin, just above the message box where your thumb already is. Each only fills the box
+/// (and brings up the keyboard); the rest of the sentence is yours, and nothing is sent until you
+/// send it. The one you picked stays lit, and another one swaps it.
+private struct StarterRow: View {
+    let session: ChatSession
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            GlassEffectContainer(spacing: 8) {
+                HStack(spacing: 8) {
+                    ForEach(Array(StarterPrompt.all.enumerated()), id: \.element.id) { i, s in
+                        chip(s)
+                            .opacity(shown ? 1 : 0)
+                            .offset(y: shown || reduceMotion ? 0 : 6)
+                            .animation(reduceMotion ? .easeOut(duration: 0.2) : Motion.standard.delay(Double(i) * 0.035), value: shown)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 2)
+            }
+        }
+        // The row fades into the edges instead of being cut off by them, which also says it scrolls.
+        .mask {
+            LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.05),
+                                   .init(color: .black, location: 0.95), .init(color: .clear, location: 1)],
+                           startPoint: .leading, endPoint: .trailing)
+        }
+        .onAppear { shown = true }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Ways to start")
     }
 
-    private var tags: [String] {
-        guard let m = session.model else { return [] }
-        var t = [m.isFree ? "Free" : "\(Pricing.perMillion(m.pricing.prompt)) in · \(Pricing.perMillion(m.pricing.completion)) out"]
-        if let thinking = session.thinkingLabel { t.append("Thinking: \(thinking)") }
-        if m.acceptsImages { t.append("Sees images") }
-        return t
+    private func chip(_ s: StarterPrompt) -> some View {
+        let on = session.draft == s.text
+        return Button {
+            Haptics.selection()
+            session.prefill = s.text
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: s.symbol)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(on ? Color.qOnAccent : Color.qAccent)
+                    .symbolEffect(.bounce, value: on)
+                Text(s.title)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(on ? Color.qOnAccent : Color.qInk)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 38)
+            .glassEffect(on ? .regular.tint(Color.qAccent).interactive() : .regular.interactive(), in: .capsule)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .animation(Motion.quick, value: on)
+        .accessibilityLabel(s.title)
+        .accessibilityHint("Starts your message with “\(s.text.trimmingCharacters(in: .whitespaces))”")
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 

@@ -131,11 +131,21 @@ final class ChatSession {
 
     var contextTokens: Int {
         var n = Tokens.estimate(effectiveSystemPrompt) + Tokens.estimate(projectInstructions ?? "")
-        for m in thread {
-            n += Tokens.estimate(m.content) + 4
-            for a in m.attachments ?? [] { n += Tokens.estimate(a) }
-        }
+        for m in thread { n += tokens(in: m) + 4 }
         return n
+    }
+
+    /// Per-message estimates, kept until a message's text changes, so the context meter doesn't
+    /// re-count the whole thread on every frame of a reply.
+    @ObservationIgnored private var tokenCounts: [String: (length: Int, tokens: Int)] = [:]
+
+    private func tokens(in m: Message) -> Int {
+        let length = m.content.utf8.count
+        if let c = tokenCounts[m.id], c.length == length { return c.tokens }
+        var t = Tokens.estimate(m.content)
+        for a in m.attachments ?? [] { t += Tokens.estimate(a) }
+        tokenCounts[m.id] = (length, t)
+        return t
     }
 
     /// Context use including whatever is streaming right now, for the meter.

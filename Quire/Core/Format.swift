@@ -77,10 +77,18 @@ nonisolated enum Fmt {
 
 nonisolated enum Tokens {
     /// Cheap estimate: ~4 characters per token for prose, a little denser for code-like text.
+    /// One pass over the scalars, with nothing allocated: it runs on every streamed frame.
     static func estimate(_ text: String) -> Int {
         if text.isEmpty { return 0 }
-        let words = text.split(whereSeparator: { $0.isWhitespace }).count
-        return Int(max(Double(text.count) / 4, Double(words) * 1.3).rounded(.up))
+        var scalars = 0
+        var words = 0
+        var inWord = false
+        for u in text.unicodeScalars {
+            scalars += 1
+            let space = u.value < 128 ? (u == " " || u == "\n" || u == "\t" || u == "\r") : u.properties.isWhitespace
+            if space { inWord = false } else if !inWord { inWord = true; words += 1 }
+        }
+        return Int(max(Double(scalars) / 4, Double(words) * 1.3).rounded(.up))
     }
 
     static func estimate(_ a: Attachment) -> Int {

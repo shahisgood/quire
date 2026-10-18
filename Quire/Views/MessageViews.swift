@@ -1,34 +1,124 @@
 import SwiftUI
 import UIKit
 
-struct MessageRow: View {
-    let session: ChatSession
-    let message: Message
-    var highlighted = false
-    let actions: MessageActions
+// MARK: - Thread rows
 
-    var body: some View {
-        Group {
-            if message.role == .user {
-                UserMessageView(session: session, message: message, actions: actions)
-            } else if message.role == .assistant {
-                AssistantMessageView(session: session, message: message, actions: actions)
+/// One row of the thread. A reply is several rows: its heading line, one row per Markdown block, and
+/// its footer. A long reply is then many small rows in the one lazy list, rather than one tall row
+/// with a list nested inside it; small rows size quickly and accurately, which is what keeps
+/// scrolling steady while a reply streams in.
+struct ThreadRow: Identifiable {
+    enum Kind {
+        case user
+        case head
+        case block(MDBlock, caret: Bool)
+        case foot(caret: Bool)
+    }
+
+    let id: String
+    let messageId: String
+    let kind: Kind
+    /// The first row of its message, which takes the gap between messages. Its id is the message's,
+    /// so scrolling to a message lands on its top.
+    let first: Bool
+
+    @MainActor
+    static func rows(for m: Message, in session: ChatSession) -> [ThreadRow] {
+        switch m.role {
+        case .user:
+            return [ThreadRow(id: m.id, messageId: m.id, kind: .user, first: true)]
+        case .assistant:
+            let streaming = session.streamingId == m.id
+            let content = streaming ? session.streamContent : m.content
+            var out = [ThreadRow(id: m.id, messageId: m.id, kind: .head, first: true)]
+            let blocks = content.isEmpty ? [] : split(MarkdownCache.blocks(content, live: streaming, key: m.id))
+            for (i, b) in blocks.enumerated() {
+                let caret = streaming && i == blocks.count - 1 && b.takesCaret
+                out.append(ThreadRow(id: "\(m.id)#\(i)", messageId: m.id, kind: .block(b, caret: caret), first: false))
+            }
+            if !streaming || !content.isEmpty {
+                let caret = streaming && !(blocks.last?.takesCaret ?? false)
+                out.append(ThreadRow(id: "\(m.id)#f", messageId: m.id, kind: .foot(caret: caret), first: false))
+            }
+            return out
+        case .system:
+            return []
+        }
+    }
+
+    /// An enormous paragraph becomes several rows, so no single text view grows taller than the GPU
+    /// will draw.
+    private static func split(_ blocks: [MDBlock]) -> [MDBlock] {
+        guard blocks.contains(where: { if case .paragraph(let t) = $0 { return t.utf8.count > 3000 } else { return false } }) else {
+            return blocks
+        }
+        var out: [MDBlock] = []
+        for b in blocks {
+            if case .paragraph(let t) = b, t.utf8.count > 3000 {
+                out += TextChunks.split(t, maxChars: 3000).map { MDBlock.paragraph($0) }
+            } else {
+                out.append(b)
             }
         }
-        .padding(highlighted ? 8 : 0)
-        .background {
-            if highlighted {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.qAccentSoft)
-                    .padding(-2)
+        return out
+    }
+}
+
+/// Draws one thread row, with the gap above it and, while a search result is being shown, a wash
+/// of accent behind the whole message.
+struct ThreadRowView: View {
+    let row: ThreadRow
+    let session: ChatSession
+    let highlighted: Bool
+    let gap: CGFloat
+    let actions: MessageActions
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        if let m = session.messages[row.messageId] {
+            // The wash starts at a message's first row and covers the gaps between its own rows, so
+            // the message reads as one highlighted block.
+            if row.first {
+                content(m)
+                    .background(wash)
+                    .padding(.top, gap)
+            } else {
+                content(m)
+                    .padding(.top, 12)
+                    .background(wash)
             }
+        }
+    }
+
+    private var wash: some View {
+        Rectangle()
+            .fill(Color.qAccentSoft)
+            .padding(.horizontal, -8)
+            .opacity(highlighted ? 1 : 0)
+            .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private func content(_ m: Message) -> some View {
+        switch row.kind {
+        case .user:
+            UserMessageView(session: session, message: m, actions: actions)
+        case .head:
+            ReplyHead(session: session, message: m, actions: actions)
+        case .block(let block, let caret):
+            MarkdownBlockView(block: block, design: app.settings.ui.readingFace.design, caret: caret)
+                .equatable()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .modifier(ReplyMenu(session: session, message: m, actions: actions))
+        case .foot(let caret):
+            ReplyFoot(session: session, message: m, actions: actions, caret: caret)
         }
     }
 }
 
 // MARK: - The user's own messages: a raised hairline card, right-aligned, in the UI sans.
 
-private struct UserMessageView: View {
+struct UserMessageView: View {
     let session: ChatSession
     let message: Message
     let actions: MessageActions
@@ -54,7 +144,7 @@ private struct UserMessageView: View {
                 .contentShape(.contextMenuPreview, .rect(cornerRadius: 20))
                 .contextMenu { menu }
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("You: \(message.content)")
+                .accessibilityLabel(accessibilityText)
                 .accessibilityActions {
                     Button("Copy") { copy() }
                     Button("Edit and resend") { actions.edit(message) }
@@ -71,6 +161,12 @@ private struct UserMessageView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private var accessibilityText: String {
+        let images = message.attachments?.filter { $0.kind == .image }.count ?? 0
+        let lead = images == 0 ? "You" : "You, with \(images) \(images == 1 ? "image" : "images")"
+        return message.content.isEmpty ? lead : "\(lead): \(message.content)"
     }
 
     @ViewBuilder
@@ -100,16 +196,11 @@ private struct AttachmentStrip: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(attachments) { a in
-                    if a.kind == .image, let img = ThumbnailCache.image(for: a) {
-                        Button { onTap(a) } label: {
-                            Image(uiImage: img)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 120, height: 120)
-                                .clipShape(.rect(cornerRadius: 12, style: .continuous))
-                        }
-                        .buttonStyle(.pressable)
-                        .accessibilityLabel("Image \(a.name)")
+                    if a.kind == .image {
+                        Button { onTap(a) } label: { AttachmentThumb(attachment: a) }
+                            .buttonStyle(.pressable)
+                            .accessibilityLabel("Image \(a.name)")
+                            .accessibilityHint("Opens it full screen")
                     } else {
                         HStack(spacing: 6) {
                             Image(systemName: "doc.text")
@@ -127,23 +218,53 @@ private struct AttachmentStrip: View {
                 }
             }
         }
+        .scrollDisabled(attachments.count < 2)
+    }
+}
+
+/// An image in a sent message: a fixed 120-point square from the first frame, so the row never
+/// changes height, filled by a thumbnail decoded and downsized off the main thread.
+private struct AttachmentThumb: View {
+    let attachment: Attachment
+    @State private var image: UIImage? = nil
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Color.qSunken)
+            .frame(width: 120, height: 120)
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .transition(.opacity)
+                }
+            }
+            .clipShape(.rect(cornerRadius: 12, style: .continuous))
+            .task(id: attachment.id) {
+                if image == nil, let hit = ThumbnailCache.cachedThumbnail(for: attachment) {
+                    image = hit
+                    return
+                }
+                let made = await ThumbnailCache.thumbnail(for: attachment)
+                withAnimation(Motion.quick) { image = made }
+            }
     }
 }
 
 // MARK: - The model's reply: full width, in the reading face, under a small-caps folio line.
 
-private struct AssistantMessageView: View {
+/// The reply's first row: the folio line (model, then age), the reasoning trace, and the waiting
+/// cursor before the first token.
+private struct ReplyHead: View {
     let session: ChatSession
     let message: Message
     let actions: MessageActions
     @Environment(AppModel.self) private var app
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var justCopied = false
 
     private var isStreaming: Bool { session.streamingId == message.id }
     private var content: String { isStreaming ? session.streamContent : message.content }
     private var reasoning: String { isStreaming ? session.streamReasoning : (message.reasoning ?? "") }
-    private var design: Font.Design { app.settings.ui.readingFace.design }
     private var modelId: String { message.modelId ?? session.chat.modelId }
 
     var body: some View {
@@ -162,33 +283,10 @@ private struct AssistantMessageView: View {
             if isStreaming && content.isEmpty && reasoning.isEmpty {
                 WaitingIndicator(retryAt: session.retryAt, reason: session.retryReason)
             }
-
-            if !content.isEmpty {
-                MarkdownView(blocks: MarkdownCache.blocks(content, live: isStreaming), design: design, caret: isStreaming, lazy: true)
-            }
-
-            if !isStreaming { statusBlock }
-
-            footer
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(.rect)
-        .contextMenu {
-            if !isStreaming { menuItems }
-        } preview: {
-            previewCard
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityActions {
-            Button("Copy") { copyPlain() }
-            if !session.generating {
-                Button("Regenerate") { session.regenerate(message.id) }
-            }
-            Button("Message details") { actions.info(message) }
-        }
+        .modifier(ReplyMenu(session: session, message: message, actions: actions))
     }
-
-    // MARK: Folio line: MODEL NAME ———— 2m
 
     private var folio: some View {
         HStack(spacing: 10) {
@@ -223,8 +321,28 @@ private struct AssistantMessageView: View {
         let rate = p > 0 ? p : Pricing.parse(m.pricing.completion)
         return Double(reasoningTokens) * rate
     }
+}
 
-    // MARK: Errors and interruptions
+/// The reply's last row: the caret when the text ends in a block that can't hold it, any error or
+/// interruption, then usage and the actions.
+private struct ReplyFoot: View {
+    let session: ChatSession
+    let message: Message
+    let actions: MessageActions
+    let caret: Bool
+    @Environment(AppModel.self) private var app
+    @State private var justCopied = false
+
+    private var isStreaming: Bool { session.streamingId == message.id }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if caret { StreamCaret() }
+            if !isStreaming { statusBlock }
+            footer
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
     @ViewBuilder
     private var statusBlock: some View {
@@ -249,8 +367,6 @@ private struct AssistantMessageView: View {
         }
     }
 
-    // MARK: Footer
-
     @ViewBuilder
     private var footer: some View {
         if isStreaming {
@@ -258,7 +374,6 @@ private struct AssistantMessageView: View {
                 Text("\(Fmt.tokens(session.streamCompletionTokens)) tokens · \(Fmt.usd(session.streamEstCost, estimate: true))")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(Color.qInk2)
-                    .contentTransition(.numericText())
             }
         } else if message.status != .error || !message.content.isEmpty {
             HStack(spacing: 4) {
@@ -278,7 +393,7 @@ private struct AssistantMessageView: View {
                              tint: justCopied ? Color.qAccent : Color.qInk2, action: copyPlain)
                 FooterButton(symbol: "arrow.clockwise", label: "Regenerate") { session.regenerate(message.id) }
                     .disabled(session.generating)
-                Menu { menuItems } label: {
+                Menu { ReplyMenuItems(session: session, message: message, actions: actions) } label: {
                     Image(systemName: "ellipsis")
                         .font(.footnote.weight(.semibold))
                         .frame(width: 36, height: 32)
@@ -295,10 +410,56 @@ private struct AssistantMessageView: View {
         "\(Fmt.tokens(u.completionTokens)) tokens · \(Fmt.usd(u.costUsd, estimate: u.authoritative != true))"
     }
 
-    @ViewBuilder
-    private var menuItems: some View {
+    /// The button itself confirms (a checkmark for a moment) rather than a toast over the chat.
+    private func copyPlain() {
+        UIPasteboard.general.string = PlainText.from(markdown: message.content)
+        Haptics.tap()
+        withAnimation(Motion.quick) { justCopied = true }
+        Task {
+            try? await Task.sleep(for: .seconds(1.6))
+            withAnimation(Motion.quick) { justCopied = false }
+        }
+    }
+}
+
+/// Long-press on any part of a reply opens the reply's menu (not while it's still streaming).
+private struct ReplyMenu: ViewModifier {
+    let session: ChatSession
+    let message: Message
+    let actions: MessageActions
+
+    func body(content: Content) -> some View {
+        content
+            .contentShape(.rect)
+            .contextMenu {
+                if session.streamingId != message.id {
+                    ReplyMenuItems(session: session, message: message, actions: actions)
+                }
+            }
+            .accessibilityActions {
+                Button("Copy") {
+                    UIPasteboard.general.string = PlainText.from(markdown: message.content)
+                    Haptics.tap()
+                }
+                if !session.generating {
+                    Button("Regenerate") { session.regenerate(message.id) }
+                }
+                Button("Message details") { actions.info(message) }
+            }
+    }
+}
+
+private struct ReplyMenuItems: View {
+    let session: ChatSession
+    let message: Message
+    let actions: MessageActions
+
+    var body: some View {
         Section {
-            Button(action: copyPlain) { Label("Copy text", systemImage: "square.on.square") }
+            Button {
+                UIPasteboard.general.string = PlainText.from(markdown: message.content)
+                Haptics.tap()
+            } label: { Label("Copy text", systemImage: "square.on.square") }
             Button {
                 UIPasteboard.general.string = message.content
                 Haptics.tap()
@@ -322,32 +483,6 @@ private struct AssistantMessageView: View {
             Button { actions.info(message) } label: { Label("Tokens, cost & request", systemImage: "info.circle") }
             Button(role: .destructive) { actions.delete(message) } label: { Label("Delete", systemImage: "trash") }
                 .disabled(session.generating)
-        }
-    }
-
-    private var previewCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(app.modelName(modelId).uppercased())
-                .font(.caption2.weight(.semibold))
-                .tracking(1.2)
-                .foregroundStyle(Color.qInk2)
-            Text(String(content.prefix(500)) + (content.count > 500 ? "…" : ""))
-                .font(.system(.callout, design: design))
-                .foregroundStyle(Color.qInk)
-        }
-        .padding(16)
-        .frame(width: 320, alignment: .leading)
-        .background(Color.qBase)
-    }
-
-    /// The button itself confirms (a checkmark for a moment) rather than a toast over the chat.
-    private func copyPlain() {
-        UIPasteboard.general.string = PlainText.from(markdown: message.content)
-        Haptics.tap()
-        withAnimation(Motion.quick) { justCopied = true }
-        Task {
-            try? await Task.sleep(for: .seconds(1.6))
-            withAnimation(Motion.quick) { justCopied = false }
         }
     }
 }
@@ -453,7 +588,7 @@ private struct ReasoningView: View {
                 .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
 
                 if isOpen {
-                    ChunkedText(text: text)
+                    ChunkedText(text: shown)
                         .font(.footnote)
                         .lineSpacing(2)
                         .foregroundStyle(Color.qInk2)
@@ -469,6 +604,14 @@ private struct ReasoningView: View {
         .onChange(of: streaming) { _, nowStreaming in
             if nowStreaming { userChoice = nil }
         }
+    }
+
+    /// While the model is still thinking, the trace shows its latest stretch, like a window onto it;
+    /// redrawing the whole of a long trace many times a second is what made scrolling stutter. All
+    /// of it is there once the reply is done.
+    private var shown: String {
+        guard streaming, text.utf8.count > 2400 else { return text }
+        return "…" + String(text.suffix(2000))
     }
 
     private var costSuffix: String {

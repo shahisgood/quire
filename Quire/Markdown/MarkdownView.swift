@@ -35,12 +35,34 @@ struct MarkdownView: View {
         }
     }
 
-    private var lastBlockTakesCaret: Bool {
-        switch blocks.last {
-        case .paragraph?, .heading?: true
-        default: false
+    private var lastBlockTakesCaret: Bool { blocks.last?.takesCaret ?? false }
+}
+
+extension MDBlock {
+    /// Text that the streaming caret can sit at the end of, rather than on a line of its own.
+    nonisolated var takesCaret: Bool {
+        switch self {
+        case .paragraph, .heading: return true
+        default: return false
         }
     }
+}
+
+/// One block on its own, for a reply laid out a block per row. Equatable, so while a reply streams
+/// only the block that's still growing is redrawn; the settled ones above it are skipped.
+nonisolated struct MarkdownBlockView: View, Equatable {
+    let block: MDBlock
+    let design: Font.Design
+    let caret: Bool
+
+    var body: some View {
+        BlockView(block: block, design: design, caret: caret)
+    }
+}
+
+/// The streaming cursor on its own line, after a block that can't hold it (code, a list, a table).
+struct StreamCaret: View {
+    var body: some View { Caret() }
 }
 
 /// The streaming cursor on its own line (after a code block, list or table).
@@ -514,18 +536,74 @@ private struct ParagraphText: View {
     }
 }
 
-/// Parsed Markdown for finished messages, so scrolling a long chat doesn't re-parse every row.
-/// A streaming reply is parsed fresh each frame since its text changes constantly.
+/// Parsed Markdown, so scrolling a long chat doesn't re-parse every row. A streaming reply keeps its
+/// settled part (everything before the last paragraph break outside a fence) parsed once and parses
+/// only the paragraph still being written, so a long reply costs the same per frame as a short one.
 enum MarkdownCache {
     private static var store: [String: [MDBlock]] = [:]
+    private static var live: [String: (prefix: String, blocks: [MDBlock])] = [:]
 
-    static func blocks(_ text: String, live: Bool) -> [MDBlock] {
-        if live { return MarkdownParser.parse(text) }
-        if let hit = store[text] { return hit }
+    static func blocks(_ text: String, live isLive: Bool, key: String = "") -> [MDBlock] {
+        if isLive { return liveBlocks(text, key: key) }
+        if !key.isEmpty, live[key] != nil { live[key] = nil }
+        // A finished message is looked up by its id and length rather than by hashing all of its
+        // text, which would happen for every message on every frame of a reply.
+        let storeKey = key.isEmpty ? text : "\(key)#\(text.utf8.count)"
+        if let hit = store[storeKey] { return hit }
         let parsed = MarkdownParser.parse(text)
         if store.count > 300 { store.removeAll(keepingCapacity: true) }
-        store[text] = parsed
+        store[storeKey] = parsed
         return parsed
+    }
+
+    private static func liveBlocks(_ text: String, key: String) -> [MDBlock] {
+        let cut = StreamSplit.settled(text)
+        let head = text[..<cut]
+        let settled: [MDBlock]
+        if let c = live[key], c.prefix.utf8.count == head.utf8.count, c.prefix == head {
+            settled = c.blocks
+        } else {
+            settled = head.isEmpty ? [] : MarkdownParser.parse(String(head))
+            if live.count > 8 { live.removeAll() }
+            live[key] = (String(head), settled)
+        }
+        let tail = text[cut...]
+        return tail.isEmpty ? settled : settled + MarkdownParser.parse(String(tail))
+    }
+}
+
+/// Finds where a streaming reply can be cut so that parsing the two halves apart gives the same
+/// blocks as parsing it whole: the start of a line after a blank line, outside any code or math
+/// fence, that nothing above could continue into (not indented, not a list item or a quote).
+nonisolated enum StreamSplit {
+    static func settled(_ text: String) -> String.Index {
+        var boundary = text.startIndex
+        var fence: String? = nil
+        var prevBlank = false
+        var start = text.startIndex
+        while start < text.endIndex {
+            let end = text[start...].firstIndex(of: "\n") ?? text.endIndex
+            let line = text[start..<end]
+            let trimmed = line.drop(while: { $0 == " " || $0 == "\t" })
+            if let f = fence {
+                let closes = f == "$$" ? line.contains("$$") : trimmed.hasPrefix(f)
+                if closes { fence = nil }
+                prevBlank = false
+            } else if trimmed.isEmpty {
+                prevBlank = true
+            } else {
+                let indented = line.first == " " || line.first == "\t"
+                if prevBlank && !indented && MarkdownParser.listMarker(line) == nil && !MarkdownParser.isQuote(line) {
+                    boundary = start
+                }
+                if trimmed.hasPrefix("```") { fence = "```" }
+                else if trimmed.hasPrefix("~~~") { fence = "~~~" }
+                else if trimmed.hasPrefix("$$") && !trimmed.dropFirst(2).contains("$$") { fence = "$$" }
+                prevBlank = false
+            }
+            start = end == text.endIndex ? text.endIndex : text.index(after: end)
+        }
+        return boundary
     }
 }
 

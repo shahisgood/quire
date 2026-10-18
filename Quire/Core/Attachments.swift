@@ -89,15 +89,48 @@ extension AttachmentMaker {
     }
 }
 
-/// Decoded thumbnails, so scrolling past images doesn't re-decode base64 on every frame.
+/// Decoded images, so scrolling past them doesn't re-decode base64 on every frame. Message
+/// thumbnails are downsampled off the main thread to the size they're shown at; a full-size image
+/// is decoded only for the viewer and the composer.
 enum ThumbnailCache {
     private static let cache = NSCache<NSString, UIImage>()
+    private static let thumbs = NSCache<NSString, UIImage>()
 
+    /// The full image, decoded on the spot.
     static func image(for a: Attachment) -> UIImage? {
         let key = a.id as NSString
         if let hit = cache.object(forKey: key) { return hit }
         guard let data = AttachmentMaker.decode(a.dataUrl), let img = UIImage(data: data) else { return nil }
         cache.setObject(img, forKey: key)
         return img
+    }
+
+    /// A thumbnail already decoded, if there is one.
+    static func cachedThumbnail(for a: Attachment) -> UIImage? {
+        thumbs.object(forKey: a.id as NSString)
+    }
+
+    /// A thumbnail no more than `maxPixel` on its long edge, decoded off the main thread.
+    static func thumbnail(for a: Attachment, maxPixel: CGFloat = 360) async -> UIImage? {
+        let key = a.id as NSString
+        if let hit = thumbs.object(forKey: key) { return hit }
+        let made = await ThumbnailMaker.make(dataUrl: a.dataUrl, maxPixel: maxPixel)
+        if let made { thumbs.setObject(made, forKey: key) }
+        return made
+    }
+}
+
+nonisolated enum ThumbnailMaker {
+    @concurrent
+    static func make(dataUrl: String, maxPixel: CGFloat) async -> UIImage? {
+        guard let data = AttachmentMaker.decode(dataUrl),
+              let src = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary)
+        else { return nil }
+        let opts = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: maxPixel] as CFDictionary
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts) else { return nil }
+        return UIImage(cgImage: cg)
     }
 }

@@ -208,6 +208,7 @@ struct ComposerView: View {
                     }
                 }
                 Button(action: openModels) { Label("Change model…", systemImage: "square.grid.2x2") }
+                Button(action: openSettings) { Label("Chat settings…", systemImage: "slider.horizontal.3") }
             } label: {
                 modelPill
             }
