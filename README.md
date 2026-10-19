@@ -12,6 +12,7 @@ Requires **iOS 26**. Built on GitHub's macOS runners, so you don't need a Mac.
 - Branch any message into a new chat, duplicate a chat, share it as Markdown or JSON.
 - Markdown rendered natively: headings, lists, task lists, tables, quotes, rules, and code blocks with syntax colouring and a copy button. Display math is shown as TeX.
 - Attachments from Photos, the camera, Files or the clipboard. Images are resized to 1600 px, as in the web app.
+- Images the model draws (for models that output images) are kept on the reply. Tap any image in a chat to see it full screen and swipe through all of them, with pinch and double-tap zoom and swipe down to close.
 - A composer after Claude's: attach, the model with its thinking level, a context ring (tap for details and the chat's cost), and a send button that appears once there's something to send. Offline is detected and your draft waits.
 - A greeting on every new chat that follows the time of day, with starter prompts (Explain, Write, Summarize, Brainstorm, Code, Plan) that fill the message box without sending.
 - Chats are named a moment after their first message (Settings → Models & generation → Name new chats).

@@ -113,6 +113,10 @@ nonisolated enum RequestBuilder {
         if let f = s.fallbackModels, !f.isEmpty {
             body["models"] = .array(([modelId] + f.filter { $0 != modelId }).map { .string($0) })
         }
+        // A model that can draw only does when asked for images as well as text.
+        if model?.outputModalities.contains("image") == true {
+            body["modalities"] = .array([.string("image"), .string("text")])
+        }
         return body
     }
 }

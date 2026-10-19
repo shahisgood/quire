@@ -473,9 +473,20 @@ final class ChatSession {
         return out
     }
 
+    /// A model's image, kept as an attachment on its reply.
+    static func drawnImage(_ url: String, number: Int) -> Attachment {
+        var mime = "image/png"
+        if url.hasPrefix("data:"), let semi = url.firstIndex(where: { $0 == ";" || $0 == "," }) {
+            mime = String(url[url.index(url.startIndex, offsetBy: 5)..<semi])
+        }
+        let ext = mime.split(separator: "/").last.map(String.init) ?? "png"
+        return Attachment(kind: .image, mime: mime, name: "image-\(number).\(ext)", size: url.utf8.count * 3 / 4, dataUrl: url)
+    }
+
     /// File attachments are sent as `{type: file, file: {filename, file_data}}`, images as `image_url`.
+    /// Only your own messages carry them; a model's images stay in the chat but go back as text.
     static func param(for m: Message) -> JSONValue {
-        guard let atts = m.attachments, !atts.isEmpty else {
+        guard m.role == .user, let atts = m.attachments, !atts.isEmpty else {
             return ["role": .string(m.role.rawValue), "content": .string(m.content)]
         }
         var parts: [JSONValue] = []
@@ -537,6 +548,14 @@ final class ChatSession {
         var generationId = existing?.generationId
         var usage: StreamUsage? = nil
         var finish: String? = nil
+        // Images the model draws go on the reply as attachments the moment they arrive.
+        let baseImages = continueMode ? (existing?.attachments ?? []) : []
+        var drawn: [Attachment] = []
+        func attach(_ urls: [String]) {
+            for u in urls { drawn.append(Self.drawnImage(u, number: baseImages.count + drawn.count + 1)) }
+            let all = baseImages + drawn
+            update(assistantId) { $0.attachments = all }
+        }
 
         update(assistantId) {
             $0.status = .streaming
@@ -602,7 +621,8 @@ final class ChatSession {
                         if let r = ev.reasoning { reasoning += r }
                         if let f = ev.finishReason { finish = f }
                         if let u = ev.usage { usage = u }
-                        if ev.content != nil || ev.reasoning != nil {
+                        if let imgs = ev.images, !imgs.isEmpty { attach(imgs) }
+                        if ev.content != nil || ev.reasoning != nil || ev.images != nil {
                             if streamFirstTokenAt == nil { streamFirstTokenAt = nowMs() }
                             publish()
                         }
@@ -614,6 +634,7 @@ final class ChatSession {
                     reasoning += r.reasoning
                     finish = r.finishReason
                     usage = r.usage
+                    if !r.images.isEmpty { attach(r.images) }
                     streamFirstTokenAt = nowMs()
                 }
                 break retryLoop
@@ -649,7 +670,7 @@ final class ChatSession {
         let status: MessageStatus
         var err: MessageError? = nil
         if let fe = finalError {
-            status = content.isEmpty ? .error : .interrupted
+            status = content.isEmpty && drawn.isEmpty ? .error : .interrupted
             err = MessageError(code: fe.code, message: fe.message)
         } else if aborted {
             status = content.isEmpty && reasoning.isEmpty ? .error : .interrupted
@@ -678,7 +699,8 @@ final class ChatSession {
 
         let now = nowMs()
         chat.updatedAt = now
-        chat.lastPreview = TextUtil.stripMarkdown(content.isEmpty ? (err?.message ?? "") : content, max: 100)
+        let preview = content.isEmpty ? (drawn.isEmpty ? (err?.message ?? "") : (drawn.count == 1 ? "Image" : "\(drawn.count) images")) : content
+        chat.lastPreview = TextUtil.stripMarkdown(preview, max: 100)
         chat.tokenEstimate = contextTokens
         saveChat()
         saveMessages()

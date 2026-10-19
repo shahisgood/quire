@@ -261,21 +261,6 @@ struct StarterGroup: Identifiable, Hashable {
             StarterOption(title: "Walk me through it, step by step", text: "Walk me through, step by step, how "),
             StarterOption(title: "Compare two things", text: "What's the difference between "),
         ]),
-        StarterGroup(title: "Summarize", symbol: "text.alignleft", options: [
-            StarterOption(title: "Summarize this", text: "Summarize this:\n\n"),
-            StarterOption(title: "Pull out the key points", text: "List the key points of this:\n\n"),
-            StarterOption(title: "Give me a one-line TL;DR", text: "Give me a one-line TL;DR of this:\n\n"),
-        ]),
-        StarterGroup(title: "Brainstorm or plan", symbol: "sparkles", options: [
-            StarterOption(title: "Ideas for something", text: "Brainstorm ideas for "),
-            StarterOption(title: "Names for something", text: "Give me ten name ideas for "),
-            StarterOption(title: "Plan something", text: "Help me plan "),
-        ]),
-        StarterGroup(title: "Code", symbol: "chevron.left.forwardslash.chevron.right", options: [
-            StarterOption(title: "Write code", text: "Write code that "),
-            StarterOption(title: "Explain this code", text: "Explain what this code does:\n\n"),
-            StarterOption(title: "Find the bug", text: "Find the bug in this code:\n\n"),
-        ]),
     ]
 
     /// Whether the message box holds nothing but a starter's opening.

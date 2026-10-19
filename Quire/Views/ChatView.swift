@@ -31,7 +31,6 @@ struct ChatView: View {
     /// messages arrive; "Show earlier" moves it back.
     @State private var windowStartId: String? = nil
     @State private var flashId: String? = nil
-    @State private var composerFocused = false
 
     @State private var showSettings = false
     @State private var showModels = false
@@ -57,12 +56,12 @@ struct ChatView: View {
     private var hiddenCount: Int { windowStart }
     private var density: CGFloat { app.settings.ui.density == "compact" ? 18 : 30 }
 
-    /// Starters sit just above the message box on an empty chat, until you start writing (a
-    /// starter's opening on its own still counts as nothing yet, so you can swap it).
+    /// Starters sit just above the message box on an empty chat whenever the box is empty: they
+    /// step aside as soon as there's anything in it (a starter included) and come back if you clear
+    /// it again.
     private var showsStarters: Bool {
-        guard session.path.isEmpty, app.apiKey != nil, !composerFocused else { return false }
-        let d = session.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        return d.isEmpty || StarterGroup.isStarter(session.draft)
+        guard session.path.isEmpty, app.apiKey != nil else { return false }
+        return session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -103,7 +102,9 @@ struct ChatView: View {
         }
         .sheet(item: $selecting) { m in SelectTextSheet(text: m.content) }
         .sheet(item: $share) { f in ShareSheet(items: [f.url]).presentationDetents([.medium, .large]) }
-        .fullScreenCover(item: $viewingImage) { a in ImageViewer(attachment: a) }
+        .fullScreenCover(item: $viewingImage) { a in
+            ImageGallery(images: galleryImages, startId: a.id)
+        }
         .confirmationDialog("Delete this message?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 if let m = deleting { withAnimation(Motion.standard) { session.delete(m.id) } }
@@ -206,8 +207,13 @@ struct ChatView: View {
                                  withAnimation(Motion.quick) { position.scrollTo(edge: .bottom) }
                              }
                          }
-                     },
-                     onFocusChange: { composerFocused = $0 })
+                     })
+    }
+
+    /// Every image in the conversation, yours and the model's, in order, for the gallery to swipe
+    /// through.
+    private var galleryImages: [Attachment] {
+        session.thread.flatMap { ($0.attachments ?? []).filter { $0.kind == .image } }
     }
 
     private var actions: MessageActions {
@@ -379,8 +385,8 @@ private struct IncognitoToggle: View {
 
 // MARK: - Empty chat
 
-/// A new chat says only what you need before you start: a greeting, what's different about this
-/// chat (incognito, a project, a persona) if anything, and a way back to what you were last doing.
+/// A new chat says only what you need before you start: a greeting, and what's different about
+/// this chat (incognito, a project, a persona) if anything.
 /// The model lives in the message box and the starters just above it. It sits in the middle of the
 /// space between the bar and the starters, and gives up its extras when that space is short (the
 /// keyboard is up on a small phone, say).
@@ -442,11 +448,6 @@ private struct EmptyChatView: View {
                     .entrance(shown, delay: 0.14)
             }
 
-            if !compact, let last = lastChat {
-                pickUp(last)
-                    .padding(.top, 24)
-                    .entrance(shown, delay: 0.2)
-            }
         }
         .frame(maxWidth: 360)
     }
@@ -506,159 +507,92 @@ private struct EmptyChatView: View {
         .buttonStyle(.pressable)
         .accessibilityHint("Opens chat settings")
     }
-
-    /// The chat you were last in, if it was recent: in this chat's project when there is one.
-    private var lastChat: Chat? {
-        let dayAgo = nowMs() - 86_400_000
-        return app.chats.first {
-            $0.id != session.chat.id && !$0.archived && $0.folderId == session.chat.folderId
-                && $0.updatedAt > dayAgo && $0.title != "New chat"
-        }
-    }
-
-    private func pickUp(_ c: Chat) -> some View {
-        Button {
-            Haptics.tap()
-            app.openChat(c.id)
-        } label: {
-            VStack(spacing: 3) {
-                Label("Continue", systemImage: "arrow.uturn.backward")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.qAccent)
-                Text(c.title)
-                    .font(.subheadline)
-                    .foregroundStyle(Color.qInk)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .frame(maxWidth: 300)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.pressable)
-        .accessibilityLabel("Continue your last chat, \(c.title)")
-    }
 }
 
-/// Ways to begin, as quiet rows just above the message box, where your thumb already is. A row opens
-/// into three more specific openings; picking one fills the message box (and brings up the
-/// keyboard). Nothing is sent until you send it.
+/// Ways to begin, as two quiet lines just above the message box, where your thumb already is. A
+/// line opens in place into three more specific openings (the other steps aside); picking one fills
+/// the message box and brings up the keyboard. Nothing is sent until you send it.
 private struct StarterMenu: View {
     let session: ChatSession
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var openId: String? = nil
-    @State private var shown = false
-
-    private var open: StarterGroup? { StarterGroup.all.first { $0.id == openId } }
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            if let g = open {
-                options(g)
-                    .transition(reduceMotion ? .opacity : .asymmetric(
-                        insertion: .opacity.combined(with: .offset(x: 28)),
-                        removal: .opacity.combined(with: .offset(x: 28))))
-            } else {
-                groups
-                    .transition(reduceMotion ? .opacity : .asymmetric(
-                        insertion: .opacity.combined(with: .offset(x: -28)),
-                        removal: .opacity.combined(with: .offset(x: -28))))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.standard, value: openId)
-        .onAppear { shown = true }
-    }
-
-    private var groups: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(StarterGroup.all.enumerated()), id: \.element.id) { i, g in
-                Button {
-                    Haptics.selection()
-                    openId = g.id
-                } label: {
-                    HStack(spacing: 14) {
-                        Image(systemName: g.symbol)
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(Color.qAccent)
-                            .frame(width: 24)
-                        Text(g.title)
-                            .font(.body)
-                            .foregroundStyle(Color.qInk)
-                        Spacer(minLength: 8)
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(Color.qInk2.opacity(0.6))
-                    }
-                    .padding(.horizontal, 12)
-                    .frame(minHeight: 46)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(StarterRowStyle())
-                .accessibilityHint("Shows three ways to start")
-                .opacity(shown ? 1 : 0)
-                .offset(y: shown || reduceMotion ? 0 : 8)
-                .animation(reduceMotion ? .easeOut(duration: 0.2) : Motion.standard.delay(Double(i) * 0.04), value: shown)
-            }
-        }
-    }
-
-    private func options(_ g: StarterGroup) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                Haptics.selection()
-                openId = nil
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "chevron.left")
-                        .font(.footnote.weight(.bold))
-                    Image(systemName: g.symbol)
-                        .font(.footnote.weight(.semibold))
-                    Text(g.title)
-                        .font(.subheadline.weight(.semibold))
-                }
-                .foregroundStyle(Color.qInk2)
-                .padding(.horizontal, 12)
-                .frame(minHeight: 40)
-                .contentShape(.rect)
-            }
-            .buttonStyle(StarterRowStyle())
-            .accessibilityLabel("Back to all starters")
-
-            ForEach(g.options) { o in
-                let on = session.draft == o.text
-                Button {
-                    Haptics.selection()
-                    session.prefill = o.text
-                } label: {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(o.title)
-                                .font(.body)
-                                .foregroundStyle(Color.qInk)
-                            Text("“\(o.text.trimmingCharacters(in: .whitespacesAndNewlines))…”")
-                                .font(.footnote)
-                                .foregroundStyle(Color.qInk2)
-                                .lineLimit(1)
+            ForEach(StarterGroup.all) { g in
+                if openId == nil || openId == g.id {
+                    groupRow(g)
+                        .transition(.opacity)
+                    if openId == g.id {
+                        ForEach(Array(g.options.enumerated()), id: \.element.id) { i, o in
+                            optionRow(o)
+                                .transition(reduceMotion ? .opacity : .asymmetric(
+                                    insertion: .opacity.combined(with: .offset(y: 6))
+                                        .animation(Motion.standard.delay(0.04 * Double(i + 1))),
+                                    removal: .opacity.animation(Motion.quick)))
                         }
-                        Spacer(minLength: 8)
-                        Image(systemName: on ? "checkmark" : "arrow.up.left")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(on ? Color.qAccent : Color.qInk2.opacity(0.6))
-                            .contentTransition(.symbolEffect(.replace))
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .frame(minHeight: 50)
-                    .contentShape(.rect)
                 }
-                .buttonStyle(StarterRowStyle())
-                .accessibilityHint("Starts your message with “\(o.text.trimmingCharacters(in: .whitespacesAndNewlines))”")
-                .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.standard, value: openId)
+    }
+
+    private func groupRow(_ g: StarterGroup) -> some View {
+        let open = openId == g.id
+        return Button {
+            Haptics.selection()
+            openId = open ? nil : g.id
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: g.symbol)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(open ? Color.qAccent : Color.qInk2)
+                    .frame(width: 20)
+                Text(g.title)
+                    .font(.subheadline.weight(open ? .semibold : .regular))
+                    .foregroundStyle(open ? Color.qInk : Color.qInk2)
+                Spacer(minLength: 0)
+                if open {
+                    Image(systemName: "xmark")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(Color.qInk2.opacity(0.7))
+                        .transition(.opacity)
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 40)
+            .contentShape(.rect)
+        }
+        .buttonStyle(StarterRowStyle())
+        .accessibilityHint(open ? "Closes" : "Shows three ways to start")
+        .accessibilityAddTraits(open ? .isSelected : [])
+    }
+
+    private func optionRow(_ o: StarterOption) -> some View {
+        Button {
+            Haptics.selection()
+            session.prefill = o.text
+        } label: {
+            HStack(spacing: 12) {
+                // A hairline under the group's icon, so the openings read as belonging to it.
+                Rectangle()
+                    .fill(Color.qRule)
+                    .frame(width: 1)
+                    .frame(width: 20)
+                Text(o.title)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.qInk)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 38)
+            .contentShape(.rect)
+        }
+        .buttonStyle(StarterRowStyle())
+        .accessibilityHint("Starts your message with “\(o.text.trimmingCharacters(in: .whitespacesAndNewlines))”")
     }
 }
 
@@ -694,43 +628,6 @@ struct SelectTextSheet: View {
                         } label: { Label("Copy all", systemImage: "square.on.square") }
                     }
                 }
-        }
-    }
-}
-
-/// A full-screen look at an attached image, with pinch to zoom.
-struct ImageViewer: View {
-    let attachment: Attachment
-    @Environment(\.dismiss) private var dismiss
-    @State private var scale: CGFloat = 1
-    @GestureState private var pinch: CGFloat = 1
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            if let img = ThumbnailCache.image(for: attachment) {
-                Image(uiImage: img)
-                    .resizable()
-                    .scaledToFit()
-                    .scaleEffect(scale * pinch)
-                    .gesture(
-                        MagnifyGesture()
-                            .updating($pinch) { value, state, _ in state = value.magnification }
-                            .onEnded { value in scale = min(4, max(1, scale * value.magnification)) }
-                    )
-                    .onTapGesture(count: 2) { withAnimation(Motion.standard) { scale = scale > 1 ? 1 : 2.5 } }
-                    .accessibilityLabel(attachment.name)
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.headline)
-                    .padding(12)
-            }
-            .buttonStyle(.glass)
-            .padding()
-            .accessibilityLabel("Close")
         }
     }
 }

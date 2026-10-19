@@ -736,7 +736,7 @@ private struct AppearanceSettings: View {
         Form {
             Section {
                 ReadingPreview(face: app.settings.ui.readingFace, size: ReadingSize(scale: app.settings.ui.fontScale),
-                               compact: app.settings.ui.density == "compact")
+                               compact: app.settings.ui.density == "compact", ink: app.settings.ui.textStrength)
                     .listRowInsets(EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18))
             } header: {
                 SectionLabel(text: "Preview")
@@ -759,8 +759,9 @@ private struct AppearanceSettings: View {
                     Text("Comfortable").tag("comfortable")
                     Text("Compact").tag("compact")
                 }
+                TextStrengthControl(value: $app.settings.ui.textStrength)
             } footer: {
-                Text("Reply size is relative to the system text size, so it follows Dynamic Type.")
+                Text("Reply size is relative to the system text size, so it follows Dynamic Type. Text strength sets how strongly a reply's running text is inked; bold always stays at full strength, so it stands out either way.")
             }
 
             Section {
@@ -780,11 +781,59 @@ private struct AppearanceSettings: View {
     }
 }
 
-/// A live sample of a reply in the chosen face and size.
+/// How strongly reply text is inked: a slider from soft to as strong as bold, with a way back to
+/// the default once it's moved.
+private struct TextStrengthControl: View {
+    @Binding var value: Double
+
+    private var isDefault: Bool { abs(value - UISettings.defaultTextStrength) < 0.005 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Text strength")
+                    .foregroundStyle(Color.qInk)
+                Spacer()
+                if !isDefault {
+                    Button("Default") {
+                        Haptics.selection()
+                        withAnimation(Motion.standard) { value = UISettings.defaultTextStrength }
+                    }
+                    .font(.footnote.weight(.medium))
+                    .buttonStyle(.borderless)
+                    .transition(.opacity)
+                }
+                Text("\(Int((value * 100).rounded()))%")
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(Color.qInk2)
+                    .contentTransition(.numericText())
+            }
+            Slider(value: $value, in: 0.6...1, step: 0.01) {
+                Text("Text strength")
+            } minimumValueLabel: {
+                Text("Aa")
+                    .font(.footnote)
+                    .foregroundStyle(Color.qInkStrong.opacity(0.6))
+                    .accessibilityHidden(true)
+            } maximumValueLabel: {
+                Text("Aa")
+                    .font(.footnote)
+                    .foregroundStyle(Color.qInkStrong)
+                    .accessibilityHidden(true)
+            }
+            .accessibilityValue("\(Int((value * 100).rounded())) percent")
+        }
+        .padding(.vertical, 4)
+        .animation(Motion.quick, value: isDefault)
+    }
+}
+
+/// A live sample of a reply in the chosen face, size and text strength.
 private struct ReadingPreview: View {
     let face: ReadingFace
     let size: ReadingSize
     let compact: Bool
+    let ink: Double
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -796,10 +845,10 @@ private struct ReadingPreview: View {
                     .foregroundStyle(Color.qInk2)
                 Rectangle().fill(Color.qRule).frame(height: 1)
             }
-            Text("A quire is a gathering of sheets folded and bound together, the unit a book is sewn from. Replies here are set like pages: one column, generous leading, and a single accent for what's alive.")
+            Text(Inline.attributed("A quire is **a gathering of sheets** folded and bound together, the unit a book is sewn from. Replies here are set like pages: one column, *generous leading*, and a single accent for what's alive."))
                 .font(.system(.body, design: face.design))
-                .lineSpacing(4)
-                .foregroundStyle(Color.qInk)
+                .lineSpacing(5)
+                .foregroundStyle(Color.qInkStrong.opacity(ink))
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 0) {
                 Spacer(minLength: 40)

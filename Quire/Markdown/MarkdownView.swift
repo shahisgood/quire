@@ -48,15 +48,18 @@ extension MDBlock {
     }
 }
 
-/// One block on its own, for a reply laid out a block per row. Equatable, so while a reply streams
-/// only the block that's still growing is redrawn; the settled ones above it are skipped.
+/// One block of a reply. Equatable, so while a reply streams only the block that's still growing
+/// is redrawn; the settled ones above it are skipped. Running text is the strongest ink at the
+/// reader's chosen strength, so bold (always full strength) stands apart from it.
 nonisolated struct MarkdownBlockView: View, Equatable {
     let block: MDBlock
     let design: Font.Design
     let caret: Bool
+    var ink: Double = UISettings.defaultTextStrength
 
     var body: some View {
         BlockView(block: block, design: design, caret: caret)
+            .foregroundStyle(Color.qInkStrong.opacity(ink))
     }
 }
 
@@ -94,7 +97,6 @@ private struct BlockView: View {
             ParagraphText(text: text, caret: caret)
                 .font(.system(.body, design: design))
                 .lineSpacing(5)
-                .foregroundStyle(Color.qInkBody)
                 .fixedSize(horizontal: false, vertical: true)
 
         case .code(let lang, let text):

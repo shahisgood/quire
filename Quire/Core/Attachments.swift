@@ -105,14 +105,31 @@ enum ThumbnailCache {
         return img
     }
 
-    /// A thumbnail already decoded, if there is one.
-    static func cachedThumbnail(for a: Attachment) -> UIImage? {
-        thumbs.object(forKey: a.id as NSString)
+    private static let screens = NSCache<NSString, UIImage>()
+
+    /// A screen-sized image already decoded, if there is one.
+    static func cachedScreenImage(for a: Attachment) -> UIImage? {
+        screens.object(forKey: a.id as NSString)
+    }
+
+    /// The image at up to `maxPixel` on its long edge (enough to zoom into on a phone), decoded off
+    /// the main thread, for the full-screen viewer.
+    static func screenImage(for a: Attachment, maxPixel: CGFloat = 2800) async -> UIImage? {
+        let key = a.id as NSString
+        if let hit = screens.object(forKey: key) { return hit }
+        let made = await ThumbnailMaker.make(dataUrl: a.dataUrl, maxPixel: maxPixel)
+        if let made { screens.setObject(made, forKey: key) }
+        return made
+    }
+
+    /// A thumbnail already decoded at this size, if there is one.
+    static func cachedThumbnail(for a: Attachment, maxPixel: CGFloat = 360) -> UIImage? {
+        thumbs.object(forKey: "\(a.id)@\(Int(maxPixel))" as NSString)
     }
 
     /// A thumbnail no more than `maxPixel` on its long edge, decoded off the main thread.
     static func thumbnail(for a: Attachment, maxPixel: CGFloat = 360) async -> UIImage? {
-        let key = a.id as NSString
+        let key = "\(a.id)@\(Int(maxPixel))" as NSString
         if let hit = thumbs.object(forKey: key) { return hit }
         let made = await ThumbnailMaker.make(dataUrl: a.dataUrl, maxPixel: maxPixel)
         if let made { thumbs.setObject(made, forKey: key) }

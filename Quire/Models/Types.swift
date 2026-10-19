@@ -377,10 +377,15 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
     var showCosts: Bool
     var sendOnEnter: Bool
     var hapticsEnabled: Bool
+    /// How strongly a reply's running text is inked, from 0.6 (soft) to 1 (as strong as bold).
+    var textStrength: Double
+
+    static let defaultTextStrength = 0.86
 
     init() {
         theme = .dark; fontScale = 1; density = "comfortable"; readingFace = .serif
         showReasoningByDefault = false; showCosts = true; sendOnEnter = true; hapticsEnabled = true
+        textStrength = Self.defaultTextStrength
     }
 
     init(from decoder: Decoder) throws {
@@ -393,6 +398,7 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
         showCosts = c.lenient(.showCosts, true)
         sendOnEnter = c.lenient(.sendOnEnter, true)
         hapticsEnabled = c.lenient(.hapticsEnabled, true)
+        textStrength = min(1, max(0.6, c.lenient(.textStrength, Self.defaultTextStrength)))
     }
 }
 

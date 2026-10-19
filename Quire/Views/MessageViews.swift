@@ -136,16 +136,17 @@ private struct AttachmentStrip: View {
     }
 }
 
-/// An image in a sent message: a fixed 120-point square from the first frame, so the row never
-/// changes height, filled by a thumbnail decoded and downsized off the main thread.
+/// An image in a message: a fixed square from the first frame, so the message never changes
+/// height, filled by a thumbnail decoded and downsized off the main thread.
 private struct AttachmentThumb: View {
     let attachment: Attachment
+    var side: CGFloat = 120
     @State private var image: UIImage? = nil
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
+        RoundedRectangle(cornerRadius: side > 160 ? 16 : 12, style: .continuous)
             .fill(Color.qSunken)
-            .frame(width: 120, height: 120)
+            .frame(width: side, height: side)
             .overlay {
                 if let image {
                     Image(uiImage: image)
@@ -154,13 +155,14 @@ private struct AttachmentThumb: View {
                         .transition(.opacity)
                 }
             }
-            .clipShape(.rect(cornerRadius: 12, style: .continuous))
+            .clipShape(.rect(cornerRadius: side > 160 ? 16 : 12, style: .continuous))
             .task(id: attachment.id) {
-                if image == nil, let hit = ThumbnailCache.cachedThumbnail(for: attachment) {
+                let px: CGFloat = side > 160 ? 840 : 360
+                if image == nil, let hit = ThumbnailCache.cachedThumbnail(for: attachment, maxPixel: px) {
                     image = hit
                     return
                 }
-                let made = await ThumbnailCache.thumbnail(for: attachment)
+                let made = await ThumbnailCache.thumbnail(for: attachment, maxPixel: px)
                 withAnimation(Motion.quick) { image = made }
             }
     }
@@ -180,6 +182,8 @@ private struct AssistantMessageView: View {
     private var reasoning: String { isStreaming ? session.streamReasoning : (message.reasoning ?? "") }
     private var design: Font.Design { app.settings.ui.readingFace.design }
     private var modelId: String { message.modelId ?? session.chat.modelId }
+    /// Images the model made for this reply.
+    private var drawn: [Attachment] { message.attachments?.filter { $0.kind == .image } ?? [] }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -194,13 +198,17 @@ private struct AssistantMessageView: View {
                               expandedByDefault: app.settings.ui.showReasoningByDefault)
             }
 
-            if isStreaming && content.isEmpty && reasoning.isEmpty {
+            if isStreaming && content.isEmpty && reasoning.isEmpty && drawn.isEmpty {
                 WaitingIndicator(retryAt: session.retryAt, reason: session.retryReason)
+            }
+
+            if !drawn.isEmpty {
+                ReplyImages(images: drawn, onTap: actions.viewImage)
             }
 
             if !content.isEmpty {
                 ReplyBody(blocks: MarkdownCache.blocks(content, live: isStreaming, key: message.id),
-                          design: design, streaming: isStreaming)
+                          design: design, streaming: isStreaming, ink: app.settings.ui.textStrength)
             }
 
             if !isStreaming { statusBlock }
@@ -357,6 +365,35 @@ private struct AssistantMessageView: View {
     }
 }
 
+/// Images a model made: one large, or two to a row. Each is a fixed square, so the reply's height is
+/// known before they load. Tap one to see it full screen and swipe through the rest.
+private struct ReplyImages: View {
+    let images: [Attachment]
+    let onTap: (Attachment) -> Void
+
+    var body: some View {
+        if images.count == 1, let a = images.first {
+            tile(a, side: 260)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(stride(from: 0, to: images.count, by: 2)), id: \.self) { i in
+                    HStack(spacing: 8) {
+                        tile(images[i], side: 136)
+                        if i + 1 < images.count { tile(images[i + 1], side: 136) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func tile(_ a: Attachment, side: CGFloat) -> some View {
+        Button { onTap(a) } label: { AttachmentThumb(attachment: a, side: side) }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("Image the model made")
+            .accessibilityHint("Opens it full screen")
+    }
+}
+
 /// A reply's text as one column of blocks. Each block is Equatable, so while a reply streams only
 /// the block still being written is redrawn; enormous paragraphs are drawn in pieces, so no single
 /// text view grows taller than the GPU will draw.
@@ -364,13 +401,14 @@ private struct ReplyBody: View {
     let blocks: [MDBlock]
     let design: Font.Design
     let streaming: Bool
+    let ink: Double
 
     var body: some View {
         let pieces = Self.pieces(blocks)
         VStack(alignment: .leading, spacing: 14) {
             ForEach(Array(pieces.enumerated()), id: \.offset) { i, block in
                 MarkdownBlockView(block: block, design: design,
-                                  caret: streaming && i == pieces.count - 1 && block.takesCaret)
+                                  caret: streaming && i == pieces.count - 1 && block.takesCaret, ink: ink)
                     .equatable()
             }
             if streaming && !(pieces.last?.takesCaret ?? false) {

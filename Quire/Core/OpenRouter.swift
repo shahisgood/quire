@@ -26,6 +26,8 @@ nonisolated struct StreamEvent: Sendable {
     var reasoning: String?
     var finishReason: String?
     var usage: StreamUsage?
+    /// Images the model made, as data URLs (image-output models only).
+    var images: [String]?
 }
 
 nonisolated struct CompletionResult: Sendable {
@@ -35,6 +37,7 @@ nonisolated struct CompletionResult: Sendable {
     var reasoning: String
     var finishReason: String?
     var usage: StreamUsage?
+    var images: [String] = []
 }
 
 nonisolated struct GenerationStats: Sendable {
@@ -75,6 +78,12 @@ nonisolated enum ORParse {
         return ""
     }
 
+    /// `images: [{type: "image_url", image_url: {url: "data:image/png;base64,…"}}]` on a message or
+    /// a stream delta.
+    static func images(from v: JSONValue) -> [String] {
+        (v["images"]?.arrayValue ?? []).compactMap { $0["image_url"]?["url"]?.stringValue ?? $0["url"]?.stringValue }
+    }
+
     static func errorObject(_ e: JSONValue, fallback: String) -> ORError {
         ORError(status: e["code"]?.intValue ?? 500,
                 code: e["code"]?.scalarString ?? "500",
@@ -95,6 +104,8 @@ nonisolated enum ORParse {
             if let t = delta["content"]?.stringValue, !t.isEmpty { ev.content = t }
             let r = reasoning(from: delta)
             if !r.isEmpty { ev.reasoning = r }
+            let imgs = images(from: delta)
+            if !imgs.isEmpty { ev.images = imgs }
             ev.finishReason = ch0["finish_reason"]?.stringValue
         }
         ev.usage = usage(c["usage"])
@@ -293,9 +304,11 @@ struct OpenRouterClient {
         let msg = ch0?["message"] ?? .object([:])
         var content = msg["content"]?.stringValue ?? ""
         if content.isEmpty, let parts = msg["content"]?.arrayValue { content = parts.compactMap { $0["text"]?.stringValue }.joined() }
-        return CompletionResult(id: j["id"]?.stringValue ?? "", model: j["model"]?.stringValue ?? "", content: content,
-                                reasoning: ORParse.reasoning(from: msg), finishReason: ch0?["finish_reason"]?.stringValue,
-                                usage: ORParse.usage(j["usage"]))
+        var result = CompletionResult(id: j["id"]?.stringValue ?? "", model: j["model"]?.stringValue ?? "", content: content,
+                                      reasoning: ORParse.reasoning(from: msg), finishReason: ch0?["finish_reason"]?.stringValue,
+                                      usage: ORParse.usage(j["usage"]))
+        result.images = ORParse.images(from: msg)
+        return result
     }
 
     // MARK: Sign in with OpenRouter (PKCE, code-display flow)
