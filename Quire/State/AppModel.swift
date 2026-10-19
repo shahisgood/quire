@@ -12,6 +12,7 @@ nonisolated enum Route: Hashable, Sendable {
     case settings
     case section(SettingsSection)
     case memory
+    case spending
 }
 
 /// App-wide state: settings, the API key, the model catalogue, chats, personas, memory, projects

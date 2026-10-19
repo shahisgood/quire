@@ -168,6 +168,7 @@ struct RouteDestination: View {
         case .settings: SettingsView()
         case .section(let s): SettingsSectionView(section: s)
         case .memory: MemoryView(showsSettingsLink: !stack.contains(.section(.memory)))
+        case .spending: SpendingView()
         }
     }
 }

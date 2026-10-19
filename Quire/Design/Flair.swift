@@ -242,20 +242,50 @@ struct LiveDot: View {
 
 // MARK: - Starter prompts
 
-/// The openings offered on an empty chat. Tapping one only fills the message box; you finish the
-/// sentence and send it yourself.
-struct StarterPrompt: Identifiable, Hashable {
+/// Ways to begin a chat, in a few groups that each open into three. Picking one only fills the
+/// message box; you finish the sentence and send it yourself.
+struct StarterGroup: Identifiable, Hashable {
     let title: String
     let symbol: String
-    let text: String
+    let options: [StarterOption]
     var id: String { title }
 
-    static let all: [StarterPrompt] = [
-        StarterPrompt(title: "Explain", symbol: "lightbulb", text: "Explain "),
-        StarterPrompt(title: "Write", symbol: "pencil.line", text: "Help me write "),
-        StarterPrompt(title: "Summarize", symbol: "text.alignleft", text: "Summarize this: "),
-        StarterPrompt(title: "Brainstorm", symbol: "sparkles", text: "Brainstorm ideas for "),
-        StarterPrompt(title: "Code", symbol: "chevron.left.forwardslash.chevron.right", text: "Write code that "),
-        StarterPrompt(title: "Plan", symbol: "checklist", text: "Help me plan "),
+    static let all: [StarterGroup] = [
+        StarterGroup(title: "Write or edit", symbol: "pencil.line", options: [
+            StarterOption(title: "Help me write something", text: "Help me write "),
+            StarterOption(title: "Rewrite this to read better", text: "Rewrite this so it reads more clearly:\n\n"),
+            StarterOption(title: "Proofread and fix mistakes", text: "Proofread this and fix any mistakes:\n\n"),
+        ]),
+        StarterGroup(title: "Explain something", symbol: "lightbulb", options: [
+            StarterOption(title: "Explain it simply", text: "Explain in simple terms: "),
+            StarterOption(title: "Walk me through it, step by step", text: "Walk me through, step by step, how "),
+            StarterOption(title: "Compare two things", text: "What's the difference between "),
+        ]),
+        StarterGroup(title: "Summarize", symbol: "text.alignleft", options: [
+            StarterOption(title: "Summarize this", text: "Summarize this:\n\n"),
+            StarterOption(title: "Pull out the key points", text: "List the key points of this:\n\n"),
+            StarterOption(title: "Give me a one-line TL;DR", text: "Give me a one-line TL;DR of this:\n\n"),
+        ]),
+        StarterGroup(title: "Brainstorm or plan", symbol: "sparkles", options: [
+            StarterOption(title: "Ideas for something", text: "Brainstorm ideas for "),
+            StarterOption(title: "Names for something", text: "Give me ten name ideas for "),
+            StarterOption(title: "Plan something", text: "Help me plan "),
+        ]),
+        StarterGroup(title: "Code", symbol: "chevron.left.forwardslash.chevron.right", options: [
+            StarterOption(title: "Write code", text: "Write code that "),
+            StarterOption(title: "Explain this code", text: "Explain what this code does:\n\n"),
+            StarterOption(title: "Find the bug", text: "Find the bug in this code:\n\n"),
+        ]),
     ]
+
+    /// Whether the message box holds nothing but a starter's opening.
+    static func isStarter(_ text: String) -> Bool {
+        all.contains { $0.options.contains { $0.text == text } }
+    }
+}
+
+struct StarterOption: Identifiable, Hashable {
+    let title: String
+    let text: String
+    var id: String { text }
 }

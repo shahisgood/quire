@@ -10,6 +10,7 @@ struct ComposerView: View {
     let openModels: () -> Void
     let openSettings: () -> Void
     let onFocus: () -> Void
+    var onFocusChange: (Bool) -> Void = { _ in }
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -22,7 +23,7 @@ struct ComposerView: View {
     @State private var showContext = false
     @State private var attachNote: String? = nil
     @State private var loadingAttachments = 0
-    @FocusState private var focused: Bool
+    @State private var focused = false
 
     private var trimmedEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var canSend: Bool { !session.generating && loadingAttachments == 0 && (!trimmedEmpty || !attachments.isEmpty) }
@@ -44,23 +45,28 @@ struct ComposerView: View {
                     .transition(.opacity)
             }
 
-            TextField(placeholder, text: $text, axis: .vertical)
-                .lineLimit(1...8)
-                .font(.body)
-                .foregroundStyle(Color.qInk)
-                .tint(Color.qAccent)
-                .focused($focused)
-                .padding(.horizontal, 6)
-                .padding(.bottom, 12)
-                .onChange(of: text) { _, new in session.saveDraft(new) }
-                .onKeyPress(.return, phases: .down) { press in
-                    // A hardware keyboard's Return sends (Shift+Return for a new line), like the PWA's
-                    // "send on Enter". The on-screen keyboard always inserts a line.
-                    guard app.settings.ui.sendOnEnter, !press.modifiers.contains(.shift) else { return .ignored }
-                    send()
-                    return .handled
+            ZStack(alignment: .topLeading) {
+                if text.isEmpty {
+                    Text(placeholder)
+                        .font(.body)
+                        .foregroundStyle(Color.qInk2.opacity(0.85))
+                        .lineLimit(1)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
-                .accessibilityLabel("Message")
+                // A hardware keyboard's Return sends (Shift+Return for a new line), like the PWA's
+                // "send on Enter". The on-screen keyboard always inserts a line.
+                ComposerTextView(text: $text, focused: $focused,
+                                 sendOnHardwareReturn: app.settings.ui.sendOnEnter,
+                                 hint: placeholder,
+                                 onSend: send,
+                                 onPasteImage: { img in
+                                     Task { await add { try await AttachmentMaker.image(img, name: "pasted.jpg") } }
+                                 })
+            }
+            .padding(.horizontal, 6)
+            .padding(.bottom, 12)
+            .onChange(of: text) { _, new in session.saveDraft(new) }
 
             controls
         }
@@ -80,13 +86,16 @@ struct ComposerView: View {
         .animation(reduceMotion ? nil : Motion.quick, value: noteText)
         .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy, value: showsAction)
         .animation(Motion.quick, value: focused)
-        .onChange(of: focused) { _, isFocused in if isFocused { onFocus() } }
+        .onChange(of: focused) { _, isFocused in
+            if isFocused { onFocus() }
+            onFocusChange(isFocused)
+        }
         .onChange(of: session.prefill) { _, new in
             guard let new else { return }
             session.prefill = nil
             // An empty box (or one holding only another starter) takes it; otherwise it leads.
             let current = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if current.isEmpty || StarterPrompt.all.contains(where: { $0.text == text }) {
+            if current.isEmpty || StarterGroup.isStarter(text) {
                 text = new
             } else {
                 text = new + text

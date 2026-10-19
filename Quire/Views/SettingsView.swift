@@ -13,8 +13,16 @@ struct SettingsView: View {
                 .listRowBackground(Color.qRaised)
 
             if app.settings.ui.showCosts {
-                Section { SpendingCard() } header: { SectionLabel(text: "Spending") }
-                    .listRowBackground(Color.qRaised)
+                Section {
+                    SpendingCard()
+                    NavigationLink(value: Route.spending) {
+                        TileLabel(title: "Breakdown", symbol: "chart.bar.xaxis", color: .qTileBlue,
+                                  detail: "By model, tokens and chat")
+                    }
+                } header: {
+                    SectionLabel(text: "Spending")
+                }
+                .listRowBackground(Color.qRaised)
             }
 
             Section {
@@ -143,49 +151,6 @@ private struct AccountCard: View {
         refreshing = true
         try? await app.refreshKeyMeta()
         refreshing = false
-    }
-}
-
-private struct SpendingCard: View {
-    @Environment(AppModel.self) private var app
-
-    var body: some View {
-        let series = app.dailySeries(days: 14)
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 18) {
-                stat("Today", app.todayCost)
-                stat("7 days", app.costSince(daysAgo: 6))
-                stat("30 days", app.costSince(daysAgo: 29))
-            }
-            Chart(series) { p in
-                BarMark(x: .value("Day", p.date, unit: .day), y: .value("Cost", p.cost))
-                    .foregroundStyle(Calendar.current.isDateInToday(p.date) ? Color.qAccent : Color.qAccent.opacity(0.45))
-                    .cornerRadius(3)
-            }
-            .chartYAxis(.hidden)
-            .chartXAxis {
-                AxisMarks(values: .stride(by: .day, count: 7)) { _ in
-                    AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-                }
-            }
-            .frame(height: 72)
-            .accessibilityLabel("Spending over the last 14 days")
-        }
-        .padding(.vertical, 6)
-    }
-
-    private func stat(_ label: String, _ value: Double) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(Fmt.usd(value))
-                .font(.system(.title3, design: .serif).weight(.semibold))
-                .monospacedDigit()
-                .foregroundStyle(Color.qInk)
-                .contentTransition(.numericText())
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(Color.qInk2)
-        }
-        .accessibilityElement(children: .combine)
     }
 }
 

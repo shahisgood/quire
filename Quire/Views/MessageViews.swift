@@ -1,117 +1,31 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Thread rows
+// MARK: - A message in the thread
 
-/// One row of the thread. A reply is several rows: its heading line, one row per Markdown block, and
-/// its footer. A long reply is then many small rows in the one lazy list, rather than one tall row
-/// with a list nested inside it; small rows size quickly and accurately, which is what keeps
-/// scrolling steady while a reply streams in.
-struct ThreadRow: Identifiable {
-    enum Kind {
-        case user
-        case head
-        case block(MDBlock, caret: Bool)
-        case foot(caret: Bool)
-    }
-
-    let id: String
-    let messageId: String
-    let kind: Kind
-    /// The first row of its message, which takes the gap between messages. Its id is the message's,
-    /// so scrolling to a message lands on its top.
-    let first: Bool
-
-    @MainActor
-    static func rows(for m: Message, in session: ChatSession) -> [ThreadRow] {
-        switch m.role {
-        case .user:
-            return [ThreadRow(id: m.id, messageId: m.id, kind: .user, first: true)]
-        case .assistant:
-            let streaming = session.streamingId == m.id
-            let content = streaming ? session.streamContent : m.content
-            var out = [ThreadRow(id: m.id, messageId: m.id, kind: .head, first: true)]
-            let blocks = content.isEmpty ? [] : split(MarkdownCache.blocks(content, live: streaming, key: m.id))
-            for (i, b) in blocks.enumerated() {
-                let caret = streaming && i == blocks.count - 1 && b.takesCaret
-                out.append(ThreadRow(id: "\(m.id)#\(i)", messageId: m.id, kind: .block(b, caret: caret), first: false))
-            }
-            if !streaming || !content.isEmpty {
-                let caret = streaming && !(blocks.last?.takesCaret ?? false)
-                out.append(ThreadRow(id: "\(m.id)#f", messageId: m.id, kind: .foot(caret: caret), first: false))
-            }
-            return out
-        case .system:
-            return []
-        }
-    }
-
-    /// An enormous paragraph becomes several rows, so no single text view grows taller than the GPU
-    /// will draw.
-    private static func split(_ blocks: [MDBlock]) -> [MDBlock] {
-        guard blocks.contains(where: { if case .paragraph(let t) = $0 { return t.utf8.count > 3000 } else { return false } }) else {
-            return blocks
-        }
-        var out: [MDBlock] = []
-        for b in blocks {
-            if case .paragraph(let t) = b, t.utf8.count > 3000 {
-                out += TextChunks.split(t, maxChars: 3000).map { MDBlock.paragraph($0) }
-            } else {
-                out.append(b)
-            }
-        }
-        return out
-    }
-}
-
-/// Draws one thread row, with the gap above it and, while a search result is being shown, a wash
-/// of accent behind the whole message.
-struct ThreadRowView: View {
-    let row: ThreadRow
+/// One message, whole: what you sent, or a reply with its reasoning, text, notices and actions.
+/// Long-press anywhere on it for its menu.
+struct MessageView: View {
     let session: ChatSession
-    let highlighted: Bool
-    let gap: CGFloat
+    let message: Message
+    var highlighted = false
     let actions: MessageActions
-    @Environment(AppModel.self) private var app
 
     var body: some View {
-        if let m = session.messages[row.messageId] {
-            // The wash starts at a message's first row and covers the gaps between its own rows, so
-            // the message reads as one highlighted block.
-            if row.first {
-                content(m)
-                    .background(wash)
-                    .padding(.top, gap)
-            } else {
-                content(m)
-                    .padding(.top, 12)
-                    .background(wash)
+        Group {
+            if message.role == .user {
+                UserMessageView(session: session, message: message, actions: actions)
+            } else if message.role == .assistant {
+                AssistantMessageView(session: session, message: message, actions: actions)
             }
         }
-    }
-
-    private var wash: some View {
-        Rectangle()
-            .fill(Color.qAccentSoft)
-            .padding(.horizontal, -8)
-            .opacity(highlighted ? 1 : 0)
-            .allowsHitTesting(false)
-    }
-
-    @ViewBuilder
-    private func content(_ m: Message) -> some View {
-        switch row.kind {
-        case .user:
-            UserMessageView(session: session, message: m, actions: actions)
-        case .head:
-            ReplyHead(session: session, message: m, actions: actions)
-        case .block(let block, let caret):
-            MarkdownBlockView(block: block, design: app.settings.ui.readingFace.design, caret: caret)
-                .equatable()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .modifier(ReplyMenu(session: session, message: m, actions: actions))
-        case .foot(let caret):
-            ReplyFoot(session: session, message: m, actions: actions, caret: caret)
+        .background {
+            // A search result, washed in accent for a moment so the eye finds it.
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.qAccentSoft)
+                .padding(-8)
+                .opacity(highlighted ? 1 : 0)
+                .allowsHitTesting(false)
         }
     }
 }
@@ -254,21 +168,21 @@ private struct AttachmentThumb: View {
 
 // MARK: - The model's reply: full width, in the reading face, under a small-caps folio line.
 
-/// The reply's first row: the folio line (model, then age), the reasoning trace, and the waiting
-/// cursor before the first token.
-private struct ReplyHead: View {
+private struct AssistantMessageView: View {
     let session: ChatSession
     let message: Message
     let actions: MessageActions
     @Environment(AppModel.self) private var app
+    @State private var justCopied = false
 
     private var isStreaming: Bool { session.streamingId == message.id }
     private var content: String { isStreaming ? session.streamContent : message.content }
     private var reasoning: String { isStreaming ? session.streamReasoning : (message.reasoning ?? "") }
+    private var design: Font.Design { app.settings.ui.readingFace.design }
     private var modelId: String { message.modelId ?? session.chat.modelId }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             folio
 
             if !reasoning.isEmpty || reasoningTokens > 0 {
@@ -283,10 +197,34 @@ private struct ReplyHead: View {
             if isStreaming && content.isEmpty && reasoning.isEmpty {
                 WaitingIndicator(retryAt: session.retryAt, reason: session.retryReason)
             }
+
+            if !content.isEmpty {
+                ReplyBody(blocks: MarkdownCache.blocks(content, live: isStreaming, key: message.id),
+                          design: design, streaming: isStreaming)
+            }
+
+            if !isStreaming { statusBlock }
+
+            footer
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(ReplyMenu(session: session, message: message, actions: actions))
+        .contentShape(.rect)
+        .contextMenu {
+            if !isStreaming { ReplyMenuItems(session: session, message: message, actions: actions) }
+        } preview: {
+            previewCard
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityActions {
+            Button("Copy") { copyPlain() }
+            if !session.generating {
+                Button("Regenerate") { session.regenerate(message.id) }
+            }
+            Button("Message details") { actions.info(message) }
+        }
     }
+
+    // MARK: Folio line: MODEL NAME ———— 2m
 
     private var folio: some View {
         HStack(spacing: 10) {
@@ -321,28 +259,8 @@ private struct ReplyHead: View {
         let rate = p > 0 ? p : Pricing.parse(m.pricing.completion)
         return Double(reasoningTokens) * rate
     }
-}
 
-/// The reply's last row: the caret when the text ends in a block that can't hold it, any error or
-/// interruption, then usage and the actions.
-private struct ReplyFoot: View {
-    let session: ChatSession
-    let message: Message
-    let actions: MessageActions
-    let caret: Bool
-    @Environment(AppModel.self) private var app
-    @State private var justCopied = false
-
-    private var isStreaming: Bool { session.streamingId == message.id }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if caret { StreamCaret() }
-            if !isStreaming { statusBlock }
-            footer
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
+    // MARK: Errors and interruptions
 
     @ViewBuilder
     private var statusBlock: some View {
@@ -366,6 +284,8 @@ private struct ReplyFoot: View {
             .disabled(session.generating)
         }
     }
+
+    // MARK: Footer
 
     @ViewBuilder
     private var footer: some View {
@@ -410,6 +330,21 @@ private struct ReplyFoot: View {
         "\(Fmt.tokens(u.completionTokens)) tokens · \(Fmt.usd(u.costUsd, estimate: u.authoritative != true))"
     }
 
+    private var previewCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(app.modelName(modelId).uppercased())
+                .font(.caption2.weight(.semibold))
+                .tracking(1.2)
+                .foregroundStyle(Color.qInk2)
+            Text(String(content.prefix(500)) + (content.count > 500 ? "…" : ""))
+                .font(.system(.callout, design: design))
+                .foregroundStyle(Color.qInk)
+        }
+        .padding(16)
+        .frame(width: 320, alignment: .leading)
+        .background(Color.qBase)
+    }
+
     /// The button itself confirms (a checkmark for a moment) rather than a toast over the chat.
     private func copyPlain() {
         UIPasteboard.general.string = PlainText.from(markdown: message.content)
@@ -422,30 +357,42 @@ private struct ReplyFoot: View {
     }
 }
 
-/// Long-press on any part of a reply opens the reply's menu (not while it's still streaming).
-private struct ReplyMenu: ViewModifier {
-    let session: ChatSession
-    let message: Message
-    let actions: MessageActions
+/// A reply's text as one column of blocks. Each block is Equatable, so while a reply streams only
+/// the block still being written is redrawn; enormous paragraphs are drawn in pieces, so no single
+/// text view grows taller than the GPU will draw.
+private struct ReplyBody: View {
+    let blocks: [MDBlock]
+    let design: Font.Design
+    let streaming: Bool
 
-    func body(content: Content) -> some View {
-        content
-            .contentShape(.rect)
-            .contextMenu {
-                if session.streamingId != message.id {
-                    ReplyMenuItems(session: session, message: message, actions: actions)
-                }
+    var body: some View {
+        let pieces = Self.pieces(blocks)
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(Array(pieces.enumerated()), id: \.offset) { i, block in
+                MarkdownBlockView(block: block, design: design,
+                                  caret: streaming && i == pieces.count - 1 && block.takesCaret)
+                    .equatable()
             }
-            .accessibilityActions {
-                Button("Copy") {
-                    UIPasteboard.general.string = PlainText.from(markdown: message.content)
-                    Haptics.tap()
-                }
-                if !session.generating {
-                    Button("Regenerate") { session.regenerate(message.id) }
-                }
-                Button("Message details") { actions.info(message) }
+            if streaming && !(pieces.last?.takesCaret ?? false) {
+                StreamCaret()
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private static func pieces(_ blocks: [MDBlock]) -> [MDBlock] {
+        guard blocks.contains(where: { if case .paragraph(let t) = $0 { return t.utf8.count > 2500 } else { return false } }) else {
+            return blocks
+        }
+        var out: [MDBlock] = []
+        for b in blocks {
+            if case .paragraph(let t) = b, t.utf8.count > 2500 {
+                out += TextChunks.split(t, maxChars: 2500).map { MDBlock.paragraph($0) }
+            } else {
+                out.append(b)
+            }
+        }
+        return out
     }
 }
 

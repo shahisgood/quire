@@ -11,6 +11,10 @@ extension Color {
     static let qRaised = Color(light: 0xFFFFFF, dark: 0x171A1F)
     static let qSunken = Color(light: 0xEDEDE8, dark: 0x0A0B0E)
     static let qInk = Color(light: 0x1B1D21, dark: 0xE8E6E1)
+    /// Running text in a reply: a step softer than `qInk`, so bold (in `qInkStrong`) stands out by
+    /// colour as well as weight. In dark mode especially, weight alone barely shows.
+    static let qInkBody = Color(light: 0x34373D, dark: 0xC9C6BF)
+    static let qInkStrong = Color(light: 0x07080A, dark: 0xFFFDF8)
     static let qInk2 = Color(light: 0x5F646C, dark: 0x8E9299)
     static let qRule = Color(light: 0xDCDCD6, dark: 0x262A31)
     static let qAccent = Color(light: 0x3450C8, dark: 0x9AA8FF)

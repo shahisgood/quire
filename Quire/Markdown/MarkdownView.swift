@@ -85,16 +85,16 @@ private struct BlockView: View {
         case .heading(let level, let text):
             Text(Inline.attributed(text, caret: caret))
                 .font(.system(headingStyle(level), design: design).weight(level <= 2 ? .bold : .semibold))
-                .foregroundStyle(Color.qInk)
-                .padding(.top, level <= 2 ? 6 : 2)
+                .foregroundStyle(Color.qInkStrong)
+                .padding(.top, level <= 2 ? 10 : 4)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
 
         case .paragraph(let text):
             ParagraphText(text: text, caret: caret)
                 .font(.system(.body, design: design))
-                .lineSpacing(4)
-                .foregroundStyle(Color.qInk)
+                .lineSpacing(5)
+                .foregroundStyle(Color.qInkBody)
                 .fixedSize(horizontal: false, vertical: true)
 
         case .code(let lang, let text):
@@ -193,6 +193,10 @@ enum Inline {
                                                           failurePolicy: .returnPartiallyParsedIfPossible)
         guard var a = try? AttributedString(markdown: source, options: opts) else { return AttributedString(source) }
         for run in a.runs {
+            // Bold reads by colour as well as weight: the strongest ink against the softer body.
+            if let intent = run.inlinePresentationIntent, intent.contains(.stronglyEmphasized) {
+                a[run.range][AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self] = Color.qInkStrong
+            }
             if let intent = run.inlinePresentationIntent, intent.contains(.code) {
                 a[run.range][AttributeScopes.SwiftUIAttributes.FontAttribute.self] = Font.system(.callout, design: .monospaced)
                 a[run.range][AttributeScopes.SwiftUIAttributes.BackgroundColorAttribute.self] = Color.qAccentSoft
@@ -237,7 +241,7 @@ private struct CodeBlockView: View {
             // draw, and the whole block came out blank. The column is as wide as the longest line,
             // measured up front, so sideways scrolling doesn't shift as pieces load.
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 3) {
                     ForEach(Array(Highlighter.chunks(code, lang: lang).enumerated()), id: \.offset) { _, piece in
                         Text(piece)
                             .fixedSize(horizontal: true, vertical: true)
@@ -498,7 +502,9 @@ enum TextChunks {
 }
 
 /// Plain text that may be long (a reasoning trace, a pasted message): one text view when short,
-/// a lazy column of pieces when not. Font and colour come from the caller.
+/// a column of pieces when not. Each piece is its own text view, so none outgrows what the GPU will
+/// draw, and the column is laid out exactly (a lazy one guesses at the height of pieces it hasn't
+/// built yet, which made the thread's scroll bar jump). Font and colour come from the caller.
 struct ChunkedText: View {
     let text: String
 
@@ -507,7 +513,7 @@ struct ChunkedText: View {
         if pieces.count == 1 {
             Text(text)
         } else {
-            LazyVStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(pieces.enumerated()), id: \.offset) { _, piece in
                     Text(piece).fixedSize(horizontal: false, vertical: true)
                 }
@@ -526,7 +532,7 @@ private struct ParagraphText: View {
         if pieces.count == 1 {
             Text(Inline.attributed(text, caret: caret))
         } else {
-            LazyVStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(pieces.enumerated()), id: \.offset) { i, piece in
                     Text(Inline.attributed(piece, caret: caret && i == pieces.count - 1))
                         .fixedSize(horizontal: false, vertical: true)
