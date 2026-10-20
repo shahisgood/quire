@@ -432,6 +432,7 @@ struct ComposerView: View {
             let a = try await make()
             attachments.append(a)
             attachNote = nil
+            Haptics.selection()
         } catch {
             attachNote = error.localizedDescription
         }

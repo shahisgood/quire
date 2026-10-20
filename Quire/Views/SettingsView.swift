@@ -825,6 +825,8 @@ private struct TextStrengthControl: View {
         }
         .padding(.vertical, 4)
         .animation(Motion.quick, value: isDefault)
+        // A detent at the default, so you can feel your way back to it.
+        .onChange(of: isDefault) { _, now in if now { Haptics.selection() } }
     }
 }
 

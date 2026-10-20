@@ -577,11 +577,7 @@ private struct StarterMenu: View {
             session.prefill = o.text
         } label: {
             HStack(spacing: 12) {
-                // A hairline under the group's icon, so the openings read as belonging to it.
-                Rectangle()
-                    .fill(Color.qRule)
-                    .frame(width: 1)
-                    .frame(width: 20)
+                Color.clear.frame(width: 20, height: 1)
                 Text(o.title)
                     .font(.subheadline)
                     .foregroundStyle(Color.qInk)
@@ -589,6 +585,14 @@ private struct StarterMenu: View {
             }
             .padding(.horizontal, 14)
             .frame(minHeight: 38)
+            // A hairline under the group's icon, so the openings read as belonging to it. Drawn
+            // behind the row at the row's own height, so it can't stretch the row.
+            .background(alignment: .leading) {
+                Rectangle()
+                    .fill(Color.qRule)
+                    .frame(width: 1)
+                    .padding(.leading, 14 + 9.5)
+            }
             .contentShape(.rect)
         }
         .buttonStyle(StarterRowStyle())

@@ -286,7 +286,7 @@ struct SpendingView: View {
             }
             .frame(height: 210)
             .animation(reduceMotion ? nil : Motion.quick, value: focus)
-            .sensoryFeedback(.selection, trigger: selectedBucket(r))
+            .onChange(of: selectedBucket(r)) { _, day in if day != nil { Haptics.selection() } }
 
             legend(r)
         }

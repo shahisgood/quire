@@ -319,7 +319,10 @@ private struct AssistantMessageView: View {
                 Spacer(minLength: 8)
                 FooterButton(symbol: justCopied ? "checkmark" : "square.on.square", label: justCopied ? "Copied" : "Copy",
                              tint: justCopied ? Color.qAccent : Color.qInk2, action: copyPlain)
-                FooterButton(symbol: "arrow.clockwise", label: "Regenerate") { session.regenerate(message.id) }
+                FooterButton(symbol: "arrow.clockwise", label: "Regenerate") {
+                    Haptics.tap()
+                    session.regenerate(message.id)
+                }
                     .disabled(session.generating)
                 Menu { ReplyMenuItems(session: session, message: message, actions: actions) } label: {
                     Image(systemName: "ellipsis")
@@ -501,7 +504,10 @@ struct SiblingSwitcher: View {
         let info = session.siblingInfo(messageId)
         if info.count > 1 {
             HStack(spacing: 2) {
-                Button { withAnimation(Motion.quick) { session.switchBranch(messageId, by: -1) } } label: {
+                Button {
+                    Haptics.selection()
+                    withAnimation(Motion.quick) { session.switchBranch(messageId, by: -1) }
+                } label: {
                     Image(systemName: "chevron.left").frame(width: 28, height: 28).contentShape(.rect)
                 }
                 .disabled(info.index == 0 || session.generating)
@@ -509,7 +515,10 @@ struct SiblingSwitcher: View {
                 Text("\(info.index + 1)/\(info.count)")
                     .font(.caption.monospacedDigit())
                     .contentTransition(.numericText())
-                Button { withAnimation(Motion.quick) { session.switchBranch(messageId, by: 1) } } label: {
+                Button {
+                    Haptics.selection()
+                    withAnimation(Motion.quick) { session.switchBranch(messageId, by: 1) }
+                } label: {
                     Image(systemName: "chevron.right").frame(width: 28, height: 28).contentShape(.rect)
                 }
                 .disabled(info.index >= info.count - 1 || session.generating)

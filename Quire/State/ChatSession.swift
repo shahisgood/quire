@@ -473,6 +473,13 @@ final class ChatSession {
         return out
     }
 
+    /// This chat is the one in front of you (not one still streaming behind another screen).
+    private var isOnScreen: Bool {
+        guard !app.settingsOpen, UIApplication.shared.applicationState == .active else { return false }
+        if case .chat(let open)? = app.path.last { return open == chat.id }
+        return false
+    }
+
     /// A model's image, kept as an attachment on its reply.
     static func drawnImage(_ url: String, number: Int) -> Attachment {
         var mime = "image/png"
@@ -623,7 +630,11 @@ final class ChatSession {
                         if let u = ev.usage { usage = u }
                         if let imgs = ev.images, !imgs.isEmpty { attach(imgs) }
                         if ev.content != nil || ev.reasoning != nil || ev.images != nil {
-                            if streamFirstTokenAt == nil { streamFirstTokenAt = nowMs() }
+                            if streamFirstTokenAt == nil {
+                                streamFirstTokenAt = nowMs()
+                                // A soft tick as the reply starts, if you're looking at it.
+                                if isOnScreen { Haptics.soft() }
+                            }
                             publish()
                         }
                     }
