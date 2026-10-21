@@ -44,6 +44,8 @@ nonisolated struct Chat: Codable, Identifiable, Hashable, Sendable {
     var scrollTop: Double?
     var lastPreview: String?
     var titleAuto: Bool?
+    /// A reply finished while the chat wasn't on screen. Cleared on opening it.
+    var unread: Bool?
 
     init(id: String = newID(), modelId: String, memoryEnabled: Bool) {
         let now = nowMs()
@@ -82,6 +84,7 @@ nonisolated struct Chat: Codable, Identifiable, Hashable, Sendable {
         scrollTop = c.lenient(.scrollTop, nil)
         lastPreview = c.lenient(.lastPreview, nil)
         titleAuto = c.lenient(.titleAuto, nil)
+        unread = c.lenient(.unread, nil)
     }
 }
 

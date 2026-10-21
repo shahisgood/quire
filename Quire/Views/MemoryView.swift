@@ -235,14 +235,13 @@ struct MemoryView: View {
             }
             .buttonStyle(.plain)
             .listRowBackground(Color.qRaised)
+            // All on the trailing side: left to right goes back from anywhere on this screen.
             .swipeActions(edge: .trailing) {
                 Button(role: .destructive) { app.deleteMemory(e.id) } label: { Label("Delete", systemImage: "trash") }
                 Button { app.updateMemory(e.id) { $0.disabled.toggle() } } label: {
                     Label(e.disabled ? "Enable" : "Disable", systemImage: e.disabled ? "eye" : "eye.slash")
                 }
                 .tint(Color.qTileSlate)
-            }
-            .swipeActions(edge: .leading) {
                 Button { app.updateMemory(e.id) { $0.pinned.toggle() }; Haptics.selection() } label: {
                     Label(e.pinned ? "Unpin" : "Pin", systemImage: e.pinned ? "pin.slash" : "pin")
                 }

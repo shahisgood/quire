@@ -66,34 +66,41 @@ enum ChatOps {
     }
 }
 
-/// A chat row that opens the chat, with archive and delete on a trailing swipe, pin on a leading
-/// one, and everything else in its menu.
+/// A chat row that opens the chat, with archive, pin and delete on a trailing swipe and everything
+/// else in its menu. Nothing on the leading side: a left-to-right swipe belongs to navigation (back
+/// from a screen, or settings in from the chat list).
 struct ChatListRow: View {
     let chat: Chat
     let sheets: ListSheets
     var showsProject = false
+    /// Sits straight on the page in a plain list (the chat list) rather than on a card.
+    var plain = false
+    var dayShown = false
+    var showsPin = true
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        NavigationLink(value: Route.chat(chat.id)) {
-            ChatRow(chat: chat, showsProject: showsProject)
+        // The link sits behind the row, invisible, so the row opens the chat without a chevron.
+        ZStack {
+            NavigationLink(value: Route.chat(chat.id)) { EmptyView() }
+                .opacity(0)
+            ChatRow(chat: chat, showsProject: showsProject, dayShown: dayShown, showsPin: showsPin)
+                .padding(.vertical, plain ? 0 : 3)
         }
-        .listRowBackground(Color.qRaised)
+        .modifier(RowSurface(plain: plain, vertical: 10))
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button { ChatOps.archive(app, [chat.id], to: !chat.archived) } label: {
                 Label(chat.archived ? "Unarchive" : "Archive", systemImage: "archivebox")
             }
             .tint(Color.qTileSlate)
-            // Not role: .destructive. That role tells the list the row is already gone, but deleting
-            // asks first; the list and the data then disagree, and the app crashes.
-            Button { sheets.deletingChats = [chat.id] } label: { Label("Delete", systemImage: "trash") }
-                .tint(.red)
-        }
-        .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button { ChatOps.togglePin(app, chat) } label: {
                 Label(chat.pinned ? "Unpin" : "Pin", systemImage: chat.pinned ? "pin.slash" : "pin")
             }
             .tint(Color.qAccent)
+            // Not role: .destructive. That role tells the list the row is already gone, but deleting
+            // asks first; the list and the data then disagree, and the app crashes.
+            Button { sheets.deletingChats = [chat.id] } label: { Label("Delete", systemImage: "trash") }
+                .tint(.red)
         }
         .contextMenu {
             Button { sheets.rename(chat) } label: { Label("Rename", systemImage: "pencil") }
@@ -113,6 +120,60 @@ struct ChatListRow: View {
             Divider()
             Button(role: .destructive) { sheets.deletingChats = [chat.id] } label: { Label("Delete", systemImage: "trash") }
         }
+    }
+}
+
+/// A row on a card (the project screen's grouped list) or straight on the page (the chat list),
+/// where rows go without separators: their spacing and serif titles keep them apart.
+private struct RowSurface: ViewModifier {
+    let plain: Bool
+    let vertical: CGFloat
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if plain {
+            content.plainListRow(vertical: vertical)
+        } else {
+            content.listRowBackground(Color.qRaised)
+        }
+    }
+}
+
+extension View {
+    func plainListRow(vertical: CGFloat) -> some View {
+        listRowInsets(EdgeInsets(top: vertical, leading: 20, bottom: vertical, trailing: 20))
+            .listRowBackground(Color.qBase)
+            .listRowSeparator(.hidden)
+    }
+}
+
+/// A heading in the chat list: the group's name, then a hairline running out to the edge, like a
+/// section break in a book. Stays pinned at the top while its chats scroll under it, so it covers
+/// them edge to edge.
+struct ListHeading: View {
+    let text: String
+    @Environment(\.displayScale) private var displayScale
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(text)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Color.qInk2)
+                .textCase(nil)
+                .fixedSize()
+            Rectangle()
+                .fill(Color.qRule)
+                .frame(height: 1 / displayScale)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.qBase)
+        .listRowInsets(EdgeInsets())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 

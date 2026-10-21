@@ -127,6 +127,7 @@ struct ProjectRow: View {
     var body: some View {
         let chats = app.chats(inProject: project.id)
         let writing = chats.contains { app.sessions[$0.id]?.generating == true }
+        let unread = chats.contains { $0.unread == true }
         HStack(spacing: 12) {
             ProjectTile(project: project, size: 38)
             VStack(alignment: .leading, spacing: 3) {
@@ -154,14 +155,25 @@ struct ProjectRow: View {
                 .lineLimit(1)
             }
             Spacer(minLength: 8)
-            if !chats.isEmpty {
-                Text("\(chats.count)")
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(Color.qInk2)
+            HStack(spacing: 6) {
+                // A reply you haven't read yet, in one of its chats.
+                if unread && !writing {
+                    Circle()
+                        .fill(Color.qAccent)
+                        .frame(width: 8, height: 8)
+                        .transition(.pop)
+                }
+                if !chats.isEmpty {
+                    Text("\(chats.count)")
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(unread ? Color.qAccent : Color.qInk2)
+                }
             }
+            .animation(Motion.bouncy, value: unread)
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
+        .accessibilityValue(unread ? "New replies" : "")
     }
 
     static func activity(_ chats: [Chat]) -> String {

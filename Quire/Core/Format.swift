@@ -62,6 +62,19 @@ nonisolated enum Fmt {
         return sameYear ? date.formatted(.dateTime.month(.abbreviated).day()) : date.formatted(.dateTime.year().month(.abbreviated).day())
     }
 
+    /// When a chat was last touched, the way Mail dates a message: the time today, then
+    /// "Yesterday", the weekday within the week, and the date beyond it. Where the list's own
+    /// headings already name the day (`dayShown`), yesterday gets its time too.
+    static func stamp(_ ms: Double, dayShown: Bool = false) -> String {
+        let date = Date(timeIntervalSince1970: ms / 1000)
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return date.formatted(date: .omitted, time: .shortened) }
+        if cal.isDateInYesterday(date) { return dayShown ? date.formatted(date: .omitted, time: .shortened) : "Yesterday" }
+        if dayGroup(ms) == .week { return date.formatted(.dateTime.weekday(.abbreviated)) }
+        let sameYear = cal.isDate(date, equalTo: Date(), toGranularity: .year)
+        return sameYear ? date.formatted(.dateTime.month(.abbreviated).day()) : date.formatted(.dateTime.year().month(.abbreviated).day())
+    }
+
     nonisolated enum DayGroup: String, CaseIterable, Hashable, Sendable { case today = "Today", yesterday = "Yesterday", week = "This week", earlier = "Earlier" }
 
     static func dayGroup(_ ms: Double) -> DayGroup {

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ChatListView: View {
     @Environment(AppModel.self) private var app
+    @Environment(SettingsDrawer.self) private var drawer
     @State private var query = ""
     @State private var hits: [SearchHit] = []
     @State private var searching = false
@@ -14,6 +15,8 @@ struct ChatListView: View {
     @State private var sheets = ListSheets()
     @State private var projectsExpanded = false
     @State private var confirmBulkDelete = false
+    /// The masthead has scrolled up under the bar, so the bar carries the name instead.
+    @State private var mastheadAway = false
 
     private static let collapsedProjects = 4
 
@@ -29,6 +32,8 @@ struct ChatListView: View {
         !showArchived && !isEditing && !(listed.isEmpty && app.folders.isEmpty)
     }
 
+    private var showsMasthead: Bool { !isEditing && !searchOpen }
+
     private var bulkDeleteTitle: String {
         selection.count == 1 ? "Delete this chat?" : "Delete \(selection.count) chats?"
     }
@@ -38,17 +43,23 @@ struct ChatListView: View {
             if isSearching {
                 searchSections
             } else {
+                if showsMasthead { mastheadSection }
                 if app.exportNudgeDue && !showArchived && !isEditing { backupNudge }
                 if showsProjects { projectSections }
                 listSections
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Color.qBase)
         .environment(\.editMode, $editMode)
         .navigationTitle(showArchived ? "Archived" : "Quire")
-        .navigationSubtitle(statusText)
+        .navigationBarTitleDisplayMode(.inline)
+        .onScrollGeometryChange(for: Bool.self) { geo in
+            geo.contentOffset.y + geo.contentInsets.top > 52
+        } action: { _, away in
+            withAnimation(Motion.quick) { mastheadAway = away }
+        }
         // Search is a button. It slides its own field in where the title bar was (which steps aside),
         // rather than using the system search controller, whose bar dropped in late and once left
         // the toolbar half-empty.
@@ -64,8 +75,18 @@ struct ChatListView: View {
         .overlay {
             if listed.isEmpty && !isSearching && (showArchived || app.folders.isEmpty) { emptyState }
         }
+        .background {
+            // Left to right anywhere on the list pulls settings in; the same swipe goes back from a
+            // chat, a project or Memory.
+            StackSwipes(pull: .init(direction: 1,
+                                    allowed: { [app] in app.path.isEmpty && !app.settingsOpen && !searchOpen && !isEditing },
+                                    changed: { [drawer, app] in drawer.pullChanged($0, app: app) },
+                                    ended: { [drawer, app] in drawer.pullEnded($0, velocity: $1, app: app) }),
+                        backAllowed: { [app] in !app.settingsOpen && app.path.last?.swipesBackAnywhere == true })
+        }
         .animation(Motion.standard, value: showArchived)
         .animation(Motion.standard, value: isEditing)
+        .animation(Motion.standard, value: searchOpen)
         .listSheets(sheets)
         // Deleting a selection ends selecting in the same update, so the list changes once.
         .confirmationDialog(bulkDeleteTitle, isPresented: $confirmBulkDelete, titleVisibility: .visible) {
@@ -85,8 +106,27 @@ struct ChatListView: View {
 
     // MARK: Toolbar
 
+    /// The bar's own title: the name once the masthead has gone under it, or the count while
+    /// selecting.
+    private var barTitle: String {
+        if isEditing { return selection.isEmpty ? "Select chats" : "\(selection.count) selected" }
+        return showArchived ? "Archived" : "Quire"
+    }
+
+    private var barTitleShown: Bool { isEditing || mastheadAway }
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .principal) {
+            Text(barTitle)
+                .font(.system(.headline, design: .serif).weight(.semibold))
+                .foregroundStyle(Color.qInk)
+                .contentTransition(.numericText())
+                .opacity(barTitleShown ? 1 : 0)
+                .offset(y: barTitleShown ? 0 : 6)
+                .animation(Motion.quick, value: barTitle)
+                .accessibilityHidden(!barTitleShown)
+        }
         ToolbarItem(placement: .topBarLeading) {
             if isEditing {
                 Button("Done") { withAnimation { editMode = .inactive; selection = [] } }
@@ -98,6 +138,7 @@ struct ChatListView: View {
                     Image(systemName: "gearshape")
                 }
                 .accessibilityLabel("Settings")
+                .accessibilityHint("Or swipe right anywhere on the list")
             }
         }
         if !isEditing {
@@ -223,28 +264,62 @@ struct ChatListView: View {
         }
     }
 
-    /// One quiet line under the title instead of a capsule in the bottom bar.
-    private var statusText: String {
-        let count = visible.count
-        var parts = ["\(count) \(count == 1 ? "chat" : "chats")"]
-        if !showArchived && !app.folders.isEmpty {
-            parts.append("\(app.folders.count) \(app.folders.count == 1 ? "project" : "projects")")
+    // MARK: Masthead
+
+    private var writingCount: Int { app.sessions.values.filter(\.generating).count }
+
+    /// The day, then only what's worth a glance: replies on their way, today's spend, being offline.
+    private var statusLine: Text {
+        if showArchived {
+            let n = visible.count
+            return Text(n == 0 ? "Nothing archived" : "\(n) archived \(n == 1 ? "chat" : "chats") · swipe one to restore it")
         }
-        if app.settings.ui.showCosts && app.todayCost > 0 { parts.append("\(Fmt.usd(app.todayCost)) today") }
-        if !app.connectivity.online { parts.append("Offline") }
-        return parts.joined(separator: " · ")
+        var parts = [Text(Date.now, format: .dateTime.weekday(.wide).month(.wide).day())]
+        let writing = writingCount
+        if writing > 0 {
+            parts.append(Text(writing == 1 ? "Writing a reply" : "Writing \(writing) replies").foregroundStyle(Color.qAccent))
+        }
+        if app.settings.ui.showCosts && app.todayCost > 0 { parts.append(Text("\(Fmt.usd(app.todayCost)) today")) }
+        if !app.connectivity.online { parts.append(Text("Offline").foregroundStyle(Color.qWarn)) }
+        return parts.dropFirst().reduce(parts[0]) { Text("\($0) · \($1)") }
+    }
+
+    private var mastheadSection: some View {
+        Section {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Masthead(title: showArchived ? "Archived" : "Quire",
+                         cursor: !showArchived,
+                         writing: writingCount > 0,
+                         status: statusLine)
+                if showArchived {
+                    Button("Done") {
+                        Haptics.selection()
+                        showArchived = false
+                    }
+                    .buttonStyle(.borderless)
+                    .fontWeight(.semibold)
+                    .tint(Color.qAccent)
+                    .transition(.opacity)
+                }
+            }
+            .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 6, trailing: 20))
+            .listRowBackground(Color.qBase)
+            .listRowSeparator(.hidden)
+            .selectionDisabled()
+        }
+        .listSectionSeparator(.hidden)
     }
 
     // MARK: Sections
 
     private var backupNudge: some View {
         Section {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "externaldrive.badge.timemachine")
                         .font(.title3)
                         .foregroundStyle(Color.qAccent)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text("Time for a backup").font(.subheadline.weight(.semibold)).foregroundStyle(Color.qInk)
                         Text("Your chats live only on this iPhone. Export a copy to Files or iCloud Drive.")
                             .font(.footnote)
@@ -261,9 +336,15 @@ struct ChatListView: View {
                         .controlSize(.small)
                 }
             }
-            .padding(.vertical, 4)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.qAccentSoft, in: .rect(cornerRadius: 18, style: .continuous))
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.qBase)
+            .listRowSeparator(.hidden)
+            .selectionDisabled()
         }
-        .listRowBackground(Color.qAccentSoft)
+        .listSectionSeparator(.hidden)
     }
 
     // MARK: Projects
@@ -279,23 +360,20 @@ struct ChatListView: View {
             if folds { foldRow(hidden: all.count - Self.collapsedProjects, open: open) }
             newProjectRow(invite: all.isEmpty)
         } header: {
-            SectionLabel(text: "Projects")
+            ListHeading(text: "Projects")
         }
+        .listSectionSeparator(.hidden)
     }
 
     private func projectRow(_ p: Project) -> some View {
-        NavigationLink(value: Route.project(p.id)) {
+        ZStack {
+            NavigationLink(value: Route.project(p.id)) { EmptyView() }
+                .opacity(0)
             ProjectRow(project: p)
         }
-        .listRowBackground(Color.qRaised)
+        .plainListRow(vertical: 7)
+        // Everything on the trailing side: a swipe the other way pulls settings in.
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            // Not role: .destructive, which tells the list the row is already gone; deleting asks first.
-            Button { sheets.deletingProject = p } label: { Label("Delete", systemImage: "trash") }
-                .tint(.red)
-            Button { sheets.editor = ProjectEditorRequest(project: p) } label: { Label("Edit", systemImage: "pencil") }
-                .tint(Color.qTileSlate)
-        }
-        .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button {
                 Haptics.tap()
                 app.startNewChat(projectId: p.id)
@@ -303,6 +381,11 @@ struct ChatListView: View {
                 Label("New chat", systemImage: "square.and.pencil")
             }
             .tint(p.tintColor)
+            Button { sheets.editor = ProjectEditorRequest(project: p) } label: { Label("Edit", systemImage: "pencil") }
+                .tint(Color.qTileSlate)
+            // Not role: .destructive, which tells the list the row is already gone; deleting asks first.
+            Button { sheets.deletingProject = p } label: { Label("Delete", systemImage: "trash") }
+                .tint(.red)
         }
         .contextMenu {
             Button { app.startNewChat(projectId: p.id) } label: { Label("New chat", systemImage: "square.and.pencil") }
@@ -322,21 +405,23 @@ struct ChatListView: View {
             Haptics.selection()
             withAnimation(Motion.standard) { projectsExpanded.toggle() }
         } label: {
-            HStack {
+            HStack(spacing: 6) {
                 Text(open ? "Show fewer" : "Show \(hidden) more")
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color.qInk2)
-                Spacer()
                 Image(systemName: "chevron.down")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.qInk2)
                     .rotationEffect(.degrees(open ? 180 : 0))
+                Spacer(minLength: 0)
             }
+            .foregroundStyle(Color.qInk2)
             .contentShape(.rect)
         }
-        .listRowBackground(Color.qRaised)
+        .plainListRow(vertical: 6)
+        .selectionDisabled()
     }
 
+    /// An empty tile waiting to be filled: quiet once you have projects, the accent's invitation
+    /// before you've made one.
     private func newProjectRow(invite: Bool) -> some View {
         Button {
             Haptics.tap()
@@ -345,13 +430,17 @@ struct ChatListView: View {
             HStack(spacing: 12) {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.qAccent)
+                    .foregroundStyle(invite ? Color.qAccent : Color.qInk2)
                     .frame(width: 38, height: 38)
-                    .background(Color.qAccentSoft, in: .rect(cornerRadius: 11, style: .continuous))
+                    .background {
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .strokeBorder(invite ? Color.qAccent.opacity(0.5) : Color.qRule,
+                                          style: StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
+                    }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("New project")
                         .font(.body.weight(.medium))
-                        .foregroundStyle(Color.qAccent)
+                        .foregroundStyle(invite ? Color.qAccent : Color.qInk2)
                     if invite {
                         Text("Group related chats, with instructions they all follow")
                             .font(.caption)
@@ -360,10 +449,10 @@ struct ChatListView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 2)
             .contentShape(.rect)
         }
-        .listRowBackground(Color.qRaised)
+        .plainListRow(vertical: 7)
+        .selectionDisabled()
     }
 
     // MARK: Chats
@@ -372,13 +461,15 @@ struct ChatListView: View {
     private var listSections: some View {
         let pinned = listed.filter(\.pinned)
         if !pinned.isEmpty {
-            Section { ForEach(pinned) { row($0) } } header: { SectionLabel(text: "Pinned") }
+            Section { ForEach(pinned) { row($0, showsPin: false) } } header: { ListHeading(text: "Pinned") }
+                .listSectionSeparator(.hidden)
         }
         let rest = listed.filter { !$0.pinned }
         ForEach(Fmt.DayGroup.allCases, id: \.self) { group in
             let items = rest.filter { Fmt.dayGroup($0.updatedAt) == group }
             if !items.isEmpty {
-                Section { ForEach(items) { row($0) } } header: { SectionLabel(text: group.rawValue) }
+                Section { ForEach(items) { row($0) } } header: { ListHeading(text: group.rawValue) }
+                    .listSectionSeparator(.hidden)
             }
         }
     }
@@ -388,11 +479,17 @@ struct ChatListView: View {
         let q = query.trimmingCharacters(in: .whitespaces)
         let projectMatches = app.projects.filter { $0.name.localizedCaseInsensitiveContains(q) }
         if !projectMatches.isEmpty {
-            Section { ForEach(projectMatches) { projectRow($0) } } header: { SectionLabel(text: "Projects") }
+            Section { ForEach(projectMatches) { projectRow($0) } } header: { ListHeading(text: "Projects") }
+                .listSectionSeparator(.hidden)
         }
         let titleMatches = app.chats.filter { $0.title.localizedCaseInsensitiveContains(q) }
         if !titleMatches.isEmpty {
-            Section { ForEach(titleMatches) { row($0, showsProject: true) } } header: { SectionLabel(text: "Chats") }
+            Section {
+                ForEach(titleMatches) { ChatListRow(chat: $0, sheets: sheets, showsProject: true, plain: true) }
+            } header: {
+                ListHeading(text: "Chats")
+            }
+            .listSectionSeparator(.hidden)
         }
         Section {
             if hits.isEmpty {
@@ -402,41 +499,44 @@ struct ChatListView: View {
                         .font(.subheadline)
                         .foregroundStyle(Color.qInk2)
                 }
+                .plainListRow(vertical: 8)
                 .selectionDisabled()
             }
             ForEach(hits) { hit in
                 Button { app.openChat(hit.chatId, highlight: hit.messageId) } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(app.chat(hit.chatId)?.title ?? "Chat")
-                                .font(.system(.subheadline, design: .serif).weight(.semibold))
+                                .font(.system(.body, design: .serif).weight(.semibold))
                                 .foregroundStyle(Color.qInk)
                                 .lineLimit(1)
-                            Spacer()
-                            Text(Fmt.relative(hit.createdAt))
-                                .font(.caption2.monospacedDigit())
+                            Spacer(minLength: 0)
+                            Text(Fmt.stamp(hit.createdAt))
+                                .font(.footnote.monospacedDigit())
                                 .foregroundStyle(Color.qInk2)
                         }
                         Text(highlighted(hit.snippet, q))
-                            .font(.footnote)
+                            .font(.subheadline)
                             .foregroundStyle(Color.qInk2)
                             .lineLimit(3)
                     }
-                    .padding(.vertical, 2)
+                    .contentShape(.rect)
                 }
-                .listRowBackground(Color.qRaised)
+                .plainListRow(vertical: 10)
                 .selectionDisabled()
             }
         } header: {
-            SectionLabel(text: "Messages")
+            ListHeading(text: "In messages")
         }
+        .listSectionSeparator(.hidden)
     }
 
-    /// Sits at the optical centre of the space under the search field (a little above true middle,
+    /// Sits at the optical centre of the space under the masthead (a little above true middle,
     /// which reads as sagging there), and drifts in when the list empties.
     private var emptyState: some View {
         EmptyState(title: showArchived ? "Nothing archived" : "No chats yet",
-                   message: showArchived ? "Swipe a chat to archive it. It stays searchable." : "Everything you write stays on this iPhone until you export it.") {
+                   message: showArchived ? "Swipe a chat to archive it. It stays searchable." : "Everything you write stays on this iPhone until you export it.",
+                   showMark: false) {
             if !showArchived {
                 HStack(spacing: 10) {
                     Button { app.startNewChat() } label: { Label("New chat", systemImage: "square.and.pencil") }
@@ -456,8 +556,9 @@ struct ChatListView: View {
 
     // MARK: Row
 
-    private func row(_ chat: Chat, showsProject: Bool = false) -> some View {
-        ChatListRow(chat: chat, sheets: sheets, showsProject: showsProject || showArchived)
+    /// The headings above already name the day, so a row gives the time on it.
+    private func row(_ chat: Chat, showsPin: Bool = true) -> some View {
+        ChatListRow(chat: chat, sheets: sheets, showsProject: showArchived, plain: true, dayShown: true, showsPin: showsPin)
     }
 
     // MARK: Actions
@@ -495,32 +596,86 @@ struct ChatListView: View {
     }
 }
 
-/// One chat in the list: serif title, two lines of preview, a quiet meta line (which names the
-/// chat's project where the list mixes chats from several).
+// MARK: - Masthead
+
+/// The top of the chat list: the name set in the serif with the app icon's cursor after it, which
+/// breathes while a reply is being written; under it, the day and anything worth a glance. Scrolls
+/// away with the list, and the bar picks the name up.
+private struct Masthead: View {
+    let title: String
+    var cursor = true
+    var writing = false
+    let status: Text
+    @ScaledMetric(relativeTo: .largeTitle) private var caret: CGFloat = 21
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: caret * 0.18) {
+                Text(title)
+                    .font(.system(.largeTitle, design: .serif, weight: .bold))
+                    .tracking(-0.4)
+                    .foregroundStyle(Color.qInk)
+                    .contentTransition(.opacity)
+                if cursor {
+                    caretBlock
+                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
+                        .transition(.opacity)
+                }
+            }
+            status
+                .font(.subheadline)
+                .foregroundStyle(Color.qInk2)
+                .lineLimit(1)
+                .contentTransition(.opacity)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    @ViewBuilder
+    private var caretBlock: some View {
+        let block = RoundedRectangle(cornerRadius: caret * 0.14, style: .continuous)
+            .fill(Color.qAccent)
+            .frame(width: caret * 0.55, height: caret)
+            .accessibilityHidden(true)
+        if writing && !reduceMotion {
+            block.phaseAnimator([1.0, 0.22]) { view, opacity in
+                view.opacity(opacity)
+            } animation: { _ in .easeInOut(duration: 0.8) }
+        } else {
+            block
+        }
+    }
+}
+
+// MARK: - Row
+
+/// One chat in a list: its title in the serif, what was said last, and only the details that set
+/// it apart (a project where chats from several are mixed, a persona, a model other than the one
+/// a new chat would get, incognito, the cost). The time sits at the right; a dot before it means
+/// a reply arrived that you haven't opened yet.
 struct ChatRow: View {
     let chat: Chat
     var showsProject = false
+    /// The list's headings already name the day, so the stamp can give the time.
+    var dayShown = false
+    /// Off in a Pinned section, which says it already.
+    var showsPin = true
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                if chat.pinned {
-                    Image(systemName: "pin.fill")
-                        .font(.caption2)
-                        .foregroundStyle(Color.qAccent)
-                        .transition(.pop)
-                        .accessibilityLabel("Pinned")
-                }
+        let unread = chat.unread == true
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(chat.title)
                     .font(.system(.body, design: .serif).weight(.semibold))
                     .foregroundStyle(Color.qInk)
                     .lineLimit(1)
                     .contentTransition(.opacity)
-                Spacer(minLength: 8)
-                Text(Fmt.relative(chat.updatedAt))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(Color.qInk2)
+                Spacer(minLength: 0)
+                stamp(unread: unread)
             }
             // A reply still coming in (you can leave a chat mid-reply) shows as a live line.
             if isWriting {
@@ -533,54 +688,81 @@ struct ChatRow: View {
                 .transition(.opacity)
                 .accessibilityLabel("Writing a reply")
             } else {
-                Text(preview)
+                preview
                     .font(.subheadline)
                     .foregroundStyle(Color.qInk2)
                     .lineLimit(2)
                     .transition(.opacity)
             }
-            HStack(spacing: 6) {
-                if showsProject, let p = app.project(of: chat) {
-                    HStack(spacing: 3) {
-                        Image(systemName: p.symbolName)
-                            .foregroundStyle(p.tintColor)
-                        Text(p.name)
-                            .lineLimit(1)
-                    }
-                    Text("·")
+            let details = detailText
+            let cost = app.settings.ui.showCosts && chat.totalCostUsd > 0 ? Fmt.usd(chat.totalCostUsd) : nil
+            if details != nil || cost != nil {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    details?.lineLimit(1)
+                    Spacer(minLength: 0)
+                    if let cost { Text(cost).monospacedDigit() }
                 }
-                if let p = app.preset(chat.systemPromptId) {
-                    Text("\(p.icon ?? "◦") \(p.name)")
-                        .lineLimit(1)
-                    Text("·")
-                }
-                Text(app.modelName(chat.modelId))
-                    .lineLimit(1)
-                if !chat.memoryEnabled {
-                    Image(systemName: "eye.slash")
-                        .accessibilityLabel("Incognito")
-                }
-                Spacer(minLength: 8)
-                if app.settings.ui.showCosts && chat.totalCostUsd > 0 {
-                    Text(Fmt.usd(chat.totalCostUsd))
-                        .monospacedDigit()
-                }
+                .font(.caption)
+                .foregroundStyle(Color.qInk2.opacity(0.85))
+                .padding(.top, 1)
             }
-            .font(.caption)
-            .foregroundStyle(Color.qInk2.opacity(0.85))
         }
-        .padding(.vertical, 4)
         .animation(Motion.standard, value: chat.title)
         .animation(Motion.quick, value: isWriting)
+        .animation(Motion.bouncy, value: unread)
         .accessibilityElement(children: .combine)
+        .accessibilityValue(unread ? "New reply" : "")
+    }
+
+    private func stamp(unread: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            if unread {
+                Circle()
+                    .fill(Color.qAccent)
+                    .frame(width: 8, height: 8)
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                    .transition(.pop)
+                    .accessibilityHidden(true)
+            } else if chat.pinned && showsPin {
+                Image(systemName: "pin.fill")
+                    .font(.caption2)
+                    .foregroundStyle(Color.qInk2)
+                    .transition(.pop)
+                    .accessibilityLabel("Pinned")
+            }
+            Text(Fmt.stamp(chat.updatedAt, dayShown: dayShown))
+                .font(.footnote.monospacedDigit())
+                .foregroundStyle(unread ? Color.qAccent : Color.qInk2)
+        }
     }
 
     private var isWriting: Bool { app.sessions[chat.id]?.generating == true }
 
-    private var preview: String {
-        if let d = chat.draft, !d.isEmpty { return "Draft: \(d)" }
-        if let p = chat.lastPreview, !p.isEmpty { return p }
-        return "No messages yet"
+    @ViewBuilder
+    private var preview: some View {
+        if let d = chat.draft?.trimmingCharacters(in: .whitespacesAndNewlines), !d.isEmpty {
+            Text("\(Text("Draft").foregroundStyle(Color.qAccent).fontWeight(.medium)) \(d)")
+        } else if let p = chat.lastPreview, !p.isEmpty {
+            Text(p)
+        } else {
+            Text("No messages yet").italic()
+        }
+    }
+
+    /// What sets this chat apart from a new one, if anything.
+    private var detailText: Text? {
+        let persona = app.preset(chat.systemPromptId)
+        let project = app.project(of: chat)
+        var parts: [Text] = []
+        if showsProject, let project {
+            parts.append(Text("\(Text(Image(systemName: project.symbolName)).foregroundStyle(project.tintColor)) \(project.name)"))
+        }
+        if let persona { parts.append(Text("\(persona.icon ?? "◦") \(persona.name)")) }
+        let usual = persona?.modelId ?? project?.modelId ?? app.settings.defaultModelId
+        if !chat.modelId.isEmpty && chat.modelId != usual { parts.append(Text(app.modelName(chat.modelId))) }
+        if !chat.memoryEnabled { parts.append(Text("\(Image(systemName: "eye.slash")) Incognito")) }
+        guard let first = parts.first else { return nil }
+        return parts.dropFirst().reduce(first) { Text("\($0) · \($1)") }
     }
 }
 
@@ -627,11 +809,13 @@ struct NewChatButton: View {
             Divider()
             Button { app.push(.section(.prompts)) } label: { Label("Manage personas", systemImage: "person.crop.rectangle.stack") }
         } label: {
-            Image(systemName: "square.and.pencil")
+            // The pencil reaches past the square, so the symbol is placed by its ink, not its frame.
+            OpticalSymbol("square.and.pencil")
         } primaryAction: {
             Haptics.tap()
             app.startNewChat(projectId: project?.id)
         }
+        .menuIndicator(.hidden)
         .accessibilityLabel(project.map { "New chat in \($0.name)" } ?? "New chat")
         .accessibilityHint("Hold for incognito, a persona or a project")
     }
