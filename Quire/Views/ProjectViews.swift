@@ -118,9 +118,10 @@ struct ProjectTile: View {
     }
 }
 
-/// A project in the chat list: tile, name, and a quiet line saying whether it has instructions and
-/// when it was last used (or that a reply is being written in it right now).
-struct ProjectRow: View {
+/// A project on the chat list's shelf: its tile over its name, with how many chats it holds and
+/// when one was last touched. The card takes a wash of the project's colour; a dot in the corner
+/// means a reply in it you haven't read, and the live dot means one is being written.
+struct ProjectCard: View {
     let project: Project
     @Environment(AppModel.self) private var app
 
@@ -128,60 +129,71 @@ struct ProjectRow: View {
         let chats = app.chats(inProject: project.id)
         let writing = chats.contains { app.sessions[$0.id]?.generating == true }
         let unread = chats.contains { $0.unread == true }
-        HStack(spacing: 12) {
-            ProjectTile(project: project, size: 38)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(project.name)
-                    .font(.system(.body, design: .serif).weight(.semibold))
-                    .foregroundStyle(Color.qInk)
-                    .lineLimit(1)
-                HStack(spacing: 5) {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top) {
+                ProjectTile(project: project, size: 34)
+                Spacer(minLength: 4)
+                Group {
                     if writing {
-                        LiveDot(size: 6)
-                        Text("Writing…")
-                            .foregroundStyle(Color.qAccent)
-                    } else {
-                        if project.hasInstructions {
-                            Image(systemName: "text.quote")
-                                .foregroundStyle(project.tintColor)
-                            Text("Instructions")
-                            Text("·")
-                        }
-                        Text(Self.activity(chats))
+                        LiveDot(size: 7)
+                    } else if unread {
+                        Circle().fill(Color.qAccent).frame(width: 8, height: 8)
+                    } else if project.hasInstructions {
+                        Image(systemName: "text.quote")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(project.tintColor)
                     }
                 }
-                .font(.caption)
-                .foregroundStyle(Color.qInk2)
+                .padding(.top, 4)
+                .transition(.pop)
+            }
+            Spacer(minLength: 14)
+            Text(project.name)
+                .font(.system(.subheadline, design: .serif).weight(.semibold))
+                .foregroundStyle(Color.qInk)
                 .lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            HStack(spacing: 6) {
-                // A reply you haven't read yet, in one of its chats.
-                if unread && !writing {
-                    Circle()
-                        .fill(Color.qAccent)
-                        .frame(width: 8, height: 8)
-                        .transition(.pop)
-                }
-                if !chats.isEmpty {
-                    Text("\(chats.count)")
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(unread ? Color.qAccent : Color.qInk2)
-                }
-            }
-            .animation(Motion.bouncy, value: unread)
+            Text(writing ? "Writing…" : Self.summary(chats))
+                .font(.caption)
+                .foregroundStyle(writing ? Color.qAccent : Color.qInk2)
+                .lineLimit(1)
+                .padding(.top, 2)
         }
-        .padding(.vertical, 2)
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(CardSurface(radius: 18, tint: project.tintColor))
+        .animation(Motion.bouncy, value: unread)
+        .animation(Motion.quick, value: writing)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(unread ? "New replies" : "")
+        .accessibilityValue(unread ? "New replies" : (project.hasInstructions ? "Has instructions" : ""))
     }
 
-    static func activity(_ chats: [Chat]) -> String {
+    /// "5 chats · 2h ago", or that it's empty.
+    static func summary(_ chats: [Chat]) -> String {
         guard let latest = chats.map(\.updatedAt).max() else { return "No chats yet" }
+        let count = "\(chats.count) \(chats.count == 1 ? "chat" : "chats")"
         let r = Fmt.relative(latest)
-        if r == "now" { return "Active just now" }
-        if r.first?.isNumber == true, r.count <= 4 { return "Active \(r) ago" }
-        return "Active \(r)"
+        if r == "now" { return "\(count) · just now" }
+        if r.first?.isNumber == true, r.count <= 4 { return "\(count) · \(r) ago" }
+        return "\(count) · \(r)"
+    }
+}
+
+/// The surface a card in the chat list sits on: one step lighter than the page, with a hairline
+/// edge so it holds its shape in light mode, and an optional wash of colour.
+struct CardSurface: View {
+    var radius: CGFloat = 20
+    var tint: Color? = nil
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        shape
+            .fill(Color.qRaised)
+            .overlay {
+                if let tint { shape.fill(tint.opacity(0.08)) }
+            }
+            .overlay {
+                shape.strokeBorder(tint.map { $0.opacity(0.18) } ?? Color.qRule.opacity(0.8), lineWidth: 0.5)
+            }
     }
 }
 

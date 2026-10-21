@@ -69,25 +69,23 @@ enum ChatOps {
 /// A chat row that opens the chat, with archive, pin and delete on a trailing swipe and everything
 /// else in its menu. Nothing on the leading side: a left-to-right swipe belongs to navigation (back
 /// from a screen, or settings in from the chat list).
+///
+/// In the chat list (`plain`) each chat is a card on the page that gives a little under your
+/// finger; on the project screen it's a row on the screen's grouped card.
 struct ChatListRow: View {
     let chat: Chat
     let sheets: ListSheets
     var showsProject = false
-    /// Sits straight on the page in a plain list (the chat list) rather than on a card.
     var plain = false
     var dayShown = false
     var showsPin = true
     @Environment(AppModel.self) private var app
+    @Environment(\.editMode) private var editMode
 
     var body: some View {
-        // The link sits behind the row, invisible, so the row opens the chat without a chevron.
-        ZStack {
-            NavigationLink(value: Route.chat(chat.id)) { EmptyView() }
-                .opacity(0)
-            ChatRow(chat: chat, showsProject: showsProject, dayShown: dayShown, showsPin: showsPin)
-                .padding(.vertical, plain ? 0 : 3)
+        Group {
+            if plain { card } else { groupedRow }
         }
-        .modifier(RowSurface(plain: plain, vertical: 10))
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button { ChatOps.archive(app, [chat.id], to: !chat.archived) } label: {
                 Label(chat.archived ? "Unarchive" : "Archive", systemImage: "archivebox")
@@ -102,78 +100,102 @@ struct ChatListRow: View {
             Button { sheets.deletingChats = [chat.id] } label: { Label("Delete", systemImage: "trash") }
                 .tint(.red)
         }
-        .contextMenu {
-            Button { sheets.rename(chat) } label: { Label("Rename", systemImage: "pencil") }
-            Button { ChatOps.togglePin(app, chat) } label: {
-                Label(chat.pinned ? "Unpin" : "Pin", systemImage: chat.pinned ? "pin.slash" : "pin")
-            }
-            ProjectMoveMenu(app, ids: [chat.id]) { sheets.editor = ProjectEditorRequest(moving: [chat.id]) }
-            Button {
-                if app.duplicateChat(chat.id) != nil { app.toasts.show("Duplicated", symbol: "plus.square.on.square") }
-            } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
-            Button {
-                if let url = try? app.exportChats([chat.id]) { sheets.share = SharedFile(url: url) }
-            } label: { Label("Export as JSON", systemImage: "square.and.arrow.up") }
-            Button { ChatOps.archive(app, [chat.id], to: !chat.archived) } label: {
-                Label(chat.archived ? "Unarchive" : "Archive", systemImage: "archivebox")
-            }
-            Divider()
-            Button(role: .destructive) { sheets.deletingChats = [chat.id] } label: { Label("Delete", systemImage: "trash") }
-        }
     }
-}
 
-/// A row on a card (the project screen's grouped list) or straight on the page (the chat list),
-/// where rows go without separators: their spacing and serif titles keep them apart.
-private struct RowSurface: ViewModifier {
-    let plain: Bool
-    let vertical: CGFloat
+    /// While selecting, taps go to the list (which ticks the row) rather than opening the chat.
+    private var card: some View {
+        Button {
+            app.path.append(.chat(chat.id))
+        } label: {
+            ChatRow(chat: chat, showsProject: showsProject, dayShown: dayShown, showsPin: showsPin)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 13)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(CardSurface(radius: 20))
+                .contentShape(.rect(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(PressableStyle(scale: 0.98))
+        .allowsHitTesting(editMode?.wrappedValue.isEditing != true)
+        .contentShape(.contextMenuPreview, .rect(cornerRadius: 20, style: .continuous))
+        .contextMenu { menu }
+        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+        .listRowBackground(Color.qBase)
+        .listRowSeparator(.hidden)
+    }
+
+    // The link sits behind the row, invisible, so the row opens the chat without a chevron.
+    private var groupedRow: some View {
+        ZStack {
+            NavigationLink(value: Route.chat(chat.id)) { EmptyView() }
+                .opacity(0)
+            ChatRow(chat: chat, showsProject: showsProject, dayShown: dayShown, showsPin: showsPin)
+                .padding(.vertical, 3)
+        }
+        .listRowBackground(Color.qRaised)
+        .contextMenu { menu }
+    }
 
     @ViewBuilder
-    func body(content: Content) -> some View {
-        if plain {
-            content.plainListRow(vertical: vertical)
-        } else {
-            content.listRowBackground(Color.qRaised)
+    private var menu: some View {
+        Button { sheets.rename(chat) } label: { Label("Rename", systemImage: "pencil") }
+        Button { ChatOps.togglePin(app, chat) } label: {
+            Label(chat.pinned ? "Unpin" : "Pin", systemImage: chat.pinned ? "pin.slash" : "pin")
         }
+        ProjectMoveMenu(app, ids: [chat.id]) { sheets.editor = ProjectEditorRequest(moving: [chat.id]) }
+        Button {
+            if app.duplicateChat(chat.id) != nil { app.toasts.show("Duplicated", symbol: "plus.square.on.square") }
+        } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+        Button {
+            if let url = try? app.exportChats([chat.id]) { sheets.share = SharedFile(url: url) }
+        } label: { Label("Export as JSON", systemImage: "square.and.arrow.up") }
+        Button { ChatOps.archive(app, [chat.id], to: !chat.archived) } label: {
+            Label(chat.archived ? "Unarchive" : "Archive", systemImage: "archivebox")
+        }
+        Divider()
+        Button(role: .destructive) { sheets.deletingChats = [chat.id] } label: { Label("Delete", systemImage: "trash") }
     }
 }
 
 extension View {
+    /// A row with no card of its own, straight on the page.
     func plainListRow(vertical: CGFloat) -> some View {
-        listRowInsets(EdgeInsets(top: vertical, leading: 20, bottom: vertical, trailing: 20))
+        listRowInsets(EdgeInsets(top: vertical, leading: 16, bottom: vertical, trailing: 16))
             .listRowBackground(Color.qBase)
             .listRowSeparator(.hidden)
     }
 }
 
-/// A heading in the chat list: the group's name, then a hairline running out to the edge, like a
-/// section break in a book. Stays pinned at the top while its chats scroll under it, so it covers
+/// A heading in the chat list, set in the serif like a chapter title, with an optional action at
+/// its end ("Show all"). Stays pinned at the top while its chats scroll under it, so it covers
 /// them edge to edge.
 struct ListHeading: View {
     let text: String
-    @Environment(\.displayScale) private var displayScale
+    var actionLabel: String? = nil
+    var action: () -> Void = {}
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(text)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(Color.qInk2)
+                .font(.system(.title3, design: .serif).weight(.semibold))
+                .foregroundStyle(Color.qInk)
                 .textCase(nil)
-                .fixedSize()
-            Rectangle()
-                .fill(Color.qRule)
-                .frame(height: 1 / displayScale)
-                .accessibilityHidden(true)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
+            if let actionLabel {
+                Button(actionLabel, action: action)
+                    .font(.subheadline.weight(.medium))
+                    .tint(Color.qAccent)
+                    .buttonStyle(.borderless)
+                    .textCase(nil)
+                    .contentTransition(.opacity)
+            }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 14)
+        .padding(.horizontal, 17)
+        .padding(.top, 18)
         .padding(.bottom, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.qBase)
         .listRowInsets(EdgeInsets())
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
     }
 }
 

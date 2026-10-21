@@ -247,11 +247,9 @@ struct StackSwipes: UIViewRepresentable {
             let d = hypot(v.x, v.y) > 80 ? v : pan.translation(in: view)
             // Clearly sideways and the right way; anything steeper is scrolling.
             guard d.x * direction > 0, abs(d.x) > abs(d.y) * 1.4 else { return false }
-            if let touched {
-                if Self.scrollsSideways(from: touched, direction: direction) { return false }
-                // A row showing its swipe actions closes on a swipe back, as it always has.
-                if Self.rowActionsOpen(near: touched) { return false }
-            }
+            if let touched, Self.scrollsSideways(from: touched, direction: direction) { return false }
+            // A row showing its swipe actions closes on a swipe back, as it always has.
+            if let screen = nav?.topViewController?.view, Self.rowActionsOpen(in: screen) { return false }
             return true
         }
 
@@ -299,11 +297,42 @@ struct StackSwipes: UIViewRepresentable {
             return false
         }
 
-        private static func rowActionsOpen(near view: UIView) -> Bool {
-            var v: UIView? = view
-            while let u = v, !(u is UICollectionView || u is UITableView) { v = u.superview }
-            guard let list = v else { return false }
-            return showsSwipeActions(list, depth: 0)
+        /// Whether a row in a list on screen has its swipe actions showing. A swipe right then
+        /// belongs to the list, which closes them, as it always has. A row showing its actions has
+        /// been slid sideways, which is what this looks for; the private names of the views behind
+        /// the buttons are only a second opinion, since they change between releases.
+        private static func rowActionsOpen(in screen: UIView) -> Bool {
+            lists(in: screen).contains { list in
+                let cells: [UIView] = (list as? UICollectionView)?.visibleCells ?? (list as? UITableView)?.visibleCells ?? []
+                for cell in cells {
+                    var parts: [UIView] = [cell] + cell.subviews
+                    if let content = (cell as? UICollectionViewCell)?.contentView ?? (cell as? UITableViewCell)?.contentView {
+                        parts += content.subviews
+                    }
+                    for part in parts where !part.isHidden && part.alpha > 0.01 && part.bounds.width > 40 {
+                        let frame = part.convert(part.bounds, to: list)
+                        if frame.minX < -8 || frame.maxX > list.bounds.width + 8 { return true }
+                    }
+                }
+                return showsSwipeActions(list, depth: 0)
+            }
+        }
+
+        /// The lists in a screen, found breadth first without looking inside them.
+        private static func lists(in root: UIView) -> [UIScrollView] {
+            var found: [UIScrollView] = []
+            var queue: [UIView] = [root]
+            var seen = 0
+            while !queue.isEmpty, seen < 2000 {
+                let v = queue.removeFirst()
+                seen += 1
+                if let list = v as? UIScrollView, list is UICollectionView || list is UITableView {
+                    found.append(list)
+                } else {
+                    queue += v.subviews
+                }
+            }
+            return found
         }
 
         private static func showsSwipeActions(_ view: UIView, depth: Int) -> Bool {
@@ -311,7 +340,7 @@ struct StackSwipes: UIViewRepresentable {
                 let name = String(describing: type(of: view))
                 if name.contains("SwipeActionPullView") || name.contains("SwipeActionStandardButton") { return true }
             }
-            guard depth < 5 else { return false }
+            guard depth < 6 else { return false }
             return view.subviews.contains { showsSwipeActions($0, depth: depth + 1) }
         }
 

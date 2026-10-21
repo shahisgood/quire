@@ -18,7 +18,7 @@ struct ChatListView: View {
     /// The masthead has scrolled up under the bar, so the bar carries the name instead.
     @State private var mastheadAway = false
 
-    private static let collapsedProjects = 4
+    private static let collapsedProjects = 3
 
     private var isSearching: Bool { query.trimmingCharacters(in: .whitespaces).count > 0 }
     private var isEditing: Bool { editMode.isEditing }
@@ -56,7 +56,7 @@ struct ChatListView: View {
         .navigationTitle(showArchived ? "Archived" : "Quire")
         .navigationBarTitleDisplayMode(.inline)
         .onScrollGeometryChange(for: Bool.self) { geo in
-            geo.contentOffset.y + geo.contentInsets.top > 52
+            geo.contentOffset.y + geo.contentInsets.top > 62
         } action: { _, away in
             withAnimation(Motion.quick) { mastheadAway = away }
         }
@@ -268,29 +268,24 @@ struct ChatListView: View {
 
     private var writingCount: Int { app.sessions.values.filter(\.generating).count }
 
-    /// The day, then only what's worth a glance: replies on their way, today's spend, being offline.
-    private var statusLine: Text {
+    /// Above the name, in small capitals: the day, then anything alive or wrong (a reply being
+    /// written, being offline).
+    private var eyebrow: Text {
         if showArchived {
             let n = visible.count
-            return Text(n == 0 ? "Nothing archived" : "\(n) archived \(n == 1 ? "chat" : "chats") · swipe one to restore it")
+            return Text(n == 0 ? "Archive" : "Archive · \(n) \(n == 1 ? "chat" : "chats")")
         }
         var parts = [Text(Date.now, format: .dateTime.weekday(.wide).month(.wide).day())]
         let writing = writingCount
-        if writing > 0 {
-            parts.append(Text(writing == 1 ? "Writing a reply" : "Writing \(writing) replies").foregroundStyle(Color.qAccent))
-        }
-        if app.settings.ui.showCosts && app.todayCost > 0 { parts.append(Text("\(Fmt.usd(app.todayCost)) today")) }
+        if writing > 0 { parts.append(Text(writing == 1 ? "Writing" : "Writing \(writing)")) }
         if !app.connectivity.online { parts.append(Text("Offline").foregroundStyle(Color.qWarn)) }
         return parts.dropFirst().reduce(parts[0]) { Text("\($0) · \($1)") }
     }
 
     private var mastheadSection: some View {
         Section {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Masthead(title: showArchived ? "Archived" : "Quire",
-                         cursor: !showArchived,
-                         writing: writingCount > 0,
-                         status: statusLine)
+            HStack(alignment: .lastTextBaseline, spacing: 12) {
+                Masthead(title: showArchived ? "Archived" : "Quire", eyebrow: eyebrow, writing: writingCount > 0)
                 if showArchived {
                     Button("Done") {
                         Haptics.selection()
@@ -300,9 +295,27 @@ struct ChatListView: View {
                     .fontWeight(.semibold)
                     .tint(Color.qAccent)
                     .transition(.opacity)
+                } else if app.settings.ui.showCosts && app.todayCost > 0 {
+                    // Today's spend mirrors the left side: a small-capital label over a figure that
+                    // sits on the name's baseline.
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text("Today")
+                            .font(.caption.weight(.semibold))
+                            .tracking(1.1)
+                            .textCase(.uppercase)
+                            .foregroundStyle(Color.qInk2)
+                        Text(Fmt.usd(app.todayCost))
+                            .font(.system(.title2, design: .serif).weight(.semibold).monospacedDigit())
+                            .foregroundStyle(Color.qInk)
+                            .contentTransition(.numericText())
+                    }
+                    .accessibilityElement(children: .combine)
+                    .transition(.opacity)
                 }
             }
-            .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 6, trailing: 20))
+            .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+            .padding(.top, 2)
+            .listRowInsets(EdgeInsets(top: 4, leading: 17, bottom: 2, trailing: 17))
             .listRowBackground(Color.qBase)
             .listRowSeparator(.hidden)
             .selectionDisabled()
@@ -336,10 +349,10 @@ struct ChatListView: View {
                         .controlSize(.small)
                 }
             }
-            .padding(14)
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.qAccentSoft, in: .rect(cornerRadius: 18, style: .continuous))
-            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .background(Color.qAccentSoft, in: .rect(cornerRadius: 20, style: .continuous))
+            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 4, trailing: 16))
             .listRowBackground(Color.qBase)
             .listRowSeparator(.hidden)
             .selectionDisabled()
@@ -349,110 +362,27 @@ struct ChatListView: View {
 
     // MARK: Projects
 
-    /// Most recently used first. A long list folds to its first few; with none yet, the one row
-    /// invites the first.
+    /// Projects as a shelf of cards, two across, most recently used first. A long shelf folds to
+    /// its first few, with "Show all" on the heading; the last card is always the empty one that
+    /// makes a new project.
     private var projectSections: some View {
         let all = app.projects
-        let folds = all.count > Self.collapsedProjects + 1
-        let open = !folds || projectsExpanded
+        let folds = all.count > Self.collapsedProjects
+        let shown = folds && !projectsExpanded ? Array(all.prefix(Self.collapsedProjects)) : all
         return Section {
-            ForEach(open ? all : Array(all.prefix(Self.collapsedProjects))) { projectRow($0) }
-            if folds { foldRow(hidden: all.count - Self.collapsedProjects, open: open) }
-            newProjectRow(invite: all.isEmpty)
+            ProjectShelf(projects: shown, sheets: sheets, showsNew: true)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
+                .listRowBackground(Color.qBase)
+                .listRowSeparator(.hidden)
+                .selectionDisabled()
         } header: {
-            ListHeading(text: "Projects")
+            ListHeading(text: "Projects",
+                        actionLabel: folds ? (projectsExpanded ? "Show fewer" : "Show all \(all.count)") : nil) {
+                Haptics.selection()
+                withAnimation(Motion.standard) { projectsExpanded.toggle() }
+            }
         }
         .listSectionSeparator(.hidden)
-    }
-
-    private func projectRow(_ p: Project) -> some View {
-        ZStack {
-            NavigationLink(value: Route.project(p.id)) { EmptyView() }
-                .opacity(0)
-            ProjectRow(project: p)
-        }
-        .plainListRow(vertical: 7)
-        // Everything on the trailing side: a swipe the other way pulls settings in.
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button {
-                Haptics.tap()
-                app.startNewChat(projectId: p.id)
-            } label: {
-                Label("New chat", systemImage: "square.and.pencil")
-            }
-            .tint(p.tintColor)
-            Button { sheets.editor = ProjectEditorRequest(project: p) } label: { Label("Edit", systemImage: "pencil") }
-                .tint(Color.qTileSlate)
-            // Not role: .destructive, which tells the list the row is already gone; deleting asks first.
-            Button { sheets.deletingProject = p } label: { Label("Delete", systemImage: "trash") }
-                .tint(.red)
-        }
-        .contextMenu {
-            Button { app.startNewChat(projectId: p.id) } label: { Label("New chat", systemImage: "square.and.pencil") }
-            Button { sheets.editor = ProjectEditorRequest(project: p) } label: { Label("Edit project", systemImage: "pencil") }
-            Button { sheets.instructionsFor = p } label: {
-                Label(p.hasInstructions ? "Edit instructions" : "Add instructions", systemImage: "text.quote")
-            }
-            Divider()
-            Button(role: .destructive) { sheets.deletingProject = p } label: {
-                Label("Delete project…", systemImage: "trash")
-            }
-        }
-    }
-
-    private func foldRow(hidden: Int, open: Bool) -> some View {
-        Button {
-            Haptics.selection()
-            withAnimation(Motion.standard) { projectsExpanded.toggle() }
-        } label: {
-            HStack(spacing: 6) {
-                Text(open ? "Show fewer" : "Show \(hidden) more")
-                    .font(.subheadline.weight(.medium))
-                Image(systemName: "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .rotationEffect(.degrees(open ? 180 : 0))
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(Color.qInk2)
-            .contentShape(.rect)
-        }
-        .plainListRow(vertical: 6)
-        .selectionDisabled()
-    }
-
-    /// An empty tile waiting to be filled: quiet once you have projects, the accent's invitation
-    /// before you've made one.
-    private func newProjectRow(invite: Bool) -> some View {
-        Button {
-            Haptics.tap()
-            sheets.editor = ProjectEditorRequest(openAfterCreate: true)
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "plus")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(invite ? Color.qAccent : Color.qInk2)
-                    .frame(width: 38, height: 38)
-                    .background {
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .strokeBorder(invite ? Color.qAccent.opacity(0.5) : Color.qRule,
-                                          style: StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
-                    }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("New project")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(invite ? Color.qAccent : Color.qInk2)
-                    if invite {
-                        Text("Group related chats, with instructions they all follow")
-                            .font(.caption)
-                            .foregroundStyle(Color.qInk2)
-                    }
-                }
-                Spacer(minLength: 0)
-            }
-            .contentShape(.rect)
-        }
-        .plainListRow(vertical: 7)
-        .selectionDisabled()
     }
 
     // MARK: Chats
@@ -479,8 +409,16 @@ struct ChatListView: View {
         let q = query.trimmingCharacters(in: .whitespaces)
         let projectMatches = app.projects.filter { $0.name.localizedCaseInsensitiveContains(q) }
         if !projectMatches.isEmpty {
-            Section { ForEach(projectMatches) { projectRow($0) } } header: { ListHeading(text: "Projects") }
-                .listSectionSeparator(.hidden)
+            Section {
+                ProjectShelf(projects: projectMatches, sheets: sheets, showsNew: false)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
+                    .listRowBackground(Color.qBase)
+                    .listRowSeparator(.hidden)
+                    .selectionDisabled()
+            } header: {
+                ListHeading(text: "Projects")
+            }
+            .listSectionSeparator(.hidden)
         }
         let titleMatches = app.chats.filter { $0.title.localizedCaseInsensitiveContains(q) }
         if !titleMatches.isEmpty {
@@ -499,12 +437,13 @@ struct ChatListView: View {
                         .font(.subheadline)
                         .foregroundStyle(Color.qInk2)
                 }
+                .padding(.horizontal, 1)
                 .plainListRow(vertical: 8)
                 .selectionDisabled()
             }
             ForEach(hits) { hit in
                 Button { app.openChat(hit.chatId, highlight: hit.messageId) } label: {
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(app.chat(hit.chatId)?.title ?? "Chat")
                                 .font(.system(.body, design: .serif).weight(.semibold))
@@ -520,9 +459,14 @@ struct ChatListView: View {
                             .foregroundStyle(Color.qInk2)
                             .lineLimit(3)
                     }
-                    .contentShape(.rect)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 13)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(CardSurface(radius: 20))
+                    .contentShape(.rect(cornerRadius: 20, style: .continuous))
                 }
-                .plainListRow(vertical: 10)
+                .buttonStyle(PressableStyle(scale: 0.98))
+                .plainListRow(vertical: 5)
                 .selectionDisabled()
             }
         } header: {
@@ -598,55 +542,148 @@ struct ChatListView: View {
 
 // MARK: - Masthead
 
-/// The top of the chat list: the name set in the serif with the app icon's cursor after it, which
-/// breathes while a reply is being written; under it, the day and anything worth a glance. Scrolls
-/// away with the list, and the bar picks the name up.
+/// The top of the chat list, set like the masthead of a journal: the day in small capitals in the
+/// accent, the name large in the serif beneath it. While a reply is being written, the live dot
+/// leads the line. Scrolls away with the list, and the bar picks the name up.
 private struct Masthead: View {
     let title: String
-    var cursor = true
+    let eyebrow: Text
     var writing = false
-    let status: Text
-    @ScaledMetric(relativeTo: .largeTitle) private var caret: CGFloat = 21
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .largeTitle) private var size: CGFloat = 40
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(alignment: .firstTextBaseline, spacing: caret * 0.18) {
-                Text(title)
-                    .font(.system(.largeTitle, design: .serif, weight: .bold))
-                    .tracking(-0.4)
-                    .foregroundStyle(Color.qInk)
-                    .contentTransition(.opacity)
-                if cursor {
-                    caretBlock
-                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
-                        .transition(.opacity)
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 6) {
+                if writing {
+                    LiveDot(size: 6)
+                        .transition(.scale.combined(with: .opacity))
                 }
+                eyebrow
+                    .font(.caption.weight(.semibold))
+                    .tracking(1.1)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Color.qAccent)
+                    .lineLimit(1)
+                    .contentTransition(.opacity)
             }
-            status
-                .font(.subheadline)
-                .foregroundStyle(Color.qInk2)
+            .animation(Motion.quick, value: writing)
+            Text(title)
+                .font(.system(size: size, weight: .bold, design: .serif))
+                .tracking(-0.6)
+                .foregroundStyle(Color.qInk)
                 .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .contentTransition(.opacity)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
     }
+}
+
+// MARK: - Projects
+
+/// Project cards two across, with an empty dashed card at the end that makes a new one. Each
+/// card opens its project; holding one gives everything a swipe used to.
+private struct ProjectShelf: View {
+    let projects: [Project]
+    let sheets: ListSheets
+    var showsNew = true
+    @Environment(AppModel.self) private var app
+    @ScaledMetric(relativeTo: .body) private var minHeight: CGFloat = 104
+
+    private enum Slot: Identifiable {
+        case project(Project)
+        case new
+        var id: String {
+            switch self {
+            case .project(let p): p.id
+            case .new: "new"
+            }
+        }
+    }
+
+    var body: some View {
+        let slots = projects.map(Slot.project) + (showsNew ? [Slot.new] : [])
+        let rows = stride(from: 0, to: slots.count, by: 2).map { Array(slots[$0..<min($0 + 2, slots.count)]) }
+        // Alone (no projects yet), the new card spans the shelf and says what projects are for.
+        let invite = projects.isEmpty
+        Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+            ForEach(rows, id: \.first?.id) { row in
+                GridRow {
+                    ForEach(row) { slot in
+                        cell(slot, invite: invite)
+                            .frame(minHeight: invite ? nil : minHeight)
+                            .gridCellColumns(invite ? 2 : 1)
+                    }
+                }
+            }
+        }
+    }
 
     @ViewBuilder
-    private var caretBlock: some View {
-        let block = RoundedRectangle(cornerRadius: caret * 0.14, style: .continuous)
-            .fill(Color.qAccent)
-            .frame(width: caret * 0.55, height: caret)
-            .accessibilityHidden(true)
-        if writing && !reduceMotion {
-            block.phaseAnimator([1.0, 0.22]) { view, opacity in
-                view.opacity(opacity)
-            } animation: { _ in .easeInOut(duration: 0.8) }
-        } else {
-            block
+    private func cell(_ slot: Slot, invite: Bool) -> some View {
+        switch slot {
+        case .project(let p):
+            Button {
+                app.path.append(.project(p.id))
+            } label: {
+                ProjectCard(project: p)
+                    .contentShape(.rect(cornerRadius: 18, style: .continuous))
+            }
+            .buttonStyle(.pressable)
+            .contentShape(.contextMenuPreview, .rect(cornerRadius: 18, style: .continuous))
+            .contextMenu {
+                Button { app.startNewChat(projectId: p.id) } label: { Label("New chat", systemImage: "square.and.pencil") }
+                Button { sheets.editor = ProjectEditorRequest(project: p) } label: { Label("Edit project", systemImage: "pencil") }
+                Button { sheets.instructionsFor = p } label: {
+                    Label(p.hasInstructions ? "Edit instructions" : "Add instructions", systemImage: "text.quote")
+                }
+                Divider()
+                Button(role: .destructive) { sheets.deletingProject = p } label: {
+                    Label("Delete project…", systemImage: "trash")
+                }
+            }
+            .accessibilityHint("Hold for new chat, edit and delete")
+        case .new:
+            Button {
+                Haptics.tap()
+                sheets.editor = ProjectEditorRequest(openAfterCreate: true)
+            } label: {
+                newCard(invite: invite)
+            }
+            .buttonStyle(.pressable)
         }
+    }
+
+    private func newCard(invite: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        let layout = invite ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
+        return layout {
+            Image(systemName: "plus")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.qAccent)
+                .frame(width: 34, height: 34)
+                .background(Color.qAccentSoft, in: .rect(cornerRadius: 34 * 0.3, style: .continuous))
+            if !invite { Spacer(minLength: 14) }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("New project")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.qAccent)
+                Text(invite ? "Group related chats, with instructions they all follow" : "Group related chats")
+                    .font(.caption)
+                    .foregroundStyle(Color.qInk2)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            if invite { Spacer(minLength: 0) }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background {
+            shape.strokeBorder(Color.qInk2.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+        }
+        .contentShape(shape)
     }
 }
 
@@ -667,7 +704,7 @@ struct ChatRow: View {
 
     var body: some View {
         let unread = chat.unread == true
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(chat.title)
                     .font(.system(.body, design: .serif).weight(.semibold))
@@ -694,17 +731,19 @@ struct ChatRow: View {
                     .lineLimit(2)
                     .transition(.opacity)
             }
-            let details = detailText
+            let tags = self.tags
             let cost = app.settings.ui.showCosts && chat.totalCostUsd > 0 ? Fmt.usd(chat.totalCostUsd) : nil
-            if details != nil || cost != nil {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    details?.lineLimit(1)
+            if !tags.isEmpty || cost != nil {
+                HStack(spacing: 6) {
+                    ForEach(tags) { TagChip(tag: $0) }
                     Spacer(minLength: 0)
-                    if let cost { Text(cost).monospacedDigit() }
+                    if let cost {
+                        Text(cost)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(Color.qInk2)
+                    }
                 }
-                .font(.caption)
-                .foregroundStyle(Color.qInk2.opacity(0.85))
-                .padding(.top, 1)
+                .padding(.top, 5)
             }
         }
         .animation(Motion.standard, value: chat.title)
@@ -750,19 +789,48 @@ struct ChatRow: View {
     }
 
     /// What sets this chat apart from a new one, if anything.
-    private var detailText: Text? {
+    private var tags: [ChatTag] {
         let persona = app.preset(chat.systemPromptId)
         let project = app.project(of: chat)
-        var parts: [Text] = []
+        var tags: [ChatTag] = []
         if showsProject, let project {
-            parts.append(Text("\(Text(Image(systemName: project.symbolName)).foregroundStyle(project.tintColor)) \(project.name)"))
+            tags.append(ChatTag(id: "project", symbol: project.symbolName, label: project.name, tint: project.tintColor))
         }
-        if let persona { parts.append(Text("\(persona.icon ?? "◦") \(persona.name)")) }
+        if let persona { tags.append(ChatTag(id: "persona", lead: persona.icon ?? "◦", label: persona.name)) }
         let usual = persona?.modelId ?? project?.modelId ?? app.settings.defaultModelId
-        if !chat.modelId.isEmpty && chat.modelId != usual { parts.append(Text(app.modelName(chat.modelId))) }
-        if !chat.memoryEnabled { parts.append(Text("\(Image(systemName: "eye.slash")) Incognito")) }
-        guard let first = parts.first else { return nil }
-        return parts.dropFirst().reduce(first) { Text("\($0) · \($1)") }
+        if !chat.modelId.isEmpty && chat.modelId != usual {
+            tags.append(ChatTag(id: "model", label: app.modelName(chat.modelId)))
+        }
+        if !chat.memoryEnabled { tags.append(ChatTag(id: "incognito", symbol: "eye.slash", label: "Incognito")) }
+        return tags
+    }
+}
+
+/// A small fact about a chat, shown as a pill under its preview.
+struct ChatTag: Identifiable {
+    let id: String
+    var symbol: String? = nil
+    var lead: String? = nil
+    let label: String
+    var tint: Color? = nil
+}
+
+/// A pale pill in the tag's own colour (grey if it has none), with the text in that colour.
+private struct TagChip: View {
+    let tag: ChatTag
+
+    var body: some View {
+        let color = tag.tint ?? Color.qInk2
+        HStack(spacing: 4) {
+            if let symbol = tag.symbol { Image(systemName: symbol).imageScale(.small) }
+            if let lead = tag.lead { Text(lead) }
+            Text(tag.label).lineLimit(1)
+        }
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(color)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(color.opacity(0.12), in: .capsule)
     }
 }
 
