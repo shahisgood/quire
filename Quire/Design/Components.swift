@@ -186,7 +186,7 @@ struct EmptyState<Actions: View>: View {
         VStack(spacing: 14) {
             if showMark { QuireMark(width: 56, breathing: true).padding(.bottom, 8) }
             Text(title)
-                .font(.system(.title3, design: .serif).weight(.semibold))
+                .displayFont { .system(.title3, design: $0).weight(.semibold) }
                 .foregroundStyle(Color.qInk)
                 .multilineTextAlignment(.center)
             Text(message)

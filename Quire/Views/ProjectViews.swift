@@ -149,7 +149,7 @@ struct ProjectCard: View {
             }
             Spacer(minLength: 14)
             Text(project.name)
-                .font(.system(.subheadline, design: .serif).weight(.semibold))
+                .displayFont { .system(.subheadline, design: $0).weight(.semibold) }
                 .foregroundStyle(Color.qInk)
                 .lineLimit(1)
             Text(writing ? "Writing…" : Self.summary(chats))
@@ -261,7 +261,7 @@ struct ProjectEditor: View {
             Form {
                 Section {
                     TextField("Project name", text: $draft.name)
-                        .font(.system(.body, design: .serif).weight(.semibold))
+                        .displayFont { .system(.body, design: $0).weight(.semibold) }
                         .foregroundStyle(Color.qInk)
                         .focused($nameFocused)
                         .submitLabel(.done)
@@ -608,7 +608,7 @@ struct ProjectView: View {
                 .shadow(color: p.tintColor.opacity(0.3), radius: 10, y: 5)
                 .padding(.bottom, 4)
             Text(p.name)
-                .font(.system(.title2, design: .serif).weight(.bold))
+                .displayFont { .system(.title2, design: $0).weight(.bold) }
                 .foregroundStyle(Color.qInk)
                 .multilineTextAlignment(.center)
             Text(subtitle(p, count: count))

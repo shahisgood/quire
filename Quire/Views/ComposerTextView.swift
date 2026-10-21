@@ -13,6 +13,8 @@ struct ComposerTextView: UIViewRepresentable {
     var maxLines = 8
     var sendOnHardwareReturn = false
     var hint: String = ""
+    /// Set in SF Pro Rounded, to match the rest of the app when that's the typeface.
+    var rounded = false
     var onSend: () -> Void = {}
     var onPasteImage: (UIImage) -> Void = { _ in }
 
@@ -21,7 +23,8 @@ struct ComposerTextView: UIViewRepresentable {
     func makeUIView(context: Context) -> ComposerUITextView {
         let tv = ComposerUITextView()
         tv.delegate = context.coordinator
-        tv.font = .preferredFont(forTextStyle: .body)
+        tv.font = Self.font(rounded: rounded)
+        context.coordinator.rounded = rounded
         tv.adjustsFontForContentSizeCategory = true
         tv.textColor = UIColor(Color.qInk)
         tv.tintColor = UIColor(Color.qAccent)
@@ -43,6 +46,11 @@ struct ComposerTextView: UIViewRepresentable {
         tv.onReturn = onSend
         tv.onPasteImage = onPasteImage
         tv.accessibilityHint = hint
+        if context.coordinator.rounded != rounded {
+            context.coordinator.rounded = rounded
+            tv.font = Self.font(rounded: rounded)
+            tv.invalidateIntrinsicContentSize()
+        }
         // Text set from outside (a starter, sending, a restored draft). Never while the keyboard is
         // composing (Japanese, Chinese, …), which would throw that composition away.
         if tv.text != text, tv.markedTextRange == nil {
@@ -69,8 +77,16 @@ struct ComposerTextView: UIViewRepresentable {
         return CGSize(width: width, height: min(max(fitted, ceil(line)), limit))
     }
 
+    /// Body text that follows Dynamic Type, rounded or not.
+    static func font(rounded: Bool) -> UIFont {
+        let body = UIFont.preferredFont(forTextStyle: .body)
+        guard rounded, let descriptor = body.fontDescriptor.withDesign(.rounded) else { return body }
+        return UIFontMetrics(forTextStyle: .body).scaledFont(for: UIFont(descriptor: descriptor, size: body.pointSize))
+    }
+
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: ComposerTextView
+        var rounded = false
 
         init(_ parent: ComposerTextView) { self.parent = parent }
 

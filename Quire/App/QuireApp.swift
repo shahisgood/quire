@@ -15,9 +15,13 @@ struct QuireApp: App {
         WindowGroup {
             RootView()
                 .environment(app)
+                // The chosen typeface: titles everywhere read it; Rounded carries into all the text.
+                .environment(\.displayDesign, app.settings.ui.typeface.design)
+                .fontDesign(app.settings.ui.typeface.interfaceDesign)
                 .preferredColorScheme(app.settings.ui.theme.colorScheme)
                 .tint(Color.qAccent)
                 .onChange(of: app.settings) { app.persistSettings() }
+                .onChange(of: app.settings.ui.typeface, initial: true) { _, face in NavigationTypography.apply(face) }
                 .onChange(of: phase) { _, newPhase in
                     if newPhase == .background {
                         app.didEnterBackground()

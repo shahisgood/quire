@@ -176,7 +176,7 @@ struct ListHeading: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(text)
-                .font(.system(.title3, design: .serif).weight(.semibold))
+                .displayFont { .system(.title3, design: $0).weight(.semibold) }
                 .foregroundStyle(Color.qInk)
                 .textCase(nil)
                 .accessibilityAddTraits(.isHeader)

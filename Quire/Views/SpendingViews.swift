@@ -18,8 +18,7 @@ struct SpendingCard: View {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(Fmt.usd(total))
-                        .font(.system(.largeTitle, design: .serif).weight(.semibold))
-                        .monospacedDigit()
+                        .displayFont { .system(.largeTitle, design: $0).weight(.semibold).monospacedDigit() }
                         .foregroundStyle(Color.qInk)
                         .contentTransition(.numericText(value: total))
                     Text("Last 30 days")
@@ -61,8 +60,7 @@ struct SpendingCard: View {
     private func stat(_ label: String, _ value: Double) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(Fmt.usd(value))
-                .font(.system(.body, design: .serif).weight(.semibold))
-                .monospacedDigit()
+                .displayFont { .system(.body, design: $0).weight(.semibold).monospacedDigit() }
                 .foregroundStyle(Color.qInk)
                 .contentTransition(.numericText(value: value))
             Text(label)
@@ -196,9 +194,8 @@ struct SpendingView: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(metric.format(r.total))
-                    .font(.system(size: 46, weight: .semibold, design: .serif))
+                    .displayFont { .system(size: 46, weight: .semibold, design: $0).monospacedDigit() }
                     .tracking(-0.8)
-                    .monospacedDigit()
                     .foregroundStyle(Color.qInk)
                     .contentTransition(.numericText(value: r.total))
                     .minimumScaleFactor(0.6)
@@ -227,8 +224,7 @@ struct SpendingView: View {
     private func figure(_ value: String, _ caption: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
-                .font(.system(.body, design: .serif).weight(.semibold))
-                .monospacedDigit()
+                .displayFont { .system(.body, design: $0).weight(.semibold).monospacedDigit() }
                 .foregroundStyle(Color.qInk)
                 .contentTransition(.numericText())
             Text(caption)
@@ -494,8 +490,7 @@ struct SpendingView: View {
                                     .foregroundStyle(Color.qInk2)
                             }
                             Text(Fmt.tokens(p.count))
-                                .font(.system(.body, design: .serif).weight(.semibold))
-                                .monospacedDigit()
+                                .displayFont { .system(.body, design: $0).weight(.semibold).monospacedDigit() }
                                 .foregroundStyle(Color.qInk)
                             Text("\(Int((Double(p.count) / Double(total) * 100).rounded()))%")
                                 .font(.caption2.monospacedDigit())
@@ -530,8 +525,7 @@ struct SpendingView: View {
                     } label: {
                         HStack(spacing: 12) {
                             Text("\(i + 1)")
-                                .font(.system(.subheadline, design: .serif).weight(.semibold))
-                                .monospacedDigit()
+                                .displayFont { .system(.subheadline, design: $0).weight(.semibold).monospacedDigit() }
                                 .foregroundStyle(Color.qInk2)
                                 .frame(width: 18)
                             VStack(alignment: .leading, spacing: 2) {

@@ -115,7 +115,7 @@ struct MemoryView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text("\(app.memory.count) \(app.memory.count == 1 ? "fact" : "facts")")
-                    .font(.system(.title3, design: .serif).weight(.semibold))
+                    .displayFont { .system(.title3, design: $0).weight(.semibold) }
                     .foregroundStyle(Color.qInk)
                     .contentTransition(.numericText())
                 Spacer()

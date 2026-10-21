@@ -119,7 +119,7 @@ struct ChatListView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .principal) {
             Text(barTitle)
-                .font(.system(.headline, design: .serif).weight(.semibold))
+                .displayFont { .system(.headline, design: $0).weight(.semibold) }
                 .foregroundStyle(Color.qInk)
                 .contentTransition(.numericText())
                 .opacity(barTitleShown ? 1 : 0)
@@ -305,7 +305,7 @@ struct ChatListView: View {
                             .textCase(.uppercase)
                             .foregroundStyle(Color.qInk2)
                         Text(Fmt.usd(app.todayCost))
-                            .font(.system(.title2, design: .serif).weight(.semibold).monospacedDigit())
+                            .displayFont { .system(.title2, design: $0).weight(.semibold).monospacedDigit() }
                             .foregroundStyle(Color.qInk)
                             .contentTransition(.numericText())
                     }
@@ -446,7 +446,7 @@ struct ChatListView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(app.chat(hit.chatId)?.title ?? "Chat")
-                                .font(.system(.body, design: .serif).weight(.semibold))
+                                .displayFont { .system(.body, design: $0).weight(.semibold) }
                                 .foregroundStyle(Color.qInk)
                                 .lineLimit(1)
                             Spacer(minLength: 0)
@@ -568,7 +568,7 @@ private struct Masthead: View {
             }
             .animation(Motion.quick, value: writing)
             Text(title)
-                .font(.system(size: size, weight: .bold, design: .serif))
+                .displayFont { .system(size: size, weight: .bold, design: $0) }
                 .tracking(-0.6)
                 .foregroundStyle(Color.qInk)
                 .lineLimit(1)
@@ -707,7 +707,7 @@ struct ChatRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(chat.title)
-                    .font(.system(.body, design: .serif).weight(.semibold))
+                    .displayFont { .system(.body, design: $0).weight(.semibold) }
                     .foregroundStyle(Color.qInk)
                     .lineLimit(1)
                     .contentTransition(.opacity)

@@ -59,6 +59,7 @@ struct ComposerView: View {
                 ComposerTextView(text: $text, focused: $focused,
                                  sendOnHardwareReturn: app.settings.ui.sendOnEnter,
                                  hint: placeholder,
+                                 rounded: app.settings.ui.typeface == .sfRounded,
                                  onSend: send,
                                  onPasteImage: { img in
                                      Task { await add { try await AttachmentMaker.image(img, name: "pasted.jpg") } }
@@ -306,7 +307,7 @@ struct ComposerView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Context")
-                    .font(.system(.headline, design: .serif))
+                    .displayFont { .system(.headline, design: $0) }
                     .foregroundStyle(Color.qInk)
                 Spacer()
                 if contextLimit > 0 {

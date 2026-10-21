@@ -73,9 +73,95 @@ extension ThemeChoice {
     }
 }
 
-extension ReadingFace {
-    var design: Font.Design { self == .serif ? .serif : .default }
-    var label: String { self == .serif ? "Serif" : "Sans" }
+extension Typeface {
+    /// For titles, names, headings and the big figures.
+    var design: Font.Design {
+        switch self {
+        case .newYork: .serif
+        case .sfPro: .default
+        case .sfRounded: .rounded
+        }
+    }
+
+    var systemDesign: UIFontDescriptor.SystemDesign {
+        switch self {
+        case .newYork: .serif
+        case .sfPro: .default
+        case .sfRounded: .rounded
+        }
+    }
+
+    /// Everything else (buttons, rows, the message box) is SF Pro, except that Rounded carries
+    /// through the whole app: a rounded title over square-ended text looks like a mistake.
+    var interfaceDesign: Font.Design? { self == .sfRounded ? .rounded : nil }
+
+    var name: String {
+        switch self {
+        case .newYork: "New York"
+        case .sfPro: "SF Pro"
+        case .sfRounded: "SF Pro Rounded"
+        }
+    }
+
+    var shortName: String { self == .sfRounded ? "Rounded" : name }
+
+    /// The face replies use when they aren't in New York.
+    var sansName: String { self == .sfRounded ? "SF Pro Rounded" : "SF Pro" }
+
+    /// One word for its character, on its card.
+    var character: String {
+        switch self {
+        case .newYork: "Bookish"
+        case .sfPro: "Crisp"
+        case .sfRounded: "Friendly"
+        }
+    }
+
+    var blurb: String {
+        switch self {
+        case .newYork: "Apple's serif, cut for reading on screen. Titles read like a book's, and replies like its pages."
+        case .sfPro: "The face iOS itself is set in: crisp, neutral and quietly precise, from titles to replies."
+        case .sfRounded: "SF Pro with its ends softened, all through the app. Warmer, and still just as easy to read."
+        }
+    }
+}
+
+extension UISettings {
+    /// Replies in New York, or in the typeface's own sans.
+    var replyDesign: Font.Design {
+        readingFace == .serif ? .serif : (typeface == .sfRounded ? .rounded : .default)
+    }
+
+    var replyFaceName: String { readingFace == .serif ? "New York" : typeface.sansName }
+}
+
+nonisolated private struct DisplayDesignKey: EnvironmentKey {
+    static let defaultValue: Font.Design = .serif
+}
+
+extension EnvironmentValues {
+    /// The design titles, names and headings are set in. Read through `displayFont`.
+    nonisolated var displayDesign: Font.Design {
+        get { self[DisplayDesignKey.self] }
+        set { self[DisplayDesignKey.self] = newValue }
+    }
+}
+
+/// Sets a title, name, heading or big figure in the chosen typeface; everything else stays in the
+/// interface face. `font` builds the font for a design: `.displayFont { .system(.title3, design: $0) }`.
+private struct DisplayFont: ViewModifier {
+    let font: (Font.Design) -> Font
+    @Environment(\.displayDesign) private var design
+
+    func body(content: Content) -> some View {
+        content.font(font(design))
+    }
+}
+
+extension View {
+    func displayFont(_ font: @escaping (Font.Design) -> Font) -> some View {
+        modifier(DisplayFont(font: font))
+    }
 }
 
 /// The reply text size control: steps relative to the system's Dynamic Type size, stored in the
@@ -120,22 +206,34 @@ nonisolated enum ReadingSize: Int, CaseIterable, Identifiable, Hashable, Sendabl
     }
 }
 
-/// Large titles in New York, the system serif, so every screen reads as part of the same book.
+/// Navigation bar titles in the chosen typeface, so every screen reads as part of the same book.
+/// Changing it restyles the bars already on screen too, so the switch shows at once.
 enum NavigationTypography {
-    static func apply() {
+    static func apply(_ typeface: Typeface = .newYork) {
+        let large = font(.largeTitle, weight: .bold, design: typeface.systemDesign)
+        let inline = font(.headline, weight: .semibold, design: typeface.systemDesign)
         let appearance = UINavigationBar.appearance()
-        if let large = serifFont(.largeTitle, weight: .bold) {
-            appearance.largeTitleTextAttributes = [.font: large]
-        }
-        if let inline = serifFont(.headline, weight: .semibold) {
-            appearance.titleTextAttributes = [.font: inline]
+        appearance.largeTitleTextAttributes = [.font: large]
+        appearance.titleTextAttributes = [.font: inline]
+        for scene in UIApplication.shared.connectedScenes {
+            for window in (scene as? UIWindowScene)?.windows ?? [] {
+                restyle(window, large: large, inline: inline)
+            }
         }
     }
 
-    private static func serifFont(_ style: UIFont.TextStyle, weight: UIFont.Weight) -> UIFont? {
+    private static func restyle(_ view: UIView, large: UIFont, inline: UIFont) {
+        if let bar = view as? UINavigationBar {
+            bar.largeTitleTextAttributes = (bar.largeTitleTextAttributes ?? [:]).merging([.font: large]) { $1 }
+            bar.titleTextAttributes = (bar.titleTextAttributes ?? [:]).merging([.font: inline]) { $1 }
+        }
+        for sub in view.subviews { restyle(sub, large: large, inline: inline) }
+    }
+
+    private static func font(_ style: UIFont.TextStyle, weight: UIFont.Weight, design: UIFontDescriptor.SystemDesign) -> UIFont {
         let base = UIFont.preferredFont(forTextStyle: style)
-        guard let serif = base.fontDescriptor.withDesign(.serif) else { return nil }
-        let weighted = serif.addingAttributes([.traits: [UIFontDescriptor.TraitKey.weight: weight]])
+        let shaped = base.fontDescriptor.withDesign(design) ?? base.fontDescriptor
+        let weighted = shaped.addingAttributes([.traits: [UIFontDescriptor.TraitKey.weight: weight]])
         return UIFontMetrics(forTextStyle: style).scaledFont(for: UIFont(descriptor: weighted, size: base.pointSize))
     }
 }

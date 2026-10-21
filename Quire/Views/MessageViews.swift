@@ -180,7 +180,7 @@ private struct AssistantMessageView: View {
     private var isStreaming: Bool { session.streamingId == message.id }
     private var content: String { isStreaming ? session.streamContent : message.content }
     private var reasoning: String { isStreaming ? session.streamReasoning : (message.reasoning ?? "") }
-    private var design: Font.Design { app.settings.ui.readingFace.design }
+    private var design: Font.Design { app.settings.ui.replyDesign }
     private var modelId: String { message.modelId ?? session.chat.modelId }
     /// Images the model made for this reply.
     private var drawn: [Attachment] { message.attachments?.filter { $0.kind == .image } ?? [] }

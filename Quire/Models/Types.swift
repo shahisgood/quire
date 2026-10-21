@@ -351,6 +351,9 @@ nonisolated struct GenerationSettings: Codable, Hashable, Sendable {
 
 nonisolated enum ThemeChoice: String, Codable, CaseIterable, Hashable, Sendable { case dark, light, system }
 nonisolated enum ReadingFace: String, Codable, CaseIterable, Hashable, Sendable { case serif, sans }
+/// The app's typeface for titles, names and headings (and, by default, replies). iOS only, so
+/// backups from the web app simply leave it at New York.
+nonisolated enum Typeface: String, Codable, CaseIterable, Hashable, Sendable { case newYork, sfPro, sfRounded }
 
 nonisolated struct MemorySettings: Codable, Hashable, Sendable {
     var enabled: Bool
@@ -376,6 +379,7 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
     var fontScale: Double
     var density: String
     var readingFace: ReadingFace
+    var typeface: Typeface
     var showReasoningByDefault: Bool
     var showCosts: Bool
     var sendOnEnter: Bool
@@ -386,7 +390,7 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
     static let defaultTextStrength = 0.86
 
     init() {
-        theme = .dark; fontScale = 1; density = "comfortable"; readingFace = .serif
+        theme = .dark; fontScale = 1; density = "comfortable"; readingFace = .serif; typeface = .newYork
         showReasoningByDefault = false; showCosts = true; sendOnEnter = true; hapticsEnabled = true
         textStrength = Self.defaultTextStrength
     }
@@ -397,6 +401,7 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
         fontScale = c.lenient(.fontScale, 1)
         density = c.lenient(.density, "comfortable")
         readingFace = c.lenient(.readingFace, .serif)
+        typeface = c.lenient(.typeface, .newYork)
         showReasoningByDefault = c.lenient(.showReasoningByDefault, false)
         showCosts = c.lenient(.showCosts, true)
         sendOnEnter = c.lenient(.sendOnEnter, true)

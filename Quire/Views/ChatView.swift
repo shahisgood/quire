@@ -423,7 +423,7 @@ private struct EmptyChatView: View {
             }
 
             Text(greeting)
-                .font(.system(compact ? .title2 : .title, design: .serif).weight(.semibold))
+                .displayFont { .system(compact ? .title2 : .title, design: $0).weight(.semibold) }
                 .tracking(-0.4)
                 .foregroundStyle(Color.qInk)
                 .multilineTextAlignment(.center)

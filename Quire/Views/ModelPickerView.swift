@@ -341,7 +341,7 @@ struct ModelPickerView: View {
                 .font(.system(size: 34, weight: .light))
                 .foregroundStyle(Color.qInk2)
             Text("No models match")
-                .font(.system(.headline, design: .serif))
+                .displayFont { .system(.headline, design: $0) }
                 .foregroundStyle(Color.qInk)
             Text("Try fewer filters, or a different search.")
                 .font(.subheadline)
@@ -463,7 +463,7 @@ struct ModelCardView: View {
                             .foregroundStyle(Color.qInk2)
                             .textSelection(.enabled)
                         Text(model.description.isEmpty ? "No description." : model.description)
-                            .font(.system(.callout, design: .serif))
+                            .displayFont { .system(.callout, design: $0) }
                             .foregroundStyle(Color.qInk)
                             .fixedSize(horizontal: false, vertical: true)
                     }

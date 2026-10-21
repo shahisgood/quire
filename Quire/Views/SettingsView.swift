@@ -32,7 +32,7 @@ struct SettingsView: View {
                 link(.memory, "Memory", "brain", .qTileTeal,
                      app.settings.memory.enabled ? "\(app.memory.count) facts · on" : "Off")
                 link(.appearance, "Appearance", "textformat", .qTileAmber,
-                     "\(app.settings.ui.theme.label) · \(app.settings.ui.readingFace.label)")
+                     "\(app.settings.ui.theme.label) · \(app.settings.ui.typeface.name)")
             }
             .listRowBackground(Color.qRaised)
 
@@ -90,7 +90,7 @@ private struct AccountCard: View {
                     QuireMark(width: 34, breathing: true)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Connect OpenRouter")
-                            .font(.system(.headline, design: .serif))
+                            .displayFont { .system(.headline, design: $0) }
                             .foregroundStyle(Color.qInk)
                         Text("Paste a key or sign in. It stays in this iPhone's Keychain.")
                             .font(.footnote)
@@ -104,7 +104,7 @@ private struct AccountCard: View {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(app.settings.keyMeta?.label ?? "OpenRouter key")
-                            .font(.system(.headline, design: .serif))
+                            .displayFont { .system(.headline, design: $0) }
                             .foregroundStyle(Color.qInk)
                         Text(app.settings.keyMeta?.isFreeTier == true ? "Free tier" : "Connected")
                             .font(.caption)
@@ -523,7 +523,7 @@ private struct PersonaRow: View {
                 .background(Color.qAccentSoft, in: .circle)
             VStack(alignment: .leading, spacing: 2) {
                 Text(preset.name.isEmpty ? "Untitled" : preset.name)
-                    .font(.system(.body, design: .serif).weight(.semibold))
+                    .displayFont { .system(.body, design: $0).weight(.semibold) }
                     .foregroundStyle(Color.qInk)
                 Text(preset.systemPrompt.isEmpty ? "No prompt" : preset.systemPrompt)
                     .font(.footnote)
@@ -564,7 +564,7 @@ struct PersonaEditor: View {
                             .background(Color.qAccentSoft, in: .circle)
                             .accessibilityLabel("Icon, one emoji")
                         TextField("Name", text: $draft.name)
-                            .font(.system(.title3, design: .serif).weight(.semibold))
+                            .displayFont { .system(.title3, design: $0).weight(.semibold) }
                     }
                     .padding(.vertical, 4)
                 }
@@ -733,13 +733,30 @@ private struct AppearanceSettings: View {
 
     var body: some View {
         @Bindable var app = app
+        let ui = app.settings.ui
         Form {
             Section {
-                ReadingPreview(face: app.settings.ui.readingFace, size: ReadingSize(scale: app.settings.ui.fontScale),
-                               compact: app.settings.ui.density == "compact", ink: app.settings.ui.textStrength)
+                ReadingPreview(replyDesign: ui.replyDesign, replyFace: ui.replyFaceName, typeface: ui.typeface,
+                               size: ReadingSize(scale: ui.fontScale), compact: ui.density == "compact",
+                               ink: ui.textStrength)
                     .listRowInsets(EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18))
             } header: {
                 SectionLabel(text: "Preview")
+            }
+
+            Section {
+                TypefacePicker(selection: ui.typeface) { face in
+                    // Replies follow the typeface; they can be set apart again below.
+                    app.settings.ui.typeface = face
+                    app.settings.ui.readingFace = face == .newYork ? .serif : .sans
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+            } header: {
+                SectionLabel(text: "Typeface")
+            } footer: {
+                Text(ui.typeface.blurb)
+                    .contentTransition(.opacity)
             }
 
             Section {
@@ -747,8 +764,9 @@ private struct AppearanceSettings: View {
                     ForEach(ThemeChoice.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                Picker("Reply typeface", selection: $app.settings.ui.readingFace) {
-                    ForEach(ReadingFace.allCases, id: \.self) { Text($0.label).tag($0) }
+                Picker("Replies in", selection: $app.settings.ui.readingFace) {
+                    Text("New York").tag(ReadingFace.serif)
+                    Text(ui.typeface.sansName).tag(ReadingFace.sans)
                 }
                 Picker("Reply size", selection: Binding(
                     get: { ReadingSize(scale: app.settings.ui.fontScale) },
@@ -761,7 +779,7 @@ private struct AppearanceSettings: View {
                 }
                 TextStrengthControl(value: $app.settings.ui.textStrength)
             } footer: {
-                Text("Reply size is relative to the system text size, so it follows Dynamic Type. Text strength sets how strongly a reply's running text is inked; bold always stays at full strength, so it stands out either way.")
+                Text("Replies follow the typeface unless you set them apart: SF Pro titles over New York replies reads like a magazine. Reply size is relative to the system text size, so it follows Dynamic Type. Text strength sets how strongly a reply's running text is inked; bold always stays at full strength.")
             }
 
             Section {
@@ -778,6 +796,74 @@ private struct AppearanceSettings: View {
         .navigationTitle("Appearance")
         .navigationBarTitleDisplayMode(.inline)
         .animation(Motion.standard, value: app.settings.ui)
+    }
+}
+
+/// The typeface, chosen from three specimens side by side. Each card sets "Aa" in its own face
+/// over its name and a word for its character; the accent ring slides to the one you pick, and
+/// the whole app changes with it.
+private struct TypefacePicker: View {
+    let selection: Typeface
+    let pick: (Typeface) -> Void
+    @Namespace private var ring
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(Typeface.allCases, id: \.self) { face in
+                card(face, on: face == selection)
+            }
+        }
+    }
+
+    private func card(_ face: Typeface, on: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        return Button {
+            guard !on else { return }
+            Haptics.selection()
+            withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : Motion.bouncy) { pick(face) }
+        } label: {
+            VStack(spacing: 4) {
+                Text("Aa")
+                    .font(.system(size: 36, weight: .semibold, design: face.design))
+                    .foregroundStyle(on ? Color.qAccent : Color.qInk)
+                    .frame(height: 48)
+                Text(face.shortName)
+                    .font(.system(.footnote, design: face.design).weight(.semibold))
+                    .foregroundStyle(Color.qInk)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Text(face.character)
+                    .font(.system(.caption2, design: face.design))
+                    .foregroundStyle(Color.qInk2)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 12)
+            .padding(.bottom, 14)
+            .background {
+                if on {
+                    shape.fill(Color.qAccentSoft)
+                        .overlay { shape.strokeBorder(Color.qAccent, lineWidth: 1.5) }
+                        .matchedGeometryEffect(id: "ring", in: ring)
+                } else {
+                    CardSurface(radius: 18)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if on {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(Color.qAccent)
+                        .padding(8)
+                        .transition(.scale(scale: 0.4).combined(with: .opacity))
+                }
+            }
+            .contentShape(shape)
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(face.name)
+        .accessibilityValue(face.character)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
@@ -830,9 +916,12 @@ private struct TextStrengthControl: View {
     }
 }
 
-/// A live sample of a reply in the chosen face, size and text strength.
+/// A live sample: a title in the typeface over a reply in its face, at the chosen size and
+/// strength, and a message of yours beneath.
 private struct ReadingPreview: View {
-    let face: ReadingFace
+    let replyDesign: Font.Design
+    let replyFace: String
+    let typeface: Typeface
     let size: ReadingSize
     let compact: Bool
     let ink: Double
@@ -840,15 +929,18 @@ private struct ReadingPreview: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 8 : 12) {
-            HStack(spacing: 10) {
-                Text("QUIRE")
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Quire")
                     .font(.caption2.weight(.semibold))
                     .tracking(1.2)
-                    .foregroundStyle(Color.qInk2)
-                Rectangle().fill(Color.qRule).frame(height: 1)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Color.qAccent)
+                Text("A gathering of sheets")
+                    .displayFont { .system(.title3, design: $0).weight(.semibold) }
+                    .foregroundStyle(Color.qInk)
             }
             Text(Inline.attributed("A quire is **a gathering of sheets** folded and bound together, the unit a book is sewn from. Replies here are set like pages: one column, *generous leading*, and a single accent for what's alive."))
-                .font(.system(.body, design: face.design))
+                .font(.system(.body, design: replyDesign))
                 .lineSpacing(5)
                 .foregroundStyle(Color.qInkStrong.opacity(ink))
                 .fixedSize(horizontal: false, vertical: true)
@@ -864,7 +956,7 @@ private struct ReadingPreview: View {
         }
         .environment(\.dynamicTypeSize, size.apply(to: typeSize))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Preview of a reply in \(face.label), \(size.label)")
+        .accessibilityLabel("Preview: titles in \(typeface.name), replies in \(replyFace), \(size.label)")
     }
 }
 
@@ -1034,10 +1126,10 @@ private struct AboutView: View {
                 VStack(spacing: 14) {
                     QuireMark(width: 64, breathing: true)
                     Text("Quire")
-                        .font(.system(.title, design: .serif).weight(.bold))
+                        .displayFont { .system(.title, design: $0).weight(.bold) }
                         .foregroundStyle(Color.qInk)
                     Text("A gathering of sheets, bound together.")
-                        .font(.system(.subheadline, design: .serif).italic())
+                        .displayFont { .system(.subheadline, design: $0).italic() }
                         .foregroundStyle(Color.qInk2)
                     Text("Version \(version)")
                         .font(.caption.monospacedDigit())
