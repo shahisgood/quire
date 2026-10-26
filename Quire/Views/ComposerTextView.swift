@@ -15,6 +15,8 @@ struct ComposerTextView: UIViewRepresentable {
     var hint: String = ""
     /// Set in SF Pro Rounded, to match the rest of the app when that's the typeface.
     var rounded = false
+    /// The colour theme, so the text and caret re-colour when it changes.
+    var theme: AppTheme = .quire
     var onSend: () -> Void = {}
     var onPasteImage: (UIImage) -> Void = { _ in }
 
@@ -28,6 +30,7 @@ struct ComposerTextView: UIViewRepresentable {
         tv.adjustsFontForContentSizeCategory = true
         tv.textColor = UIColor(Color.qInk)
         tv.tintColor = UIColor(Color.qAccent)
+        context.coordinator.theme = theme
         tv.backgroundColor = .clear
         tv.textContainerInset = .zero
         tv.textContainer.lineFragmentPadding = 0
@@ -46,6 +49,11 @@ struct ComposerTextView: UIViewRepresentable {
         tv.onReturn = onSend
         tv.onPasteImage = onPasteImage
         tv.accessibilityHint = hint
+        if context.coordinator.theme != theme {
+            context.coordinator.theme = theme
+            tv.textColor = UIColor(Color.qInk)
+            tv.tintColor = UIColor(Color.qAccent)
+        }
         if context.coordinator.rounded != rounded {
             context.coordinator.rounded = rounded
             tv.font = Self.font(rounded: rounded)
@@ -87,6 +95,7 @@ struct ComposerTextView: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: ComposerTextView
         var rounded = false
+        var theme: AppTheme = .quire
 
         init(_ parent: ComposerTextView) { self.parent = parent }
 

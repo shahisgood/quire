@@ -61,6 +61,7 @@ final class AppModel {
         let store = Store()
         self.store = store
         settings = store.loadSettings()
+        ThemeStore.shared.use(settings.ui.colorTheme)
         apiKey = Keychain.readKey()
         chats = store.loadChats().sorted { $0.updatedAt > $1.updatedAt }
         costs = store.loadCosts()
@@ -147,7 +148,7 @@ final class AppModel {
         let name = title.count > 32 ? String(title.prefix(31)) + "…" : title
         Haptics.success()
         toasts.show("Reply ready in “\(name)”", symbol: "text.bubble",
-                    action: (label: "Open", run: { [weak self] in self?.openChat(chatId) }))
+                    action: (label: "Open", run: { [weak self] in self?.openChat(chatId) }), tapRunsAction: true)
     }
 
     func markRead(_ id: String) {

@@ -3,25 +3,130 @@ import UIKit
 
 // MARK: - Palette
 
-/// The PWA's palette (DECISIONS.md §3), as dynamic colours that follow light and dark mode.
-/// Quire is a reading object: near-neutral paper and ink, with one periwinkle accent used sparingly
-/// for the things that are alive (the cursor, the send button, the current selection).
+/// The colours of the app, by theme. Every view reads them through `Color.qBase` and the rest,
+/// which look the current theme up in `ThemeStore`; because that store is observable, changing the
+/// theme re-colours exactly the views that use a colour, live, without rebuilding anything.
+/// Each colour still follows light and dark mode on its own.
+struct Palette {
+    let base, raised, sunken: Color
+    let ink, inkBody, inkStrong, ink2, rule: Color
+    let accent, accentSoft, onAccent: Color
+    let danger, warn: Color
+    /// The theme's signature, dark to light, for its swatch.
+    let swatch: [Color]
+}
+
+extension AppTheme {
+    var palette: Palette {
+        switch self {
+        case .quire: Self.quire
+        case .velvet: Self.velvet
+        case .amethyst: Self.amethyst
+        case .pitch: Self.pitch
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .quire: "Quire"
+        case .velvet: "Velvet"
+        case .amethyst: "Amethyst"
+        case .pitch: "Pitch"
+        }
+    }
+
+    /// What it's made of, in a few words.
+    var detail: String {
+        switch self {
+        case .quire: "Ink, paper and periwinkle"
+        case .velvet: "Obsidian, velvet and almond"
+        case .amethyst: "Noir, amethyst and steel"
+        case .pitch: "True black and white"
+        }
+    }
+
+    /// Quire is a reading object: near-neutral paper and ink, with one periwinkle accent used
+    /// sparingly for the things that are alive (the cursor, the send button, the selection).
+    private static let quire = Palette(
+        base: Color(light: 0xF6F6F3, dark: 0x0E1013), raised: Color(light: 0xFFFFFF, dark: 0x171A1F),
+        sunken: Color(light: 0xEDEDE8, dark: 0x0A0B0E),
+        ink: Color(light: 0x1B1D21, dark: 0xE8E6E1), inkBody: Color(light: 0x34373D, dark: 0xC9C6BF),
+        inkStrong: Color(light: 0x07080A, dark: 0xFFFDF8), ink2: Color(light: 0x5F646C, dark: 0x8E9299),
+        rule: Color(light: 0xDCDCD6, dark: 0x262A31),
+        accent: Color(light: 0x3450C8, dark: 0x9AA8FF), accentSoft: Color(light: 0xE4E8FA, dark: 0x22273D),
+        onAccent: Color(light: 0xFFFFFF, dark: 0x0E1013),
+        danger: Color(light: 0xB3261E, dark: 0xF2B8B5), warn: Color(light: 0x8A5A00, dark: 0xE8C27A),
+        swatch: [Color(hex: 0x0E1013), Color(hex: 0x3F55C9), Color(hex: 0xE9ECF8)])
+
+    /// Obsidian ink, velvet curfew and almond hearth. In the dark, almond is the live colour on a
+    /// velvet wash; in the light, velvet on almond paper.
+    private static let velvet = Palette(
+        base: Color(light: 0xF7EEE5, dark: 0x151311), raised: Color(light: 0xFFFAF5, dark: 0x211A1B),
+        sunken: Color(light: 0xEFE0D2, dark: 0x0E0C0B),
+        ink: Color(light: 0x151311, dark: 0xF2E6DA), inkBody: Color(light: 0x3B302D, dark: 0xD8C8BA),
+        inkStrong: Color(light: 0x0A0807, dark: 0xFFF5EA), ink2: Color(light: 0x7A6762, dark: 0x9E8B83),
+        rule: Color(light: 0xE6D5C6, dark: 0x2F2627),
+        accent: Color(light: 0x4B262F, dark: 0xEED3BA), accentSoft: Color(light: 0xEED3BA, dark: 0x4B262F),
+        onAccent: Color(light: 0xF7EEE5, dark: 0x151311),
+        danger: Color(light: 0xA3262E, dark: 0xF2B8B5), warn: Color(light: 0x8A5A00, dark: 0xE8C27A),
+        swatch: [Color(hex: 0x151311), Color(hex: 0x4B262F), Color(hex: 0xEED3BA)])
+
+    /// Nox noir, royal amethyst and steel mist. The amethyst is lifted in the dark so it reads as
+    /// text as well as a fill.
+    private static let amethyst = Palette(
+        base: Color(light: 0xF4F4F6, dark: 0x141414), raised: Color(light: 0xFFFFFF, dark: 0x1E1D21),
+        sunken: Color(light: 0xE7E6EB, dark: 0x0D0D0E),
+        ink: Color(light: 0x141414, dark: 0xECEAF0), inkBody: Color(light: 0x2F2D35, dark: 0xCFCFCF),
+        inkStrong: Color(light: 0x0A0A0A, dark: 0xFFFFFF), ink2: Color(light: 0x63606B, dark: 0x918D99),
+        rule: Color(light: 0xDCDAE2, dark: 0x2B2930),
+        accent: Color(light: 0x7E49B3, dark: 0xA275D8), accentSoft: Color(light: 0xEEE5F8, dark: 0x2D2140),
+        onAccent: Color(light: 0xFFFFFF, dark: 0x141414),
+        danger: Color(light: 0xB3261E, dark: 0xF2B8B5), warn: Color(light: 0x8A5A00, dark: 0xE8C27A),
+        swatch: [Color(hex: 0x141414), Color(hex: 0x7E49B3), Color(hex: 0xCFCFCF)])
+
+    /// Black and white and nothing else: true black in the dark, for OLED screens, where unlit
+    /// pixels are off. The accent is the ink itself.
+    private static let pitch = Palette(
+        base: Color(light: 0xFFFFFF, dark: 0x000000), raised: Color(light: 0xF7F7F7, dark: 0x0F0F0F),
+        sunken: Color(light: 0xEFEFEF, dark: 0x161616),
+        ink: Color(light: 0x000000, dark: 0xFFFFFF), inkBody: Color(light: 0x1C1C1C, dark: 0xE8E8E8),
+        inkStrong: Color(light: 0x000000, dark: 0xFFFFFF), ink2: Color(light: 0x6B6B6B, dark: 0x8F8F8F),
+        rule: Color(light: 0xE3E3E3, dark: 0x222222),
+        accent: Color(light: 0x000000, dark: 0xFFFFFF), accentSoft: Color(light: 0xEBEBEB, dark: 0x262626),
+        onAccent: Color(light: 0xFFFFFF, dark: 0x000000),
+        danger: Color(light: 0xC4241D, dark: 0xFF6B60), warn: Color(light: 0x8A5A00, dark: 0xE8C27A),
+        swatch: [Color(hex: 0x000000), Color(hex: 0x474747), Color(hex: 0xFFFFFF)])
+}
+
+/// The theme in use. Set from settings at launch and whenever it changes.
+@Observable
+final class ThemeStore {
+    static let shared = ThemeStore()
+    private(set) var theme: AppTheme = .quire
+
+    func use(_ theme: AppTheme) {
+        if theme != self.theme { self.theme = theme }
+    }
+
+    var palette: Palette { theme.palette }
+}
+
 extension Color {
-    static let qBase = Color(light: 0xF6F6F3, dark: 0x0E1013)
-    static let qRaised = Color(light: 0xFFFFFF, dark: 0x171A1F)
-    static let qSunken = Color(light: 0xEDEDE8, dark: 0x0A0B0E)
-    static let qInk = Color(light: 0x1B1D21, dark: 0xE8E6E1)
+    static var qBase: Color { ThemeStore.shared.palette.base }
+    static var qRaised: Color { ThemeStore.shared.palette.raised }
+    static var qSunken: Color { ThemeStore.shared.palette.sunken }
+    static var qInk: Color { ThemeStore.shared.palette.ink }
     /// Running text in a reply: a step softer than `qInk`, so bold (in `qInkStrong`) stands out by
     /// colour as well as weight. In dark mode especially, weight alone barely shows.
-    static let qInkBody = Color(light: 0x34373D, dark: 0xC9C6BF)
-    static let qInkStrong = Color(light: 0x07080A, dark: 0xFFFDF8)
-    static let qInk2 = Color(light: 0x5F646C, dark: 0x8E9299)
-    static let qRule = Color(light: 0xDCDCD6, dark: 0x262A31)
-    static let qAccent = Color(light: 0x3450C8, dark: 0x9AA8FF)
-    static let qAccentSoft = Color(light: 0xE4E8FA, dark: 0x22273D)
-    static let qOnAccent = Color(light: 0xFFFFFF, dark: 0x0E1013)
-    static let qDanger = Color(light: 0xB3261E, dark: 0xF2B8B5)
-    static let qWarn = Color(light: 0x8A5A00, dark: 0xE8C27A)
+    static var qInkBody: Color { ThemeStore.shared.palette.inkBody }
+    static var qInkStrong: Color { ThemeStore.shared.palette.inkStrong }
+    static var qInk2: Color { ThemeStore.shared.palette.ink2 }
+    static var qRule: Color { ThemeStore.shared.palette.rule }
+    static var qAccent: Color { ThemeStore.shared.palette.accent }
+    static var qAccentSoft: Color { ThemeStore.shared.palette.accentSoft }
+    static var qOnAccent: Color { ThemeStore.shared.palette.onAccent }
+    static var qDanger: Color { ThemeStore.shared.palette.danger }
+    static var qWarn: Color { ThemeStore.shared.palette.warn }
 
     // Code highlighting
     static let qCodeKeyword = Color(light: 0x3450C8, dark: 0x9AA8FF)
@@ -36,6 +141,10 @@ extension Color {
     static let qTileAmber = Color(light: 0xA86A12, dark: 0xB07A2A)
     static let qTileSlate = Color(light: 0x5F646C, dark: 0x5C616A)
     static let qTileRose = Color(light: 0xA8455E, dark: 0xB15A70)
+
+    init(hex: UInt32) {
+        self.init(uiColor: UIColor(hex: hex))
+    }
 
     init(light: UInt32, dark: UInt32) {
         self.init(uiColor: UIColor { traits in

@@ -22,6 +22,7 @@ struct QuireApp: App {
                 .tint(Color.qAccent)
                 .onChange(of: app.settings) { app.persistSettings() }
                 .onChange(of: app.settings.ui.typeface, initial: true) { _, face in NavigationTypography.apply(face) }
+                .onChange(of: app.settings.ui.colorTheme) { _, theme in ThemeStore.shared.use(theme) }
                 .onChange(of: phase) { _, newPhase in
                     if newPhase == .background {
                         app.didEnterBackground()
@@ -91,7 +92,9 @@ struct RootView: View {
         .environment(drawer)
         .animation(layerAnimation, value: app.settingsOpen)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { drawer.width = $0 }
-        .overlay(alignment: .top) { ToastOverlay(center: app.toasts) }
+        // Toasts live in a window of their own above everything, so their buttons get the tap
+        // rather than whatever is underneath (the bar's buttons, a sheet).
+        .onAppear { ToastWindow.install(app: app) }
         .background(Color.qBase.ignoresSafeArea())
         // Home Screen quick actions, including one that launched the app before this view existed.
         .onChange(of: QuickActions.shared.pending, initial: true) { _, action in
@@ -186,6 +189,7 @@ struct ChatScreen: View {
             if session?.chat.id != chatId { session = app.session(for: chatId) }
             resolved = true
             app.markRead(chatId)
+            session?.ensureSmartTitle()
         }
         .onChange(of: chatId) { _, id in session = app.session(for: id) }
     }

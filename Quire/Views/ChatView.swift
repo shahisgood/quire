@@ -395,6 +395,9 @@ private struct EmptyChatView: View {
     let openSettings: () -> Void
     @Environment(AppModel.self) private var app
     @State private var shown = false
+    /// What the mark says for a moment after it's been written out again.
+    @State private var egg: String? = nil
+    @State private var eggTask: Task<Void, Never>? = nil
 
     var body: some View {
         if app.apiKey == nil {
@@ -417,7 +420,7 @@ private struct EmptyChatView: View {
     private func content(compact: Bool) -> some View {
         VStack(spacing: 0) {
             if !compact {
-                QuireMark(width: 40, breathing: true)
+                QuireMark(width: 40, breathing: true, playful: true, onWritten: showEgg)
                     .padding(.bottom, 22)
                     .entrance(shown)
             }
@@ -453,8 +456,20 @@ private struct EmptyChatView: View {
     }
 
     private var greeting: String {
+        if let egg { return egg }
         guard session.chat.memoryEnabled else { return "Off the record." }
         return Greeting.line(seed: session.chat.id, returning: app.chats.contains { $0.id != session.chat.id })
+    }
+
+    /// The mark has just written itself out: the greeting says something about it, then goes back.
+    private func showEgg() {
+        egg = Greeting.egg()
+        eggTask?.cancel()
+        eggTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            withAnimation(Motion.standard) { egg = nil }
+        }
     }
 
     private var note: String? {

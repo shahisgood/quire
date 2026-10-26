@@ -56,6 +56,16 @@ nonisolated enum RequestBuilder {
         return model.supportedParameters.contains(api)
     }
 
+    /// For quick background calls (titles): no thinking where it can be turned off, otherwise the
+    /// least the model allows, kept out of the answer. Nil for models that don't reason.
+    static func quietReasoning(for model: ORModel?) -> JSONValue? {
+        guard let model, model.supportsReasoning else { return nil }
+        let style = ReasoningStyle.detect(model)
+        if style.canDisable { return ["enabled": false] }
+        let effort = [ReasoningEffort.none, .minimal, .low].first { style.efforts.contains($0) } ?? .low
+        return ["effort": .string(effort.rawValue), "exclude": true]
+    }
+
     static func reasoningPayload(_ r: ReasoningSettings?, model: ORModel?) -> JSONValue? {
         guard let r, let model, model.supportsReasoning else { return nil }
         let style = ReasoningStyle.detect(model)

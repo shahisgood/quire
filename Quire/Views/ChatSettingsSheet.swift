@@ -15,71 +15,40 @@ struct ChatSettingsSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Button { showModels = true } label: {
-                        HStack(spacing: 14) {
-                            IconTile(symbol: "cpu", color: .qTileBlue)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(app.modelName(session.chat.modelId)).foregroundStyle(Color.qInk)
-                                Text(session.chat.modelId)
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(Color.qInk2)
-                                    .lineLimit(1)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Color.qInk2)
-                        }
-                    }
+            SettingsPage(title: "Chat settings", inlineTitle: true) {
+                SettingsGroup(label: "This chat", footer: footer) {
+                    Button { showModels = true } label: { modelRow }
+                        .buttonStyle(.row)
                     NavigationLink {
                         PersonaPickerList(selected: session.chat.systemPromptId) { id in session.setPersona(id) }
                     } label: {
-                        TileLabel(title: "Persona", symbol: "person.crop.rectangle", color: .qTileViolet,
-                                  detail: session.persona.map { "\($0.icon ?? "◦") \($0.name)" } ?? "None")
+                        LinkRow(title: "Persona", value: session.persona.map { "\($0.icon ?? "◦") \($0.name)" } ?? "None")
                     }
+                    .buttonStyle(.row)
                     NavigationLink {
                         PromptEditorView(title: "Prompt for this chat",
                                          text: Binding(get: { session.chat.systemPromptInline ?? "" }, set: { session.setSystemPrompt($0) }),
                                          placeholder: session.inheritedSystemPrompt.isEmpty ? "You are…" : session.inheritedSystemPrompt,
                                          footer: "Leave empty to use the \(session.persona == nil ? "global" : "persona's") prompt.")
                     } label: {
-                        TileLabel(title: session.chat.systemPromptInline == nil ? "System prompt" : "System prompt ●",
-                                  symbol: "text.quote", color: .qTileAmber,
-                                  detail: promptDetail)
+                        LinkRow(title: session.chat.systemPromptInline == nil ? "System prompt" : "System prompt, set here",
+                                detail: promptDetail)
                     }
+                    .buttonStyle(.row)
                     NavigationLink {
                         ProjectPickerList(selected: session.chat.folderId) { id in
                             withAnimation(Motion.standard) { session.setProject(id) }
                         }
                     } label: {
-                        HStack(spacing: 14) {
-                            if let p = session.project {
-                                ProjectTile(project: p, size: 30)
-                            } else {
-                                IconTile(symbol: "folder", color: .qTileSlate)
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Project").foregroundStyle(Color.qInk)
-                                Text(projectDetail)
-                                    .font(.footnote)
-                                    .foregroundStyle(Color.qInk2)
-                                    .lineLimit(1)
-                            }
-                        }
-                        .padding(.vertical, 2)
+                        LinkRow(title: "Project", value: projectDetail)
                     }
-                    Toggle(isOn: Binding(get: { session.chat.memoryEnabled }, set: { session.setMemoryEnabled($0) })) {
-                        TileLabel(title: "Memory", symbol: "brain", color: .qTileTeal,
-                                  detail: session.chat.memoryEnabled ? "Reads and writes remembered facts" : "Incognito: neither reads nor writes")
+                    .buttonStyle(.row)
+                    SettingRow("Memory", detail: session.chat.memoryEnabled ? "Reads and writes remembered facts" : "Incognito: neither reads nor writes") {
+                        Toggle("Memory", isOn: Binding(get: { session.chat.memoryEnabled }, set: { session.setMemoryEnabled($0) }))
+                            .labelsHidden()
                     }
                     .disabled(!app.settings.memory.enabled)
-                } footer: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        if let p = session.project, p.hasInstructions {
-                            Text("“\(p.name)” instructions are added after the system prompt.")
-                        }
-                        if !app.settings.memory.enabled { Text("Memory is off for the whole app in Settings → Memory.") }
-                    }
+                    .opacity(app.settings.memory.enabled ? 1 : 0.5)
                 }
 
                 ParamsEditor(model: session.model,
@@ -88,20 +57,22 @@ struct ChatSettingsSheet: View {
                              base: session.inheritedSettings)
 
                 if overrideCount > 0 {
-                    Section {
-                        Button(role: .destructive) {
+                    SettingsGroup {
+                        Button {
                             withAnimation(Motion.standard) { session.resetOverrides() }
                             Haptics.tap()
                         } label: {
                             Label("Reset \(overrideCount) chat setting\(overrideCount == 1 ? "" : "s")", systemImage: "arrow.uturn.backward")
+                                .foregroundStyle(Color.qDanger)
+                                .padding(.vertical, 13)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(.rect)
                         }
+                        .buttonStyle(.row)
                     }
+                    .transition(.opacity)
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(Color.qBase)
-            .navigationTitle("Chat settings")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.fontWeight(.semibold) }
             }
@@ -111,6 +82,38 @@ struct ChatSettingsSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+
+    /// The chat's model, in the display face, with its id underneath.
+    private var modelRow: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Model")
+                    .font(.footnote)
+                    .foregroundStyle(Color.qInk2)
+                Text(session.model?.shortName ?? app.modelName(session.chat.modelId))
+                    .displayFont { .system(.title3, design: $0).weight(.semibold) }
+                    .foregroundStyle(Color.qInk)
+                    .lineLimit(1)
+                Text(session.chat.modelId)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Color.qInk2)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.qInk2)
+        }
+        .padding(.vertical, 13)
+        .contentShape(.rect)
+    }
+
+    private var footer: Text? {
+        var lines: [String] = []
+        if let p = session.project, p.hasInstructions { lines.append("“\(p.name)” instructions are added after the system prompt.") }
+        if !app.settings.memory.enabled { lines.append("Memory is off for the whole app in Settings → Memory.") }
+        return lines.isEmpty ? nil : Text(lines.joined(separator: " "))
     }
 
     private var projectDetail: String {
@@ -194,6 +197,7 @@ struct PersonaPickerList: View {
 
     var body: some View {
         List {
+            Group {
             Section {
                 row(title: "None", detail: "Global system prompt and defaults", icon: "◦", id: nil)
                 ForEach(app.presets) { p in
@@ -205,6 +209,8 @@ struct PersonaPickerList: View {
             Section {
                 NavigationLink { PromptsSettingsView() } label: { Label("Manage personas", systemImage: "person.crop.rectangle.stack") }
             }
+            }
+            .listRowBackground(Color.qRaised)
         }
         .scrollContentBackground(.hidden)
         .background(Color.qBase)

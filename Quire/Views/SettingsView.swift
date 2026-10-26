@@ -26,13 +26,13 @@ struct SettingsView: View {
             }
 
             Section {
-                link(.generation, "Models & generation", "cpu", .qTileBlue, app.modelName(app.settings.defaultModelId))
-                link(.prompts, "Prompts & personas", "person.crop.rectangle.stack", .qTileViolet,
+                link(.generation, "Models", "cpu", .qTileBlue, app.modelName(app.settings.defaultModelId))
+                link(.prompts, "Personas", "person.crop.rectangle.stack", .qTileViolet,
                      app.presets.isEmpty ? "No personas" : "\(app.presets.count) persona\(app.presets.count == 1 ? "" : "s")")
                 link(.memory, "Memory", "brain", .qTileTeal,
                      app.settings.memory.enabled ? "\(app.memory.count) facts · on" : "Off")
                 link(.appearance, "Appearance", "textformat", .qTileAmber,
-                     "\(app.settings.ui.theme.label) · \(app.settings.ui.typeface.name)")
+                     "\(app.settings.ui.colorTheme.name) · \(app.settings.ui.theme.label) · \(app.settings.ui.typeface.name)")
             }
             .listRowBackground(Color.qRaised)
 
@@ -171,6 +171,7 @@ private struct ConnectionSettings: View {
 
     var body: some View {
         Form {
+            Group {
             if let key = app.apiKey {
                 Section {
                     LabeledContent("Key") {
@@ -302,6 +303,8 @@ private struct ConnectionSettings: View {
             } footer: {
                 Text("OpenRouter can route through keys you hold with OpenAI, Anthropic, Google and others. That's set up in your OpenRouter account; Quire works with whatever routing it uses.")
             }
+            }
+            .listRowBackground(Color.qRaised)
         }
         .scrollContentBackground(.hidden)
         .background(Color.qBase)
@@ -367,44 +370,39 @@ private struct ConnectionSettings: View {
     }
 }
 
-// MARK: - Models & generation
+// MARK: - Models
 
+/// The models page: the default model set out like a headline, the small housekeeping model and how
+/// chats get their names, then the generation defaults every chat starts from.
 private struct GenerationSettingsView: View {
     @Environment(AppModel.self) private var app
     @State private var pickDefault = false
     @State private var pickTitleModel = false
-    @State private var card: ORModel? = nil
 
     var body: some View {
         @Bindable var app = app
         let defaultModel = app.model(app.settings.defaultModelId)
-        Form {
-            Section {
-                Button { pickDefault = true } label: {
-                    modelRow("Default model", id: app.settings.defaultModelId, symbol: "cpu", color: .qTileBlue)
-                }
+        SettingsPage(title: "Models") {
+            hero(defaultModel)
+
+            SettingsGroup(label: "Housekeeping", footer: housekeepingFooter) {
                 Button { pickTitleModel = true } label: {
-                    modelRow("Titles & memory", id: app.settings.memory.extractionModelId, symbol: "text.badge.star", color: .qTileTeal)
+                    LinkRow(title: "Titles & memory", detail: "Names chats and notes what you tell it. Cheap and fast is best.",
+                            value: shortName(app.settings.memory.extractionModelId))
                 }
-                Picker("Name new chats", selection: Binding(get: { app.settings.chatTitles ?? .smart },
-                                                             set: { app.settings.chatTitles = $0 })) {
-                    ForEach(ChatTitleMode.allCases, id: \.self) { m in Text(m.label).tag(m) }
-                }
-            } footer: {
-                if !app.models.isEmpty && defaultModel == nil {
-                    Text("The default model isn't in OpenRouter's catalogue right now. It's still sent as-is; pick another if requests fail.")
-                        .foregroundStyle(Color.qDanger)
-                } else {
-                    Text("New chats start with the default model. The second one names chats and extracts memory: a cheap, fast model is best. Smart names a chat a moment after its first message; First message uses that message as the name.")
+                .buttonStyle(.row)
+                SettingRow("Name new chats", detail: titleDetail,
+                           help: "Smart asks the titles model for a short name once the first reply is in, and tries again later if it couldn't. First message uses your opening line. A chat you rename keeps your name.") {
+                    EmptyView()
+                } below: {
+                    ChoiceStrip(options: ChatTitleMode.allCases.map { (value: $0, label: $0.label) },
+                                selection: Binding(get: { app.settings.chatTitles ?? .smart }, set: { app.settings.chatTitles = $0 }),
+                                label: "Name new chats")
                 }
             }
 
             ParamsEditor(model: defaultModel, target: $app.settings.globalSettings, base: nil)
         }
-        .scrollContentBackground(.hidden)
-        .background(Color.qBase)
-        .navigationTitle("Models & generation")
-        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $pickDefault) {
             ModelPickerView(title: "Default model", selected: app.settings.defaultModelId) { id in app.settings.defaultModelId = id }
         }
@@ -413,20 +411,95 @@ private struct GenerationSettingsView: View {
         }
     }
 
-    private func modelRow(_ title: String, id: String, symbol: String, color: Color) -> some View {
-        HStack {
-            TileLabel(title: title, symbol: symbol, color: color, detail: app.modelName(id))
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.qInk2)
+    private func shortName(_ id: String) -> String { app.model(id)?.shortName ?? app.modelName(id) }
+
+    /// The model new chats start with, set out like the Spending headline, with what it holds and
+    /// what it costs underneath. Tap to change it.
+    private func hero(_ model: ORModel?) -> some View {
+        let id = app.settings.defaultModelId
+        return Button { pickDefault = true } label: {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Default model")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.1)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Color.qAccent)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(shortName(id))
+                            .displayFont { .system(.title, design: $0).weight(.semibold) }
+                            .foregroundStyle(Color.qInk)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.75)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.qInk2)
+                    }
+                    Text(id)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Color.qInk2)
+                        .lineLimit(1)
+                }
+                if let model {
+                    HStack(alignment: .top, spacing: 0) {
+                        figure(Fmt.context(model.contextLength), "Context")
+                        Spacer(minLength: 8)
+                        figure(Pricing.perMillion(model.pricing.prompt), "In, per million")
+                        Spacer(minLength: 8)
+                        figure(Pricing.perMillion(model.pricing.completion), "Out, per million")
+                    }
+                } else if !app.models.isEmpty {
+                    Text("Not in OpenRouter's catalogue right now. It's still sent as-is; pick another if requests fail.")
+                        .font(.footnote)
+                        .foregroundStyle(Color.qDanger)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .card(radius: 22)
+            .contentShape(.rect(cornerRadius: 22))
         }
-        .contentShape(.rect)
+        .buttonStyle(PressableStyle(scale: 0.98))
+        .accessibilityHint("Chooses the model new chats start with")
+    }
+
+    private func figure(_ value: String, _ caption: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .displayFont { .system(.body, design: $0).weight(.semibold).monospacedDigit() }
+                .foregroundStyle(Color.qInk)
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(Color.qInk2)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var titleDetail: String {
+        switch app.settings.chatTitles ?? .smart {
+        case .smart: "A short name, written once the first reply is in"
+        case .firstMessage: "Your opening line, trimmed"
+        case .off: "“New chat” until you rename it"
+        }
+    }
+
+    private var housekeepingFooter: Text? {
+        if !app.models.isEmpty && app.model(app.settings.memory.extractionModelId) == nil {
+            return Text("This model isn't in the catalogue, so titles and memory will fail until you pick one that exists.")
+                .foregroundStyle(Color.qDanger)
+        }
+        return nil
     }
 }
 
-// MARK: - Prompts & personas
+// MARK: - Personas
 
+/// The global prompt, set like a quotation, and your personas, each a row you open to edit or hold
+/// for more.
 struct PromptsSettingsView: View {
     @Environment(AppModel.self) private var app
     @State private var editing: Preset? = nil
@@ -435,52 +508,49 @@ struct PromptsSettingsView: View {
 
     var body: some View {
         @Bindable var app = app
-        List {
-            Section {
+        SettingsPage(title: "Personas") {
+            SettingsGroup(label: "Global prompt",
+                          footer: Text("Sent at the start of every chat that has no persona or prompt of its own. Personas and per-chat prompts replace it.")) {
                 NavigationLink {
                     PromptEditorView(title: "Global system prompt", text: $app.settings.globalSystemPrompt,
                                      placeholder: "Sent at the start of every chat that has no persona or prompt of its own.",
                                      footer: "Personas and per-chat prompts replace this one.")
                 } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Global system prompt").foregroundStyle(Color.qInk)
-                        Text(app.settings.globalSystemPrompt.isEmpty ? "Empty" : app.settings.globalSystemPrompt)
-                            .font(.footnote)
-                            .foregroundStyle(Color.qInk2)
-                            .lineLimit(3)
-                    }
-                    .padding(.vertical, 2)
+                    globalPrompt
                 }
+                .buttonStyle(.row)
             }
-            .listRowBackground(Color.qRaised)
 
-            Section {
+            SettingsGroup(label: "Personas",
+                          footer: Text("A persona is a saved system prompt, optionally with its own model and settings. Hold the compose button to start a chat with one; hold a persona here for more.")) {
                 ForEach(app.presets) { p in
                     Button { editing = p } label: { PersonaRow(preset: p) }
-                        .swipeActions {
-                            Button(role: .destructive) { app.deletePreset(p.id) } label: { Label("Delete", systemImage: "trash") }
-                            Button { app.duplicatePreset(p) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
-                                .tint(Color.qTileSlate)
-                        }
+                        .buttonStyle(.row)
                         .contextMenu {
                             Button { app.startNewChat(persona: p) } label: { Label("New chat with \(p.name)", systemImage: "square.and.pencil") }
                             Button { app.duplicatePreset(p) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+                            Divider()
                             Button(role: .destructive) { app.deletePreset(p.id) } label: { Label("Delete", systemImage: "trash") }
                         }
                 }
-                Button { editing = Preset() } label: { Label("New persona", systemImage: "plus") }
-            } header: {
-                SectionLabel(text: "Personas")
-            } footer: {
-                Text("A persona is a saved system prompt, optionally with its own model and settings. Hold the compose button to start a chat from one.")
+                Button { editing = Preset() } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Color.qAccent)
+                            .frame(width: 42, height: 42)
+                            .background(Color.qAccentSoft, in: .rect(cornerRadius: 13, style: .continuous))
+                        Text("New persona")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(Color.qAccent)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 12)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.row)
             }
-            .listRowBackground(Color.qRaised)
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(Color.qBase)
-        .navigationTitle("Prompts & personas")
-        .navigationBarTitleDisplayMode(.inline)
         .animation(Motion.standard, value: app.presets)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -509,6 +579,33 @@ struct PromptsSettingsView: View {
             }
         }
     }
+
+    /// The prompt itself, a few lines of it, beside a rule in the accent like a pull quote.
+    private var globalPrompt: some View {
+        let prompt = app.settings.globalSystemPrompt
+        return HStack(alignment: .top, spacing: 12) {
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                .fill(Color.qAccent.opacity(prompt.isEmpty ? 0.25 : 0.6))
+                .frame(width: 3)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(prompt.isEmpty ? "No global prompt yet" : prompt)
+                    .displayFont { .system(.subheadline, design: $0) }
+                    .foregroundStyle(prompt.isEmpty ? Color.qInk2 : Color.qInk)
+                    .lineLimit(4)
+                    .multilineTextAlignment(.leading)
+                Text(prompt.isEmpty ? "Tap to write one" : "\(prompt.count.formatted()) characters · about \(Tokens.estimate(prompt).formatted()) tokens")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(Color.qInk2)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.qInk2)
+                .padding(.top, 2)
+        }
+        .padding(.vertical, 14)
+        .contentShape(.rect)
+    }
 }
 
 private struct PersonaRow: View {
@@ -519,24 +616,38 @@ private struct PersonaRow: View {
         HStack(spacing: 12) {
             Text(preset.icon?.isEmpty == false ? preset.icon! : "◦")
                 .font(.title3)
-                .frame(width: 40, height: 40)
-                .background(Color.qAccentSoft, in: .circle)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(preset.name.isEmpty ? "Untitled" : preset.name)
-                    .displayFont { .system(.body, design: $0).weight(.semibold) }
-                    .foregroundStyle(Color.qInk)
+                .frame(width: 42, height: 42)
+                .background(Color.qAccentSoft, in: .rect(cornerRadius: 13, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(preset.name.isEmpty ? "Untitled" : preset.name)
+                        .displayFont { .system(.body, design: $0).weight(.semibold) }
+                        .foregroundStyle(Color.qInk)
+                        .lineLimit(1)
+                    if let m = preset.modelId {
+                        Text(app.model(m)?.shortName ?? app.modelName(m))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color.qInk2)
+                            .lineLimit(1)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.qInk2.opacity(0.12), in: .capsule)
+                    }
+                }
                 Text(preset.systemPrompt.isEmpty ? "No prompt" : preset.systemPrompt)
                     .font(.footnote)
                     .foregroundStyle(Color.qInk2)
                     .lineLimit(2)
-                if let m = preset.modelId {
-                    Label(app.modelName(m), systemImage: "cpu")
-                        .font(.caption)
-                        .foregroundStyle(Color.qInk2)
-                }
+                    .multilineTextAlignment(.leading)
             }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.qInk2)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 12)
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -554,22 +665,24 @@ struct PersonaEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    HStack(spacing: 12) {
-                        TextField("◦", text: Binding(get: { draft.icon ?? "" }, set: { draft.icon = String($0.prefix(2)) }))
-                            .font(.title2)
-                            .multilineTextAlignment(.center)
-                            .frame(width: 52, height: 52)
-                            .background(Color.qAccentSoft, in: .circle)
-                            .accessibilityLabel("Icon, one emoji")
-                        TextField("Name", text: $draft.name)
-                            .displayFont { .system(.title3, design: $0).weight(.semibold) }
-                    }
-                    .padding(.vertical, 4)
+            SettingsPage(title: isNew ? "New persona" : "Edit persona", inlineTitle: true) {
+                HStack(spacing: 14) {
+                    TextField("◦", text: Binding(get: { draft.icon ?? "" }, set: { draft.icon = String($0.prefix(2)) }))
+                        .font(.title)
+                        .multilineTextAlignment(.center)
+                        .frame(width: 60, height: 60)
+                        .background(Color.qAccentSoft, in: .rect(cornerRadius: 18, style: .continuous))
+                        .accessibilityLabel("Icon, one emoji")
+                    TextField("Name", text: $draft.name)
+                        .displayFont { .system(.title2, design: $0).weight(.semibold) }
+                        .foregroundStyle(Color.qInk)
                 }
+                .padding(16)
+                .card(radius: 22)
 
-                Section {
+                SettingsGroup(label: "System prompt",
+                              footer: Text("\(draft.systemPrompt.count.formatted()) characters · about \(Tokens.estimate(draft.systemPrompt).formatted()) tokens")
+                                .monospacedDigit()) {
                     ZStack(alignment: .topLeading) {
                         if draft.systemPrompt.isEmpty {
                             Text("You are…")
@@ -579,27 +692,30 @@ struct PersonaEditor: View {
                                 .allowsHitTesting(false)
                         }
                         TextEditor(text: $draft.systemPrompt)
-                            .frame(minHeight: 160)
+                            .frame(minHeight: 180)
                             .scrollContentBackground(.hidden)
                     }
-                } header: {
-                    SectionLabel(text: "System prompt")
-                } footer: {
-                    Text("\(draft.systemPrompt.count) characters · about \(Tokens.estimate(draft.systemPrompt)) tokens")
-                        .monospacedDigit()
+                    .padding(.vertical, 8)
                 }
 
-                Section {
+                SettingsGroup(label: "Model") {
                     Button { pickModel = true } label: {
-                        HStack {
-                            TileLabel(title: "Pinned model", symbol: "cpu", color: .qTileBlue,
-                                      detail: draft.modelId.map { app.modelName($0) } ?? "Uses the chat's model")
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Color.qInk2)
-                        }
+                        LinkRow(title: "Pinned model",
+                                detail: draft.modelId == nil ? "Uses whichever model the chat has" : nil,
+                                value: draft.modelId.map { app.model($0)?.shortName ?? app.modelName($0) })
                     }
+                    .buttonStyle(.row)
                     if draft.modelId != nil {
-                        Button("Don't pin a model") { draft.modelId = nil }
+                        Button {
+                            withAnimation(Motion.quick) { draft.modelId = nil }
+                        } label: {
+                            Text("Don't pin a model")
+                                .foregroundStyle(Color.qAccent)
+                                .padding(.vertical, 13)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.row)
                     }
                 }
 
@@ -608,23 +724,19 @@ struct PersonaEditor: View {
                              base: app.settings.globalSettings)
 
                 if !isNew {
-                    Section {
-                        Button {
+                    SettingsGroup {
+                        actionRow("New chat with this persona", symbol: "square.and.pencil") {
                             app.startNewChat(persona: draft)
                             dismiss()
-                        } label: { Label("New chat with this persona", systemImage: "square.and.pencil") }
-                        Button {
+                        }
+                        actionRow("Duplicate", symbol: "plus.square.on.square") {
                             app.duplicatePreset(draft)
                             dismiss()
-                        } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
-                        Button(role: .destructive) { confirmDelete = true } label: { Label("Delete persona", systemImage: "trash") }
+                        }
+                        actionRow("Delete persona", symbol: "trash", destructive: true) { confirmDelete = true }
                     }
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(Color.qBase)
-            .navigationTitle(isNew ? "New persona" : "Edit persona")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -658,10 +770,22 @@ struct PersonaEditor: View {
         }
         .interactiveDismissDisabled(draft != preset && loaded)
     }
+
+    private func actionRow(_ title: String, symbol: String, destructive: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .foregroundStyle(destructive ? Color.qDanger : Color.qAccent)
+                .padding(.vertical, 13)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.row)
+    }
 }
 
 // MARK: - Memory settings
 
+/// How much is remembered, as a headline with its budget beneath, then how memory behaves.
 private struct MemorySettingsView: View {
     @Environment(AppModel.self) private var app
     @State private var pickModel = false
@@ -669,60 +793,86 @@ private struct MemorySettingsView: View {
     var body: some View {
         @Bindable var app = app
         let total = MemoryLogic.totalChars(app.memory)
-        Form {
-            Section {
-                NavigationLink(value: Route.memory) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        TileLabel(title: "Open memory", symbol: "brain", color: .qTileTeal,
-                                  detail: "\(app.memory.count) facts · \(total.formatted()) characters")
-                        MeterBar(fraction: Double(total) / Double(max(1, app.settings.memory.maxInjectedChars)),
-                                 warn: total > app.settings.memory.maxInjectedChars)
-                    }
-                    .padding(.vertical, 2)
-                }
-            }
-
-            Section {
-                Toggle(isOn: $app.settings.memory.enabled) {
-                    HelpLabel(title: "Use memory", help: "Inject remembered facts into chats, inside a <user_memory> block in the system message, with an instruction not to announce it.")
-                }
-                Toggle(isOn: $app.settings.memory.autoExtract) {
-                    HelpLabel(title: "Extract automatically", help: "After replies, quietly ask the memory model to note durable facts you stated. Runs at most once per three exchanges or thirty seconds, after the reply, and never delays the chat.")
-                }
-                .disabled(!app.settings.memory.enabled)
-                Button { pickModel = true } label: {
-                    HStack {
-                        TileLabel(title: "Memory model", symbol: "text.badge.star", color: .qTileTeal,
-                                  detail: app.modelName(app.settings.memory.extractionModelId))
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Color.qInk2)
-                    }
-                }
-                Stepper(value: $app.settings.memory.maxInjectedChars, in: 200...20_000, step: 200) {
-                    HStack {
-                        HelpLabel(title: "Injection budget", help: "How many characters of memory go into each request. Pinned facts always go in; the rest are chosen by relevance to your latest message, then recency.")
-                        Spacer()
-                        Text(app.settings.memory.maxInjectedChars.formatted())
-                            .monospacedDigit()
+        let budget = app.settings.memory.maxInjectedChars
+        SettingsPage(title: "Memory") {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(app.settings.memory.enabled ? "Remembered" : "Memory is off")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.1)
+                        .textCase(.uppercase)
+                        .foregroundStyle(app.settings.memory.enabled ? Color.qAccent : Color.qInk2)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(app.memory.count.formatted())
+                            .displayFont { .system(size: 46, weight: .semibold, design: $0).monospacedDigit() }
+                            .tracking(-0.8)
+                            .foregroundStyle(Color.qInk)
+                            .contentTransition(.numericText(value: Double(app.memory.count)))
+                        Text(app.memory.count == 1 ? "fact" : "facts")
+                            .displayFont { .system(.title3, design: $0) }
                             .foregroundStyle(Color.qInk2)
                     }
                 }
-            } footer: {
-                if !app.models.isEmpty && app.model(app.settings.memory.extractionModelId) == nil {
-                    Text("This model isn't in the catalogue, so extraction and titles will fail until you pick one that exists.")
-                        .foregroundStyle(Color.qDanger)
-                } else {
-                    Text("Each extraction is a small call to the memory model. Turn memory off for a single chat from its settings (incognito).")
+                VStack(alignment: .leading, spacing: 6) {
+                    MeterBar(fraction: Double(total) / Double(max(1, budget)), warn: total > budget, height: 6)
+                    Text(total > budget
+                         ? "\(total.formatted()) characters, more than the \(budget.formatted()) a chat takes: the most relevant go in"
+                         : "\(total.formatted()) of \(budget.formatted()) characters go into each chat")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(Color.qInk2)
+                }
+                NavigationLink(value: Route.memory) {
+                    Label("Open memory", systemImage: "brain")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.qOnAccent)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 38)
+                        .background(Color.qAccent, in: .capsule)
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(.pressable)
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .card(radius: 22)
+
+            SettingsGroup(label: "Behaviour", footer: footer) {
+                SettingRow("Use memory", help: "Put remembered facts into chats, inside a <user_memory> block in the system message, with an instruction not to announce it.") {
+                    Toggle("Use memory", isOn: $app.settings.memory.enabled).labelsHidden()
+                }
+                SettingRow("Extract automatically", help: "After replies, quietly ask the memory model to note durable facts you stated. Runs at most once per three exchanges or thirty seconds, after the reply, and never delays the chat.") {
+                    Toggle("Extract automatically", isOn: $app.settings.memory.autoExtract).labelsHidden()
+                }
+                .disabled(!app.settings.memory.enabled)
+                .opacity(app.settings.memory.enabled ? 1 : 0.5)
+                Button { pickModel = true } label: {
+                    LinkRow(title: "Memory model", value: app.model(app.settings.memory.extractionModelId)?.shortName ?? app.modelName(app.settings.memory.extractionModelId))
+                }
+                .buttonStyle(.row)
+                SettingRow("Budget per chat", help: "How many characters of memory go into each request. Pinned facts always go in; the rest are chosen by relevance to your latest message, then recency.") {
+                    Text(budget.formatted())
+                        .font(.subheadline.weight(.medium).monospacedDigit())
+                        .foregroundStyle(Color.qInk)
+                        .contentTransition(.numericText(value: Double(budget)))
+                } below: {
+                    ParamSlider(value: Binding(get: { Double(app.settings.memory.maxInjectedChars) },
+                                               set: { app.settings.memory.maxInjectedChars = Int($0) }),
+                                range: 200...20_000, step: 200, mark: 2000, ends: ("Lean", "Generous"),
+                                label: "Budget per chat", format: { "\(Int($0).formatted()) characters" })
                 }
             }
         }
-        .scrollContentBackground(.hidden)
-        .background(Color.qBase)
-        .navigationTitle("Memory")
-        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $pickModel) {
             ModelPickerView(title: "Memory model", selected: app.settings.memory.extractionModelId) { id in app.settings.memory.extractionModelId = id }
         }
+    }
+
+    private var footer: Text {
+        if !app.models.isEmpty && app.model(app.settings.memory.extractionModelId) == nil {
+            return Text("This model isn't in the catalogue, so extraction and titles will fail until you pick one that exists.")
+                .foregroundStyle(Color.qDanger)
+        }
+        return Text("Each extraction is a small call to the memory model. Turn memory off for a single chat from its settings (incognito).")
     }
 }
 
@@ -730,72 +880,192 @@ private struct MemorySettingsView: View {
 
 private struct AppearanceSettings: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         @Bindable var app = app
         let ui = app.settings.ui
-        Form {
-            Section {
+        SettingsPage(title: "Appearance") {
+            labelled("Preview") {
                 ReadingPreview(replyDesign: ui.replyDesign, replyFace: ui.replyFaceName, typeface: ui.typeface,
                                size: ReadingSize(scale: ui.fontScale), compact: ui.density == "compact",
                                ink: ui.textStrength)
-                    .listRowInsets(EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18))
-            } header: {
-                SectionLabel(text: "Preview")
+                    .padding(18)
+                    .card(radius: 22)
             }
 
-            Section {
+            labelled("Theme") {
+                VStack(alignment: .leading, spacing: 12) {
+                    ThemePicker(selection: ui.colorTheme) { theme in
+                        // Re-colour inside the animation, so the whole app eases into the new palette.
+                        withAnimation(reduceMotion ? nil : Motion.standard) {
+                            ThemeStore.shared.use(theme)
+                            app.settings.ui.colorTheme = theme
+                        }
+                    }
+                    ChoiceStrip(options: ThemeChoice.allCases.map { (value: $0, label: $0.label) },
+                                selection: $app.settings.ui.theme, label: "Light or dark")
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 9) {
+                SectionLabel(text: "Typeface").padding(.horizontal, 4)
                 TypefacePicker(selection: ui.typeface) { face in
                     // Replies follow the typeface; they can be set apart again below.
                     app.settings.ui.typeface = face
                     app.settings.ui.readingFace = face == .newYork ? .serif : .sans
                 }
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
-            } header: {
-                SectionLabel(text: "Typeface")
-            } footer: {
                 Text(ui.typeface.blurb)
+                    .font(.footnote)
+                    .foregroundStyle(Color.qInk2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
                     .contentTransition(.opacity)
             }
 
-            Section {
-                Picker("Theme", selection: $app.settings.ui.theme) {
-                    ForEach(ThemeChoice.allCases, id: \.self) { Text($0.label).tag($0) }
+            SettingsGroup(label: "Reading",
+                          footer: Text("Replies follow the typeface unless you set them apart: SF Pro titles over New York replies reads like a magazine. Reply size is relative to the system text size, so it follows Dynamic Type.")) {
+                SettingRow("Replies in") { EmptyView() } below: {
+                    ChoiceStrip(options: [(value: ReadingFace.serif, label: "New York"), (value: ReadingFace.sans, label: ui.typeface.sansName)],
+                                selection: $app.settings.ui.readingFace, label: "Replies in")
                 }
-                .pickerStyle(.segmented)
-                Picker("Replies in", selection: $app.settings.ui.readingFace) {
-                    Text("New York").tag(ReadingFace.serif)
-                    Text(ui.typeface.sansName).tag(ReadingFace.sans)
+                SettingRow("Reply size", detail: ReadingSize(scale: ui.fontScale).label) { EmptyView() } below: {
+                    SizeStrip(size: Binding(get: { ReadingSize(scale: app.settings.ui.fontScale) },
+                                            set: { app.settings.ui.fontScale = $0.scale }))
                 }
-                Picker("Reply size", selection: Binding(
-                    get: { ReadingSize(scale: app.settings.ui.fontScale) },
-                    set: { app.settings.ui.fontScale = $0.scale })) {
-                    ForEach(ReadingSize.allCases) { Text($0.label).tag($0) }
+                SettingRow("Density") { EmptyView() } below: {
+                    ChoiceStrip(options: [(value: "comfortable", label: "Comfortable"), (value: "compact", label: "Compact")],
+                                selection: $app.settings.ui.density, label: "Density")
                 }
-                Picker("Density", selection: $app.settings.ui.density) {
-                    Text("Comfortable").tag("comfortable")
-                    Text("Compact").tag("compact")
+                SettingRow("Text strength", detail: "\(Int((ui.textStrength * 100).rounded()))%",
+                           help: "How strongly a reply's running text is inked. Bold always stays at full strength, so it stands out either way.") {
+                    if abs(ui.textStrength - UISettings.defaultTextStrength) >= 0.005 {
+                        Button("Default") {
+                            Haptics.selection()
+                            withAnimation(Motion.standard) { app.settings.ui.textStrength = UISettings.defaultTextStrength }
+                        }
+                        .font(.footnote.weight(.semibold))
+                        .tint(Color.qAccent)
+                        .buttonStyle(.borderless)
+                        .transition(.opacity)
+                    }
+                } below: {
+                    ParamSlider(value: $app.settings.ui.textStrength, range: 0.6...1, step: 0.01,
+                                mark: UISettings.defaultTextStrength, ends: ("Soft", "Strong"), label: "Text strength",
+                                format: { "\(Int(($0 * 100).rounded())) percent" })
                 }
-                TextStrengthControl(value: $app.settings.ui.textStrength)
-            } footer: {
-                Text("Replies follow the typeface unless you set them apart: SF Pro titles over New York replies reads like a magazine. Reply size is relative to the system text size, so it follows Dynamic Type. Text strength sets how strongly a reply's running text is inked; bold always stays at full strength.")
             }
 
-            Section {
-                Toggle("Show reasoning by default", isOn: $app.settings.ui.showReasoningByDefault)
-                Toggle("Show costs", isOn: $app.settings.ui.showCosts)
-                Toggle("Haptics", isOn: $app.settings.ui.hapticsEnabled)
-                Toggle("Return sends on a hardware keyboard", isOn: $app.settings.ui.sendOnEnter)
-            } footer: {
-                Text("Reasoning traces stay open while the model is still thinking either way. With a hardware keyboard, Shift-Return adds a line.")
+            SettingsGroup(label: "Behaviour",
+                          footer: Text("Reasoning traces stay open while the model is still thinking either way. With a hardware keyboard, Shift-Return adds a line.")) {
+                toggleRow("Show reasoning by default", isOn: $app.settings.ui.showReasoningByDefault)
+                toggleRow("Show costs", isOn: $app.settings.ui.showCosts)
+                toggleRow("Haptics", isOn: $app.settings.ui.hapticsEnabled)
+                toggleRow("Return sends on a hardware keyboard", isOn: $app.settings.ui.sendOnEnter)
             }
         }
-        .scrollContentBackground(.hidden)
-        .background(Color.qBase)
-        .navigationTitle("Appearance")
-        .navigationBarTitleDisplayMode(.inline)
         .animation(Motion.standard, value: app.settings.ui)
+    }
+
+    private func labelled<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            SectionLabel(text: label).padding(.horizontal, 4)
+            content()
+        }
+    }
+
+    private func toggleRow(_ title: String, isOn: Binding<Bool>) -> some View {
+        SettingRow(title) { Toggle(title, isOn: isOn).labelsHidden() }
+    }
+}
+
+/// The four themes as paint cards, two by two: each one's colours run dark to light across its
+/// swatch, with its name and what it's made of beneath. The ring slides to the one you pick, and
+/// the app re-colours around you as it does.
+private struct ThemePicker: View {
+    let selection: AppTheme
+    let pick: (AppTheme) -> Void
+    @Namespace private var ring
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+            GridRow {
+                card(.quire)
+                card(.velvet)
+            }
+            GridRow {
+                card(.amethyst)
+                card(.pitch)
+            }
+        }
+    }
+
+    private func card(_ theme: AppTheme) -> some View {
+        let on = theme == selection
+        let swatch = theme.palette.swatch
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        return Button {
+            guard !on else { return }
+            Haptics.selection()
+            pick(theme)
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                LinearGradient(stops: [.init(color: swatch[0], location: 0.05),
+                                       .init(color: swatch[1], location: 0.55),
+                                       .init(color: swatch[2], location: 1)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                    .frame(height: 72)
+                    .overlay(alignment: .bottomLeading) {
+                        HStack(spacing: -6) {
+                            ForEach(0..<3, id: \.self) { i in
+                                Circle()
+                                    .fill(swatch[i])
+                                    .frame(width: 16, height: 16)
+                                    .overlay(Circle().strokeBorder(.white.opacity(0.7), lineWidth: 1.5))
+                            }
+                        }
+                        .padding(8)
+                    }
+                    .clipShape(.rect(cornerRadius: 13, style: .continuous))
+                HStack(alignment: .center, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(theme.name)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.qInk)
+                        Text(theme.detail)
+                            .font(.caption2)
+                            .foregroundStyle(Color.qInk2)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    }
+                    Spacer(minLength: 0)
+                    if on {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.qAccent)
+                            .transition(.scale(scale: 0.4).combined(with: .opacity))
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+            .padding(8)
+            .background {
+                if on {
+                    shape.fill(Color.qAccentSoft)
+                        .overlay { shape.strokeBorder(Color.qAccent, lineWidth: 1.5) }
+                        .matchedGeometryEffect(id: "ring", in: ring)
+                } else {
+                    CardSurface(radius: 20)
+                }
+            }
+            .contentShape(shape)
+        }
+        .buttonStyle(.pressable)
+        .animation(reduceMotion ? nil : Motion.bouncy, value: on)
+        .accessibilityLabel(theme.name)
+        .accessibilityValue(theme.detail)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
@@ -817,7 +1087,7 @@ private struct TypefacePicker: View {
     }
 
     private func card(_ face: Typeface, on: Bool) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
         return Button {
             guard !on else { return }
             Haptics.selection()
@@ -825,9 +1095,9 @@ private struct TypefacePicker: View {
         } label: {
             VStack(spacing: 4) {
                 Text("Aa")
-                    .font(.system(size: 36, weight: .semibold, design: face.design))
+                    .font(.system(size: 34, weight: .semibold, design: face.design))
                     .foregroundStyle(on ? Color.qAccent : Color.qInk)
-                    .frame(height: 48)
+                    .frame(height: 46)
                 Text(face.shortName)
                     .font(.system(.footnote, design: face.design).weight(.semibold))
                     .foregroundStyle(Color.qInk)
@@ -846,7 +1116,7 @@ private struct TypefacePicker: View {
                         .overlay { shape.strokeBorder(Color.qAccent, lineWidth: 1.5) }
                         .matchedGeometryEffect(id: "ring", in: ring)
                 } else {
-                    CardSurface(radius: 18)
+                    CardSurface(radius: 20)
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -854,7 +1124,7 @@ private struct TypefacePicker: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.footnote)
                         .foregroundStyle(Color.qAccent)
-                        .padding(8)
+                        .padding(9)
                         .transition(.scale(scale: 0.4).combined(with: .opacity))
                 }
             }
@@ -867,52 +1137,42 @@ private struct TypefacePicker: View {
     }
 }
 
-/// How strongly reply text is inked: a slider from soft to as strong as bold, with a way back to
-/// the default once it's moved.
-private struct TextStrengthControl: View {
-    @Binding var value: Double
-
-    private var isDefault: Bool { abs(value - UISettings.defaultTextStrength) < 0.005 }
+/// Reply size as five A's, each a size up from the last.
+private struct SizeStrip: View {
+    @Binding var size: ReadingSize
+    @Namespace private var ns
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Text strength")
-                    .foregroundStyle(Color.qInk)
-                Spacer()
-                if !isDefault {
-                    Button("Default") {
-                        Haptics.selection()
-                        withAnimation(Motion.standard) { value = UISettings.defaultTextStrength }
-                    }
-                    .font(.footnote.weight(.medium))
-                    .buttonStyle(.borderless)
-                    .transition(.opacity)
+        HStack(spacing: 2) {
+            ForEach(ReadingSize.allCases) { s in
+                let on = s == size
+                Button {
+                    guard !on else { return }
+                    Haptics.selection()
+                    withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy) { size = s }
+                } label: {
+                    Text("A")
+                        .font(.system(size: 12 + CGFloat(s.rawValue + 1) * 2.5, weight: on ? .semibold : .regular))
+                        .foregroundStyle(on ? Color.qOnAccent : Color.qInk2)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 34)
+                        .background {
+                            if on {
+                                Capsule()
+                                    .fill(Color.qAccent)
+                                    .matchedGeometryEffect(id: "size", in: ns)
+                            }
+                        }
+                        .contentShape(.capsule)
                 }
-                Text("\(Int((value * 100).rounded()))%")
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(Color.qInk2)
-                    .contentTransition(.numericText())
+                .buttonStyle(.plain)
+                .accessibilityLabel(s.label)
+                .accessibilityAddTraits(on ? .isSelected : [])
             }
-            Slider(value: $value, in: 0.6...1, step: 0.01) {
-                Text("Text strength")
-            } minimumValueLabel: {
-                Text("Aa")
-                    .font(.footnote)
-                    .foregroundStyle(Color.qInkStrong.opacity(0.6))
-                    .accessibilityHidden(true)
-            } maximumValueLabel: {
-                Text("Aa")
-                    .font(.footnote)
-                    .foregroundStyle(Color.qInkStrong)
-                    .accessibilityHidden(true)
-            }
-            .accessibilityValue("\(Int((value * 100).rounded())) percent")
         }
-        .padding(.vertical, 4)
-        .animation(Motion.quick, value: isDefault)
-        // A detent at the default, so you can feel your way back to it.
-        .onChange(of: isDefault) { _, now in if now { Haptics.selection() } }
+        .padding(3)
+        .background(Color.qSunken, in: .capsule)
     }
 }
 
@@ -951,7 +1211,7 @@ private struct ReadingPreview: View {
                     .foregroundStyle(Color.qInk)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
-                    .card(radius: 18)
+                    .card(radius: 18, fill: .qBase)
             }
         }
         .environment(\.dynamicTypeSize, size.apply(to: typeSize))
@@ -977,6 +1237,7 @@ private struct DataSettings: View {
 
     var body: some View {
         Form {
+            Group {
             Section {
                 LabeledContent("Chats") { Text("\(app.chats.count)").monospacedDigit() }
                 LabeledContent("Messages") { Text(messageCount.formatted()).monospacedDigit() }
@@ -1028,6 +1289,8 @@ private struct DataSettings: View {
             } footer: {
                 Text("Erasing removes every chat, persona, memory fact, setting and the key from this iPhone.")
             }
+            }
+            .listRowBackground(Color.qRaised)
         }
         .scrollContentBackground(.hidden)
         .background(Color.qBase)
@@ -1122,6 +1385,7 @@ private struct AboutView: View {
 
     var body: some View {
         List {
+            Group {
             Section {
                 VStack(spacing: 14) {
                     QuireMark(width: 64, breathing: true)
@@ -1160,6 +1424,8 @@ private struct AboutView: View {
                 Link(destination: URL(string: "https://openrouter.ai/activity")!) {
                     Label("OpenRouter activity", systemImage: "arrow.up.right.square")
                 }
+            }
+            .listRowBackground(Color.qRaised)
             }
             .listRowBackground(Color.qRaised)
         }

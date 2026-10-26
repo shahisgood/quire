@@ -106,6 +106,7 @@ struct MessageInfoSheet: View {
 
     private var details: some View {
         Form {
+            Group {
             Section {
                 LabeledContent("Model", value: message.modelId ?? "—")
                 LabeledContent("Sent", value: Date(timeIntervalSince1970: message.createdAt / 1000).formatted(date: .abbreviated, time: .standard))
@@ -153,6 +154,8 @@ struct MessageInfoSheet: View {
                     SectionLabel(text: "Settings used")
                 }
             }
+            }
+            .listRowBackground(Color.qRaised)
         }
         .scrollContentBackground(.hidden)
     }

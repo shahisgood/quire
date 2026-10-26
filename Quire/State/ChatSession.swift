@@ -291,7 +291,7 @@ final class ChatSession {
         // asks for a better name). A chat you've renamed keeps your name.
         let opening = path.isEmpty && chat.titleAuto != false
         if opening && titleMode != .off {
-            chat.title = TextUtil.stripMarkdown(trimmed.isEmpty ? (attachments.first?.name ?? "New chat") : trimmed, max: 48)
+            chat.title = Self.openingTitle(user)
         }
         messages[user.id] = user
         messages[asst.id] = asst
@@ -308,7 +308,7 @@ final class ChatSession {
         startGeneration(assistantId: asst.id, modelId: chat.modelId)
         // Name it now from the opening message, rather than after the whole reply has arrived.
         if opening && !trimmed.isEmpty {
-            Task { [weak self] in await self?.smartTitle(userText: trimmed, assistantText: nil) }
+            Task { [weak self] in await self?.smartTitle() }
         }
     }
 
@@ -742,13 +742,12 @@ final class ChatSession {
         }
         if status == .complete, let lastUser {
             // Belt and braces: a chat that reached its first reply still unnamed takes its opening line.
-            if titleMode != .off, chat.titleAuto != false, chat.title == "New chat", !lastUser.content.isEmpty {
-                chat.title = TextUtil.stripMarkdown(lastUser.content, max: 48)
+            if titleMode != .off, chat.titleAuto != false, chat.title == "New chat", let opening = openingExchange {
+                chat.title = Self.openingTitle(opening.user)
                 saveChat()
             }
             if chat.titleAuto != false && !continueMode {
-                let userText = lastUser.content
-                Task { [weak self] in await self?.smartTitle(userText: userText, assistantText: finalContent) }
+                Task { [weak self] in await self?.smartTitle() }
             }
             if chat.memoryEnabled, let final = messages[assistantId] {
                 app.extractor.schedule(app: app, chatId: chat.id, user: lastUser, assistant: final)
@@ -787,22 +786,57 @@ final class ChatSession {
 
     private var titleMode: ChatTitleMode { app.settings.chatTitles ?? .smart }
 
+    /// What a chat is called before (or instead of) a smart title: its opening message, or the name
+    /// of what was attached when there were no words.
+    private static func openingTitle(_ user: Message) -> String {
+        let text = user.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return TextUtil.stripMarkdown(text.isEmpty ? (user.attachments?.first?.name ?? "New chat") : text, max: 48)
+    }
+
+    /// The exchange a chat is named from: its opening message and the reply to it, on the branch
+    /// you're on.
+    private var openingExchange: (user: Message, reply: String)? {
+        guard let first = path.first, let user = messages[first], user.role == .user else { return nil }
+        let reply = path.count > 1 ? (messages[path[1]]?.content ?? "") : ""
+        return (user, reply)
+    }
+
+    /// Whether the chat still has a name it was given automatically (so a smart title may replace it).
+    private var hasPlaceholderTitle: Bool {
+        guard chat.titleAuto != false else { return false }
+        if chat.title == "New chat" { return true }
+        guard let opening = openingExchange else { return false }
+        return chat.title == Self.openingTitle(opening.user)
+    }
+
+    /// Called when a chat is opened: one that never got its smart title (the app was in the background,
+    /// the network dropped, the first reply failed) gets another try.
+    func ensureSmartTitle() {
+        guard titleMode == .smart, !generating, hasPlaceholderTitle,
+              let opening = openingExchange, !opening.reply.isEmpty else { return }
+        Task { [weak self] in await self?.smartTitle() }
+    }
+
     /// A short title for the chat, written by the titles model (then this chat's own model, which has
-    /// just been shown to work, if that one fails). Runs as soon as the first message is sent, and
-    /// again after a reply only while the chat still carries its first-message name. Never touches a
-    /// chat you've renamed; if every attempt fails, the first-message name stays.
-    private func smartTitle(userText: String, assistantText: String?) async {
-        let fallback = TextUtil.stripMarkdown(userText, max: 48)
-        guard titleMode == .smart, !titling, chat.titleAuto != false,
-              chat.title == "New chat" || chat.title == fallback else { return }
+    /// just been shown to work, if that one fails). It's always written from the chat's opening
+    /// exchange, whichever reply has just finished, so a first reply that failed or was stopped
+    /// doesn't leave the chat unnamed. Reasoning is kept to the minimum the model allows, so the
+    /// answer isn't spent on thinking. Never touches a chat you've renamed; if every attempt fails,
+    /// the opening line stays, and it tries again next time.
+    private func smartTitle() async {
+        guard titleMode == .smart, !titling, hasPlaceholderTitle, let opening = openingExchange else { return }
         titling = true
         defer { titling = false }
+        let userText = opening.user.content.isEmpty
+            ? "(Sent \(opening.user.attachments?.count ?? 1) attachment(s): \(opening.user.attachments?.map(\.name).joined(separator: ", ") ?? ""))"
+            : opening.user.content
         var exchange = "User: \(userText.prefix(2000))"
-        if let assistantText, !assistantText.isEmpty { exchange += "\n\nAssistant: \(assistantText.prefix(1500))" }
+        if !opening.reply.isEmpty { exchange += "\n\nAssistant: \(opening.reply.prefix(1500))" }
         var candidates = [app.settings.memory.extractionModelId]
         if chat.modelId != candidates[0] { candidates.append(chat.modelId) }
         for modelId in candidates {
-            let body: [String: JSONValue] = [
+            let model = app.model(modelId)
+            var body: [String: JSONValue] = [
                 "model": .string(modelId),
                 "messages": [
                     ["role": "system", "content": "Write a title for this conversation: two to six words, sentence case, no quotes, no trailing punctuation. Reply with the title only."],
@@ -811,16 +845,46 @@ final class ChatSession {
                 "max_tokens": 40,
                 "temperature": 0.3,
             ]
-            guard let r = try? await app.client.complete(body: body) else { continue }
-            var title = r.content.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n").first ?? ""
-            title = title.trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”.*#").union(.whitespaces))
-            guard !title.isEmpty else { continue }
-            // The chat may have been renamed (or deleted) while we waited.
-            guard chat.titleAuto != false, !deleted, chat.title == "New chat" || chat.title == fallback else { return }
-            chat.title = String(title.prefix(60))
-            saveChat()
-            return
+            if let quiet = RequestBuilder.quietReasoning(for: model) {
+                body["reasoning"] = quiet
+                // Room for whatever thinking the model insists on, before the title itself.
+                body["max_tokens"] = 1200
+            }
+            for attempt in 0..<2 {
+                guard !deleted else { return }
+                do {
+                    let r = try await app.client.complete(body: body)
+                    guard let title = Self.cleanTitle(r.content) else { break }
+                    // The chat may have been renamed (or deleted) while we waited.
+                    guard !deleted, hasPlaceholderTitle else { return }
+                    chat.title = title
+                    saveChat()
+                    return
+                } catch {
+                    // One more go after a moment for a hiccup; the next model otherwise.
+                    if attempt == 0 { try? await Task.sleep(for: .seconds(1.5)) }
+                }
+            }
         }
+    }
+
+    /// The model's answer, reduced to a title: the first real line, without a "Title:" label,
+    /// quotes, markdown or any thinking it left in.
+    private static func cleanTitle(_ raw: String) -> String? {
+        var text = raw
+        while let open = text.range(of: "<think>"), let close = text.range(of: "</think>", range: open.upperBound..<text.endIndex) {
+            text.removeSubrange(open.lowerBound..<close.upperBound)
+        }
+        let line = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty } ?? ""
+        var title = line
+        for prefix in ["title:", "**title:**", "title -"] where title.lowercased().hasPrefix(prefix) {
+            title = String(title.dropFirst(prefix.count))
+        }
+        title = title.trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”‘’.*#`_").union(.whitespaces))
+        guard !title.isEmpty, title.count <= 80 else { return nil }
+        return String(title.prefix(60))
     }
 
     private static func snapshot(_ body: [String: JSONValue]) -> String {

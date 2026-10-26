@@ -125,6 +125,7 @@ struct ModelPickerView: View {
     var body: some View {
         NavigationStack {
             List {
+                Group {
                 Section { filterPanel }
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
@@ -153,6 +154,8 @@ struct ModelPickerView: View {
                         SectionLabel(text: "\(filtered.count) of \(app.models.count) models")
                     }
                 }
+                }
+                .listRowBackground(Color.qRaised)
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
@@ -456,6 +459,7 @@ struct ModelCardView: View {
     var body: some View {
         NavigationStack {
             List {
+                Group {
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
                         Text(model.id)
@@ -515,6 +519,8 @@ struct ModelCardView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 } header: { SectionLabel(text: "Supported parameters") }
+                }
+                .listRowBackground(Color.qRaised)
             }
             .scrollContentBackground(.hidden)
             .background(Color.qBase)

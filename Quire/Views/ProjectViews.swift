@@ -259,6 +259,7 @@ struct ProjectEditor: View {
     var body: some View {
         NavigationStack {
             Form {
+                Group {
                 Section {
                     TextField("Project name", text: $draft.name)
                         .displayFont { .system(.body, design: $0).weight(.semibold) }
@@ -331,6 +332,8 @@ struct ProjectEditor: View {
                         }
                     }
                 }
+                }
+                .listRowBackground(Color.qRaised)
             }
             .scrollContentBackground(.hidden)
             .background(Color.qBase)
@@ -540,6 +543,7 @@ struct ProjectView: View {
         let chats = app.chats(inProject: p.id)
         let archived = app.chats(inProject: p.id, archived: true)
         return List {
+            Group {
             Section {
                 instructionsRow(p)
             } header: {
@@ -585,6 +589,8 @@ struct ProjectView: View {
                     }
                 }
             }
+            }
+            .listRowBackground(Color.qRaised)
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
@@ -747,6 +753,7 @@ struct ProjectPickerList: View {
 
     var body: some View {
         List {
+            Group {
             Section {
                 row(nil)
                 ForEach(app.projects) { row($0) }
@@ -756,6 +763,8 @@ struct ProjectPickerList: View {
             Section {
                 Button { creating = true } label: { Label("New project…", systemImage: "plus") }
             }
+            }
+            .listRowBackground(Color.qRaised)
         }
         .scrollContentBackground(.hidden)
         .background(Color.qBase)

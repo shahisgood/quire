@@ -60,6 +60,7 @@ struct ComposerView: View {
                                  sendOnHardwareReturn: app.settings.ui.sendOnEnter,
                                  hint: placeholder,
                                  rounded: app.settings.ui.typeface == .sfRounded,
+                                 theme: app.settings.ui.colorTheme,
                                  onSend: send,
                                  onPasteImage: { img in
                                      Task { await add { try await AttachmentMaker.image(img, name: "pasted.jpg") } }

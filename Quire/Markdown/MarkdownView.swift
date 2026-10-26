@@ -172,8 +172,16 @@ private struct ListMarker: View {
 /// the paragraph that is still growing.
 enum Inline {
     private static var cache: [String: AttributedString] = [:]
+    /// Parsed strings carry the theme's colours, so a new theme starts a new cache.
+    private static var cacheTheme: AppTheme = .quire
 
     static func attributed(_ source: String, caret: Bool = false) -> AttributedString {
+        // Read through the store, so whoever shows this text redraws when the theme changes.
+        let theme = ThemeStore.shared.theme
+        if theme != cacheTheme {
+            cache.removeAll(keepingCapacity: true)
+            cacheTheme = theme
+        }
         var a: AttributedString
         if let hit = cache[source] {
             a = hit

@@ -27,6 +27,7 @@ struct MemoryView: View {
 
     var body: some View {
         List {
+            Group {
             Section { budgetCard }
                 .listRowBackground(Color.qRaised)
 
@@ -76,6 +77,8 @@ struct MemoryView: View {
                     Text("Chats aren't affected.")
                 }
             }
+            }
+            .listRowBackground(Color.qRaised)
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)

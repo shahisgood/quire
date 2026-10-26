@@ -5,30 +5,121 @@ import UIKit
 
 /// The Quire mark from the app icon: three lines of text and a streaming cursor. Used on empty
 /// states; the cursor breathes slowly unless Reduce Motion is on.
+///
+/// Where it's `playful`, three taps write it out again: the cursor backspaces the lines away, then
+/// types them back a letter at a time, ticking at the end of each line, and the mark gives a
+/// little stamp when it's done.
 struct QuireMark: View {
     var width: CGFloat = 64
     var breathing = false
+    var playful = false
+    var onWritten: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dim = false
+    @State private var written: CGFloat = 3
+    @State private var writing = false
+    @State private var stamp = false
+
+    var body: some View {
+        let mark = MarkDrawing(width: width, written: written, cursorOpacity: writing ? 1 : (dim ? 0.2 : 1))
+            .scaleEffect(stamp ? 1.1 : 1)
+            .accessibilityHidden(true)
+            .onAppear(perform: breathe)
+        if playful {
+            mark
+                .contentShape(.rect)
+                .onTapGesture(count: 3, perform: write)
+        } else {
+            mark
+        }
+    }
+
+    private func breathe() {
+        guard breathing, !reduceMotion else { return }
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { dim = false }
+        withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { dim = true }
+    }
+
+    private func write() {
+        guard !writing else { return }
+        writing = true
+        Haptics.tap()
+        if reduceMotion {
+            Haptics.success()
+            writing = false
+            onWritten()
+            breathe()
+            return
+        }
+        let erase = 0.4, pen = 2.0
+        withAnimation(.easeIn(duration: erase)) { written = 0 } completion: {
+            withAnimation(.linear(duration: pen)) { written = 3 } completion: {
+                Haptics.success()
+                withAnimation(Motion.bouncy) { stamp = true } completion: {
+                    withAnimation(Motion.bouncy) { stamp = false }
+                }
+                writing = false
+                breathe()
+                onWritten()
+            }
+        }
+        // A soft tick as each line is finished, like a carriage return.
+        for line in 0..<3 {
+            let at = erase + pen * (Double(line) + MarkDrawing.lineShare) / 3
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(at))
+                Haptics.soft()
+            }
+        }
+    }
+}
+
+/// The mark itself, drawn with as much of its three lines on the page as `written` says (0 to 3).
+/// Each line fills in steps, a letter at a time, with a beat at its end before the next begins;
+/// the cursor sits just after the ink of the line being written.
+private struct MarkDrawing: View, Animatable {
+    let width: CGFloat
+    var written: CGFloat
+    let cursorOpacity: Double
+
+    /// The part of each line's turn spent writing; the rest is the pause before the next.
+    static let lineShare: Double = 0.82
+
+    var animatableData: CGFloat {
+        get { written }
+        set { written = newValue }
+    }
 
     var body: some View {
         let h = width * 0.1
-        VStack(alignment: .leading, spacing: h * 1.4) {
-            Capsule().fill(Color.qInk).frame(width: width, height: h)
-            Capsule().fill(Color.qInk).frame(width: width * 0.8, height: h)
-            HStack(spacing: h * 0.67) {
-                Capsule().fill(Color.qInk).frame(width: width * 0.5, height: h)
-                RoundedRectangle(cornerRadius: h * 0.2, style: .continuous)
-                    .fill(Color.qAccent)
-                    .frame(width: h * 0.87, height: h * 1.53)
-                    .opacity(dim ? 0.2 : 1)
+        let lengths = [width, width * 0.8, width * 0.5]
+        let centers = [h * 0.5, h * 2.9, h * 5.565]
+        let caretW = h * 0.87, caretH = h * 1.53
+        let line = (0..<3).first { inked($0) < 1 } ?? 2
+        let ink = inked(line)
+        let caretX = lengths[line] * ink + (ink > 0 ? h * 0.67 : 0)
+        ZStack(alignment: .topLeading) {
+            ForEach(0..<3, id: \.self) { i in
+                Capsule()
+                    .fill(Color.qInk)
+                    .frame(width: lengths[i] * inked(i), height: h)
+                    .offset(y: centers[i] - h / 2)
             }
+            RoundedRectangle(cornerRadius: h * 0.2, style: .continuous)
+                .fill(Color.qAccent)
+                .frame(width: caretW, height: caretH)
+                .opacity(cursorOpacity)
+                .offset(x: caretX, y: centers[line] - caretH / 2)
         }
-        .accessibilityHidden(true)
-        .onAppear {
-            guard breathing, !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { dim = true }
-        }
+        .frame(width: width, height: h * 6.33, alignment: .topLeading)
+    }
+
+    /// How much of line `i` is on the page, in steps of a letter (seven to a line).
+    private func inked(_ i: Int) -> CGFloat {
+        let f = min(1, max(0, (written - CGFloat(i)) / CGFloat(Self.lineShare)))
+        return f >= 1 ? 1 : (f * 7).rounded(.down) / 7
     }
 }
 
@@ -203,47 +294,6 @@ struct EmptyState<Actions: View>: View {
     }
 }
 
-// MARK: - Toasts
-
-struct ToastOverlay: View {
-    let center: ToastCenter
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        VStack {
-            if let t = center.current {
-                HStack(spacing: 10) {
-                    if let s = t.symbol {
-                        Image(systemName: s).foregroundStyle(Color.qAccent)
-                    }
-                    Text(t.text)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(Color.qInk)
-                        .lineLimit(2)
-                    if let label = t.actionLabel {
-                        Button(label) { center.runAction() }
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color.qAccent)
-                            .buttonStyle(.plain)
-                            .padding(.leading, 4)
-                    }
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
-                .glassEffect(.regular, in: .capsule)
-                .padding(.top, 4)
-                .padding(.horizontal, 20)
-                .onTapGesture { center.dismiss() }
-                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
-                .id(t.id)
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity)
-        .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy, value: center.current)
-    }
-}
-
 // MARK: - Confirmations
 
 /// For irreversible actions: the PWA's typed confirmation ("type wipe to confirm").
@@ -404,12 +454,7 @@ struct OptionalNumberField: View {
                 if let r = range { value = min(max(v, r.lowerBound), r.upperBound) } else { value = v }
             }), format: .number)
             .keyboardType(.numbersAndPunctuation)
-            .multilineTextAlignment(.trailing)
-            .monospacedDigit()
-            .frame(width: 96)
-            .padding(.vertical, 6)
-            .padding(.horizontal, 8)
-            .card(radius: 8)
+            .modifier(ValuePill(width: 64))
     }
 }
 
@@ -426,12 +471,24 @@ struct OptionalIntField: View {
                 if let r = range { value = min(max(v, r.lowerBound), r.upperBound) } else { value = v }
             }), format: .number)
             .keyboardType(.numbersAndPunctuation)
-            .multilineTextAlignment(.trailing)
-            .monospacedDigit()
-            .frame(width: 110)
-            .padding(.vertical, 6)
-            .padding(.horizontal, 8)
-            .card(radius: 8)
+            .modifier(ValuePill(width: 92))
+    }
+}
+
+/// A number you can type, in a sunken pill: figures centred and tabular, the placeholder showing
+/// what applies when it's left empty.
+private struct ValuePill: ViewModifier {
+    let width: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .font(.subheadline.weight(.medium).monospacedDigit())
+            .foregroundStyle(Color.qInk)
+            .multilineTextAlignment(.center)
+            .frame(width: width)
+            .padding(.vertical, 7)
+            .padding(.horizontal, 10)
+            .background(Color.qSunken, in: .capsule)
     }
 }
 
@@ -466,7 +523,7 @@ struct TagField: View {
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .card(radius: 8)
+                            .background(Color.qSunken, in: .capsule)
                         }
                     }
                 }

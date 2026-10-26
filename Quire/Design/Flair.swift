@@ -172,36 +172,82 @@ extension View {
 
 // MARK: - Greeting
 
-/// The line that opens an empty chat. It follows the clock (and the weekend), and is picked from a
-/// small pool by the chat's id, so it stays put for that chat instead of changing on every redraw.
+/// The line that opens an empty chat. It follows the clock, the day of the week and a few days of
+/// the year, and is picked from the pool by the chat's id, so it stays put for that chat instead of
+/// changing on every redraw.
 nonisolated enum Greeting {
     static func line(at date: Date = Date(), seed: String, returning: Bool) -> String {
         let cal = Calendar.current
         let hour = cal.component(.hour, from: date)
         let weekday = cal.component(.weekday, from: date)   // 1 is Sunday, 7 Saturday
+        let month = cal.component(.month, from: date)
+        let day = cal.component(.day, from: date)
         var pool: [String]
         switch hour {
         case 0..<4:
-            pool = ["It's a late-night jam session.", "Burning the midnight oil?",
-                    "The quiet hours. Good for thinking.", "Still up? Let's make it count."]
+            pool = ["It's a late-night jam session.", "Burning the midnight oil?", "The quiet hours. Good for thinking.",
+                    "Still up? Let's make it count.", "The world's asleep. We're not.", "Small hours, big thoughts?",
+                    "Can't sleep, or won't?", "The night shift begins.", "Moonlight and a blinking cursor.",
+                    "Insomnia has its uses.", "Whispering hours. What's on your mind?", "Past midnight, and the page is blank."]
         case 4..<7:
-            pool = ["Up before the sun.", "An early start. Coffee first?", "The world's still quiet. Let's begin."]
+            pool = ["Up before the sun.", "An early start. Coffee first?", "The world's still quiet. Let's begin.",
+                    "First light, first thoughts.", "The early bird has questions.", "Before the inbox wakes up.",
+                    "A head start on the day.", "Still dark out. Bright idea?", "Dawn, and a fresh page."]
         case 7..<12:
-            pool = ["Good morning.", "Morning. What's on your mind?", "A fresh page for the morning."]
+            pool = ["Good morning.", "Morning. What's on your mind?", "A fresh page for the morning.",
+                    "Morning. Where shall we start?", "Rise and write.", "A clean slate for the day.",
+                    "Coffee in hand? Let's go.", "Morning thoughts welcome.", "The day's wide open.",
+                    "What's first on the list?", "Morning light, clear head."]
         case 12..<17:
-            pool = ["Good afternoon.", "Afternoon. Let's get into it.", "Midday thoughts welcome."]
+            pool = ["Good afternoon.", "Afternoon. Let's get into it.", "Midday thoughts welcome.",
+                    "Halfway through the day.", "Afternoon. What needs untangling?", "A second wind, perhaps?",
+                    "The post-lunch push.", "What's on the afternoon's desk?", "Plenty of day left.",
+                    "Afternoon light, clear thinking."]
         case 17..<21:
-            pool = ["Good evening.", "Evening. Winding down or gearing up?", "The day's nearly done. What's left?"]
+            pool = ["Good evening.", "Evening. Winding down or gearing up?", "The day's nearly done. What's left?",
+                    "Evening. Time to think it through.", "Golden hour, open page.", "Clocking off, or just starting?",
+                    "One more thing before tonight?", "The evening's yours.", "Dusk settles. Ideas don't.",
+                    "Supper's done? Let's begin."]
         default:
-            pool = ["Night owl hours.", "A late one tonight?", "Settling in for the night."]
+            pool = ["Night owl hours.", "A late one tonight?", "Settling in for the night.",
+                    "The house is quiet. Let's talk.", "Lamplight and loose ends.", "One last thought before bed?",
+                    "Night has its own clarity.", "Late, but not too late.", "Tea, a blanket, a question?",
+                    "Winding down with words."]
         }
-        if weekday == 7 { pool.append("Happy Saturday.") }
-        if weekday == 1 { pool.append("Sunday thoughts?") }
-        if returning { pool.append("Welcome back.") }
+        switch weekday {
+        case 1: pool += ["Sunday thoughts?", "A Sunday kind of question?"]
+        case 2: pool += ["Monday. Let's ease in.", "A new week, a fresh quire."]
+        case 3: pool += ["Tuesday. Momentum's building."]
+        case 4: pool += ["Midweek already."]
+        case 5: pool += ["Almost Friday."]
+        case 6: pool += ["Friday. The finish line's in sight.", "Friday feeling?"]
+        default: pool += ["Happy Saturday.", "A slow Saturday?"]
+        }
+        switch (month, day) {
+        case (1, 1): pool += ["Happy New Year.", "A new year, a blank page."]
+        case (2, 14): pool += ["Happy Valentine's Day."]
+        case (10, 31): pool += ["Happy Halloween. Spooky question?"]
+        case (12, 24), (12, 25), (12, 26): pool += ["Happy holidays.", "Season's greetings."]
+        case (12, 31): pool += ["The year's last page."]
+        default: break
+        }
+        if returning { pool += ["Welcome back.", "Good to see you again."] }
         var h: UInt64 = 5381
         for b in seed.utf8 { h = (h &* 33) &+ UInt64(b) }
         return pool[Int(h % UInt64(pool.count))]
     }
+
+    /// What the new-chat mark says once it's been written out again (three taps). The first time
+    /// you find it, it says so.
+    @MainActor static func egg() -> String {
+        found += 1
+        if found == 1 { return "You found me." }
+        return ["Freshly inked.", "Hand-lettered, just for you.", "Quire, at your service.", "Ahem. Where were we?",
+                "That tickles.", "Writing myself in.", "Fresh page, fresh ink.", "Again? Show-off.",
+                "Signed, sealed, typeset."].randomElement() ?? "Freshly inked."
+    }
+
+    @MainActor private static var found = 0
 }
 
 // MARK: - Layout
