@@ -19,10 +19,10 @@ struct Palette {
 extension AppTheme {
     var palette: Palette {
         switch self {
-        case .quire: Self.quire
-        case .velvet: Self.velvet
-        case .amethyst: Self.amethyst
-        case .pitch: Self.pitch
+        case .quire: Self.quirePalette
+        case .velvet: Self.velvetPalette
+        case .amethyst: Self.amethystPalette
+        case .pitch: Self.pitchPalette
         }
     }
 
@@ -47,7 +47,7 @@ extension AppTheme {
 
     /// Quire is a reading object: near-neutral paper and ink, with one periwinkle accent used
     /// sparingly for the things that are alive (the cursor, the send button, the selection).
-    private static let quire = Palette(
+    private static let quirePalette = Palette(
         base: Color(light: 0xF6F6F3, dark: 0x0E1013), raised: Color(light: 0xFFFFFF, dark: 0x171A1F),
         sunken: Color(light: 0xEDEDE8, dark: 0x0A0B0E),
         ink: Color(light: 0x1B1D21, dark: 0xE8E6E1), inkBody: Color(light: 0x34373D, dark: 0xC9C6BF),
@@ -60,7 +60,7 @@ extension AppTheme {
 
     /// Obsidian ink, velvet curfew and almond hearth. In the dark, almond is the live colour on a
     /// velvet wash; in the light, velvet on almond paper.
-    private static let velvet = Palette(
+    private static let velvetPalette = Palette(
         base: Color(light: 0xF7EEE5, dark: 0x151311), raised: Color(light: 0xFFFAF5, dark: 0x211A1B),
         sunken: Color(light: 0xEFE0D2, dark: 0x0E0C0B),
         ink: Color(light: 0x151311, dark: 0xF2E6DA), inkBody: Color(light: 0x3B302D, dark: 0xD8C8BA),
@@ -73,7 +73,7 @@ extension AppTheme {
 
     /// Nox noir, royal amethyst and steel mist. The amethyst is lifted in the dark so it reads as
     /// text as well as a fill.
-    private static let amethyst = Palette(
+    private static let amethystPalette = Palette(
         base: Color(light: 0xF4F4F6, dark: 0x141414), raised: Color(light: 0xFFFFFF, dark: 0x1E1D21),
         sunken: Color(light: 0xE7E6EB, dark: 0x0D0D0E),
         ink: Color(light: 0x141414, dark: 0xECEAF0), inkBody: Color(light: 0x2F2D35, dark: 0xCFCFCF),
@@ -86,7 +86,7 @@ extension AppTheme {
 
     /// Black and white and nothing else: true black in the dark, for OLED screens, where unlit
     /// pixels are off. The accent is the ink itself.
-    private static let pitch = Palette(
+    private static let pitchPalette = Palette(
         base: Color(light: 0xFFFFFF, dark: 0x000000), raised: Color(light: 0xF7F7F7, dark: 0x0F0F0F),
         sunken: Color(light: 0xEFEFEF, dark: 0x161616),
         ink: Color(light: 0x000000, dark: 0xFFFFFF), inkBody: Color(light: 0x1C1C1C, dark: 0xE8E8E8),
