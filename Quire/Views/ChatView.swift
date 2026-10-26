@@ -398,6 +398,8 @@ private struct EmptyChatView: View {
     /// What the mark says for a moment after it's been written out again.
     @State private var egg: String? = nil
     @State private var eggTask: Task<Void, Never>? = nil
+    /// Now and then, the mark's trick ends with a little heart drawn over it.
+    @State private var heart = false
 
     var body: some View {
         if app.apiKey == nil {
@@ -421,6 +423,13 @@ private struct EmptyChatView: View {
         VStack(spacing: 0) {
             if !compact {
                 QuireMark(width: 40, breathing: true, playful: true, onWritten: showEgg)
+                    // Sits just above the mark, outside the layout, so nothing moves for it.
+                    .overlay(alignment: .top) {
+                        if heart {
+                            AsciiHeart { heart = false }
+                                .alignmentGuide(.top) { $0[.bottom] + 16 }
+                        }
+                    }
                     .padding(.bottom, 22)
                     .entrance(shown)
             }
@@ -465,10 +474,13 @@ private struct EmptyChatView: View {
 
     /// The mark has just written itself out: the greeting says something about it, then goes back.
     private func showEgg() {
-        egg = Greeting.egg()
+        // One time in four, a heart as well.
+        let withHeart = !heart && Double.random(in: 0..<1) < 0.25
+        egg = Greeting.egg(withHeart: withHeart)
+        if withHeart { heart = true }
         eggTask?.cancel()
         eggTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(for: .seconds(withHeart ? 5 : 4))
             guard !Task.isCancelled else { return }
             withAnimation(Motion.standard) { egg = nil }
         }

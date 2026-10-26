@@ -238,8 +238,9 @@ nonisolated enum Greeting {
     }
 
     /// What the new-chat mark says once it's been written out again (three taps). The first time
-    /// you find it, it says so; keep at it and it notices.
-    @MainActor static func egg() -> String {
+    /// you find it, it says so; keep at it and it notices. When it's drawn you a heart, it says
+    /// something about that instead.
+    @MainActor static func egg(withHeart: Bool = false) -> String {
         found += 1
         switch found {
         case 1: return "You found me."
@@ -247,6 +248,10 @@ nonisolated enum Greeting {
         case 10: return "Writer's cramp, honestly."
         case 20: return "We should talk about this."
         default: break
+        }
+        if withHeart {
+            return ["Made you something.", "A little something for you.", "With love, Quire.", "From me, to you.",
+                    "Heart-shaped, hand-typed.", "You get a heart. Don't tell the others."].randomElement() ?? "Made you something."
         }
         return ["Freshly inked.", "Hand-lettered, just for you.", "Quire, at your service.", "Ahem. Where were we?",
                 "That tickles.", "Writing myself in.", "Fresh page, fresh ink.", "Again? Show-off.",
@@ -259,6 +264,125 @@ nonisolated enum Greeting {
     }
 
     @MainActor private static var found = 0
+}
+
+// MARK: - Heart
+
+/// A little heart in type, which the new-chat mark draws you now and then after its trick. It grows
+/// up from the point, both sides at once, and closes over the lobes into the dip; beats once,
+/// lub-dub, with a soft tap for each; then lifts away and is gone. It takes no space and no touches,
+/// so it can't get in the way of anything.
+struct AsciiHeart: View {
+    var onFinished: () -> Void = {}
+    @State private var drawn: Double = 0
+    @State private var beat: CGFloat = 1
+    @State private var gone = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HeartType(drawn: drawn)
+            .scaleEffect(beat)
+            .opacity(gone ? 0 : 1)
+            .offset(y: gone && !reduceMotion ? -16 : 0)
+            .blur(radius: gone && !reduceMotion ? 3 : 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .task { await play() }
+    }
+
+    private func play() async {
+        withAnimation(.easeInOut(duration: 1.5)) { drawn = 1 }
+        guard await pause(1.6) else { return }
+        if !reduceMotion {
+            // Lub…
+            Haptics.soft()
+            withAnimation(.spring(response: 0.16, dampingFraction: 0.5)) { beat = 1.14 }
+            guard await pause(0.14) else { return }
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) { beat = 1 }
+            guard await pause(0.12) else { return }
+            // …dub.
+            Haptics.soft()
+            withAnimation(.spring(response: 0.16, dampingFraction: 0.5)) { beat = 1.08 }
+            guard await pause(0.14) else { return }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { beat = 1 }
+        }
+        guard await pause(0.8) else { return }
+        withAnimation(.easeIn(duration: 0.6)) { gone = true }
+        guard await pause(0.65) else { return }
+        onFinished()
+    }
+
+    /// Waits, and says whether to carry on (not if the heart has left the screen meanwhile).
+    private func pause(_ seconds: Double) async -> Bool {
+        try? await Task.sleep(for: .seconds(seconds))
+        return !Task.isCancelled
+    }
+}
+
+/// The heart's characters, each fading in at its turn as `drawn` runs from 0 to 1. A character's
+/// turn is its angle around the heart's middle, measured from the point: so the point comes first,
+/// the two sides rise together, and the lobes close in from the outside to meet at the dip.
+private struct HeartType: View, Animatable {
+    var drawn: Double
+
+    var animatableData: Double {
+        get { drawn }
+        set { drawn = newValue }
+    }
+
+    static let rows = [
+        "  .:::.   .:::.  ",
+        " :::::::.::::::: ",
+        " ::::::::::::::: ",
+        " ':::::::::::::' ",
+        "   ':::::::::'   ",
+        "     ':::::'     ",
+        "       ':'       ",
+    ]
+
+    /// How long each character takes to fade in, as a share of the whole drawing.
+    static let window = 0.12
+
+    static let turns: [[Double]] = {
+        let rows = HeartType.rows
+        let cx = Double(rows[0].count - 1) / 2
+        let cy = 2.6
+        var angles = rows.map { Array(repeating: 0.0, count: $0.count) }
+        var widest = 0.0
+        for (r, row) in rows.enumerated() {
+            for (c, ch) in row.enumerated() where ch != " " {
+                // Rows are about twice as tall as a character is wide.
+                let a = atan2(abs(Double(c) - cx), (Double(r) - cy) * 2)
+                angles[r][c] = a
+                widest = max(widest, a)
+            }
+        }
+        let window = HeartType.window
+        return angles.map { $0.map { $0 / max(widest, 0.001) * (1 - window) } }
+    }()
+
+    var body: some View {
+        VStack(spacing: -1) {
+            ForEach(Self.rows.indices, id: \.self) { r in
+                Text(line(r))
+            }
+        }
+        .font(.system(size: 11, weight: .bold, design: .monospaced))
+        .fixedSize()
+    }
+
+    private func line(_ r: Int) -> AttributedString {
+        var out = AttributedString()
+        for (c, ch) in Self.rows[r].enumerated() {
+            var piece = AttributedString(String(ch))
+            if ch != " " {
+                let shown = min(1, max(0, (drawn - Self.turns[r][c]) / Self.window))
+                piece[AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self] = Color.qAccent.opacity(shown)
+            }
+            out += piece
+        }
+        return out
+    }
 }
 
 // MARK: - Layout
