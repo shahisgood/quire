@@ -238,13 +238,24 @@ nonisolated enum Greeting {
     }
 
     /// What the new-chat mark says once it's been written out again (three taps). The first time
-    /// you find it, it says so.
+    /// you find it, it says so; keep at it and it notices.
     @MainActor static func egg() -> String {
         found += 1
-        if found == 1 { return "You found me." }
+        switch found {
+        case 1: return "You found me."
+        case 5: return "Okay, you really like this."
+        case 10: return "Writer's cramp, honestly."
+        case 20: return "We should talk about this."
+        default: break
+        }
         return ["Freshly inked.", "Hand-lettered, just for you.", "Quire, at your service.", "Ahem. Where were we?",
                 "That tickles.", "Writing myself in.", "Fresh page, fresh ink.", "Again? Show-off.",
-                "Signed, sealed, typeset."].randomElement() ?? "Freshly inked."
+                "Signed, sealed, typeset.", "Curiosity got the better of you?", "I do this when no one's looking.",
+                "Practising my penmanship.", "Three taps. Bold move.", "Ink everywhere. Worth it.",
+                "Shh, it's our little secret.", "Encore? Fine, one more.", "Look, no hands.",
+                "Typing… typing… done!", "Every quire starts with a line.", "That was my best one yet.",
+                "Careful, I might start a novel.", "Do you poke all your apps like this?", "Calligraphy, but make it pixels.",
+                "Ta-da.", "Still got it."].randomElement() ?? "Freshly inked."
     }
 
     @MainActor private static var found = 0

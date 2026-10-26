@@ -881,68 +881,88 @@ private struct MemorySettingsView: View {
 private struct AppearanceSettings: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // What the controls and the preview show. They move the moment you choose; the app as a whole
+    // follows a beat later, under a cross-fade (see `AppearanceChange`).
+    @State private var theme: AppTheme = .quire
+    @State private var mode: ThemeChoice = .dark
+    @State private var face: Typeface = .newYork
+    @State private var replyFace: ReadingFace = .serif
+    @State private var size: ReadingSize = .standard
+    @State private var density = "comfortable"
+    @State private var strength = UISettings.defaultTextStrength
+    @State private var loaded = false
+    @State private var strengthCommit: Task<Void, Never>? = nil
+
+    private var replyDesign: Font.Design {
+        replyFace == .serif ? .serif : (face == .sfRounded ? .rounded : .default)
+    }
 
     var body: some View {
         @Bindable var app = app
-        let ui = app.settings.ui
         SettingsPage(title: "Appearance") {
             labelled("Preview") {
-                ReadingPreview(replyDesign: ui.replyDesign, replyFace: ui.replyFaceName, typeface: ui.typeface,
-                               size: ReadingSize(scale: ui.fontScale), compact: ui.density == "compact",
-                               ink: ui.textStrength)
+                ReadingPreview(replyDesign: replyDesign, replyFace: replyFace == .serif ? "New York" : face.sansName,
+                               typeface: face, size: size, compact: density == "compact", ink: strength)
+                    .environment(\.displayDesign, face.design)
                     .padding(18)
                     .card(radius: 22)
+                    .animation(reduceMotion ? nil : Motion.standard, value: size)
+                    .animation(reduceMotion ? nil : Motion.standard, value: density)
             }
 
             labelled("Theme") {
                 VStack(alignment: .leading, spacing: 12) {
-                    ThemePicker(selection: ui.colorTheme) { theme in
-                        // Re-colour inside the animation, so the whole app eases into the new palette.
-                        withAnimation(reduceMotion ? nil : Motion.standard) {
-                            ThemeStore.shared.use(theme)
-                            app.settings.ui.colorTheme = theme
+                    ThemePicker(selection: theme) { picked in
+                        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : Motion.select) { theme = picked }
+                        AppearanceChange.apply {
+                            ThemeStore.shared.use(picked)
+                            app.settings.ui.colorTheme = picked
                         }
                     }
                     ChoiceStrip(options: ThemeChoice.allCases.map { (value: $0, label: $0.label) },
-                                selection: $app.settings.ui.theme, label: "Light or dark")
+                                selection: deferred($mode) { app.settings.ui.theme = $0 }, label: "Light or dark")
                 }
             }
 
             VStack(alignment: .leading, spacing: 9) {
                 SectionLabel(text: "Typeface").padding(.horizontal, 4)
-                TypefacePicker(selection: ui.typeface) { face in
+                TypefacePicker(selection: face) { picked in
                     // Replies follow the typeface; they can be set apart again below.
-                    app.settings.ui.typeface = face
-                    app.settings.ui.readingFace = face == .newYork ? .serif : .sans
+                    face = picked
+                    replyFace = picked == .newYork ? .serif : .sans
+                    AppearanceChange.apply {
+                        app.settings.ui.typeface = picked
+                        app.settings.ui.readingFace = picked == .newYork ? .serif : .sans
+                    }
                 }
-                Text(ui.typeface.blurb)
+                Text(face.blurb)
                     .font(.footnote)
                     .foregroundStyle(Color.qInk2)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 4)
                     .contentTransition(.opacity)
+                    .animation(Motion.quick, value: face)
             }
 
             SettingsGroup(label: "Reading",
                           footer: Text("Replies follow the typeface unless you set them apart: SF Pro titles over New York replies reads like a magazine. Reply size is relative to the system text size, so it follows Dynamic Type.")) {
                 SettingRow("Replies in") { EmptyView() } below: {
-                    ChoiceStrip(options: [(value: ReadingFace.serif, label: "New York"), (value: ReadingFace.sans, label: ui.typeface.sansName)],
-                                selection: $app.settings.ui.readingFace, label: "Replies in")
+                    ChoiceStrip(options: [(value: ReadingFace.serif, label: "New York"), (value: ReadingFace.sans, label: face.sansName)],
+                                selection: deferred($replyFace) { app.settings.ui.readingFace = $0 }, label: "Replies in")
                 }
-                SettingRow("Reply size", detail: ReadingSize(scale: ui.fontScale).label) { EmptyView() } below: {
-                    SizeStrip(size: Binding(get: { ReadingSize(scale: app.settings.ui.fontScale) },
-                                            set: { app.settings.ui.fontScale = $0.scale }))
+                SettingRow("Reply size", detail: size.label) { EmptyView() } below: {
+                    SizeStrip(size: deferred($size) { app.settings.ui.fontScale = $0.scale })
                 }
                 SettingRow("Density") { EmptyView() } below: {
                     ChoiceStrip(options: [(value: "comfortable", label: "Comfortable"), (value: "compact", label: "Compact")],
-                                selection: $app.settings.ui.density, label: "Density")
+                                selection: deferred($density) { app.settings.ui.density = $0 }, label: "Density")
                 }
-                SettingRow("Text strength", detail: "\(Int((ui.textStrength * 100).rounded()))%",
+                SettingRow("Text strength", detail: "\(Int((strength * 100).rounded()))%",
                            help: "How strongly a reply's running text is inked. Bold always stays at full strength, so it stands out either way.") {
-                    if abs(ui.textStrength - UISettings.defaultTextStrength) >= 0.005 {
+                    if abs(strength - UISettings.defaultTextStrength) >= 0.005 {
                         Button("Default") {
                             Haptics.selection()
-                            withAnimation(Motion.standard) { app.settings.ui.textStrength = UISettings.defaultTextStrength }
+                            withAnimation(Motion.standard) { strength = UISettings.defaultTextStrength }
                         }
                         .font(.footnote.weight(.semibold))
                         .tint(Color.qAccent)
@@ -950,7 +970,7 @@ private struct AppearanceSettings: View {
                         .transition(.opacity)
                     }
                 } below: {
-                    ParamSlider(value: $app.settings.ui.textStrength, range: 0.6...1, step: 0.01,
+                    ParamSlider(value: $strength, range: 0.6...1, step: 0.01,
                                 mark: UISettings.defaultTextStrength, ends: ("Soft", "Strong"), label: "Text strength",
                                 format: { "\(Int(($0 * 100).rounded())) percent" })
                 }
@@ -964,7 +984,36 @@ private struct AppearanceSettings: View {
                 toggleRow("Return sends on a hardware keyboard", isOn: $app.settings.ui.sendOnEnter)
             }
         }
-        .animation(Motion.standard, value: app.settings.ui)
+        .onAppear {
+            guard !loaded else { return }
+            let ui = app.settings.ui
+            theme = ui.colorTheme
+            mode = ui.theme
+            face = ui.typeface
+            replyFace = ui.readingFace
+            size = ReadingSize(scale: ui.fontScale)
+            density = ui.density
+            strength = ui.textStrength
+            loaded = true
+        }
+        // Dragging only moves the preview; the replies everywhere else catch up once you let go.
+        .onChange(of: strength) { _, value in
+            strengthCommit?.cancel()
+            strengthCommit = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+                app.settings.ui.textStrength = value
+            }
+        }
+    }
+
+    /// The control and the preview take the value straight away; the app takes it a beat later,
+    /// under a cross-fade.
+    private func deferred<Value>(_ local: Binding<Value>, apply: @escaping (Value) -> Void) -> Binding<Value> {
+        Binding(get: { local.wrappedValue }, set: { value in
+            local.wrappedValue = value
+            AppearanceChange.apply { apply(value) }
+        })
     }
 
     private func labelled<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {

@@ -801,19 +801,23 @@ final class ChatSession {
         return (user, reply)
     }
 
-    /// Whether the chat still has a name it was given automatically (so a smart title may replace it).
+    /// Whether the chat still has a name it was given automatically, and the titles model hasn't
+    /// had its say yet (so a smart title may replace it). A chat you renamed, or one already named
+    /// by the model, is never asked about again.
     private var hasPlaceholderTitle: Bool {
-        guard chat.titleAuto != false else { return false }
+        guard chat.titleAuto != false, chat.titled != true else { return false }
         if chat.title == "New chat" { return true }
         guard let opening = openingExchange else { return false }
         return chat.title == Self.openingTitle(opening.user)
     }
 
     /// Called when a chat is opened: one that never got its smart title (the app was in the background,
-    /// the network dropped, the first reply failed) gets another try.
+    /// the network dropped, the first reply failed) gets one more try, once per launch at most, so
+    /// a chat that can't be named doesn't spend a call every time you look at it.
     func ensureSmartTitle() {
-        guard titleMode == .smart, !generating, hasPlaceholderTitle,
+        guard titleMode == .smart, !generating, hasPlaceholderTitle, !app.titleRetried.contains(chat.id),
               let opening = openingExchange, !opening.reply.isEmpty else { return }
+        app.titleRetried.insert(chat.id)
         Task { [weak self] in await self?.smartTitle() }
     }
 
@@ -857,7 +861,9 @@ final class ChatSession {
                     guard let title = Self.cleanTitle(r.content) else { break }
                     // The chat may have been renamed (or deleted) while we waited.
                     guard !deleted, hasPlaceholderTitle else { return }
+                    // Named now, even if the model's answer is the opening line itself.
                     chat.title = title
+                    chat.titled = true
                     saveChat()
                     return
                 } catch {

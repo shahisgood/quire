@@ -124,7 +124,7 @@ struct ParamsEditor: View {
                 let on = p.matches(display)
                 Button {
                     Haptics.selection()
-                    withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy) { p.apply(to: &target) }
+                    withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.select) { p.apply(to: &target) }
                 } label: {
                     Text(p.name)
                         .font(.subheadline.weight(on ? .semibold : .medium))
@@ -252,7 +252,7 @@ struct ParamsEditor: View {
                         ChoiceStrip(options: style.efforts.map { (value: $0, label: shortLabel($0)) },
                                     selection: Binding(get: { reasoning.effort ?? .medium }, set: { e in setReasoning { $0.effort = e } }),
                                     label: "Effort")
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .transition(.opacity.combined(with: .offset(y: -6)))
                     }
                     if reasoning.mode == .budget {
                         HStack {
@@ -267,10 +267,9 @@ struct ParamsEditor: View {
                                 .font(.footnote)
                                 .foregroundStyle(Color.qInk2)
                         }
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(.opacity.combined(with: .offset(y: -6)))
                     }
                 }
-                .animation(reduceMotion ? nil : Motion.bouncy, value: reasoning.mode)
             }
             SettingRow("Hide the trace", help: "Think, but don't return the reasoning. Reasoning tokens are still billed.") {
                 Toggle("Hide the trace", isOn: Binding(get: { reasoning.exclude }, set: { v in setReasoning { $0.exclude = v } }))
@@ -312,7 +311,7 @@ struct ParamsEditor: View {
         SettingsGroup(label: "Routing") {
             Button {
                 Haptics.selection()
-                withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy) { showRouting.toggle() }
+                withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.reveal) { showRouting.toggle() }
             } label: {
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {

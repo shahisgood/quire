@@ -55,6 +55,12 @@ final class AppModel {
     var settingsOpen = false
     var settingsPath: [Route] = []
 
+    /// Chats given their one catch-up try at a smart title this launch.
+    @ObservationIgnored var titleRetried: Set<String> = []
+    /// Changes each time the app comes back from the background, so new chats share a greeting
+    /// until then (or until the hour turns) instead of getting a fresh one every time.
+    @ObservationIgnored private(set) var greetingSeed = UUID().uuidString
+
     private static let staleMs: Double = 6 * 60 * 60 * 1000
 
     init() {
@@ -542,6 +548,7 @@ final class AppModel {
     // MARK: Lifecycle
 
     func didEnterBackground() {
+        greetingSeed = UUID().uuidString
         for s in sessions.values { s.flushDraft() }
         persistSettings()
         let store = self.store

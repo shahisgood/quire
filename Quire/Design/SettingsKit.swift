@@ -139,21 +139,24 @@ struct SettingRow<Control: View, Below: View>: View {
                     .padding(.vertical, 10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.qSunken, in: .rect(cornerRadius: 12, style: .continuous))
-                    .transition(reduceMotion ? .opacity
-                                : .asymmetric(insertion: .opacity.combined(with: .offset(y: -6)).combined(with: .scale(scale: 0.98, anchor: .top)),
-                                              removal: .opacity))
+                    // Fades in a beat behind the space opening for it, and out ahead of it closing.
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .offset(y: -3)).animation(reduceMotion ? .easeOut(duration: 0.2) : .smooth(duration: 0.26).delay(0.06)),
+                        removal: .opacity.animation(.easeOut(duration: 0.12))))
             }
         }
         .padding(.vertical, 13)
-        .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy, value: open)
         .animation(Motion.quick, value: overridden)
     }
 
+    /// Opens or closes the explanation inside one transaction, so the row, the rows under it and
+    /// the card around them all move together.
     private var infoButton: some View {
         Button {
-            open.toggle()
+            withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : Motion.reveal) { open.toggle() }
         } label: {
-            Image(systemName: open ? "info.circle.fill" : "info.circle")
+            Image(systemName: "info.circle")
+                .symbolVariant(open ? .fill : .none)
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(open ? Color.qAccent : Color.qInk2)
                 .contentTransition(.symbolEffect(.replace))
@@ -436,7 +439,7 @@ struct ChoiceStrip<Value: Hashable>: View {
                 Button {
                     guard !on else { return }
                     Haptics.selection()
-                    withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy) { selection = option.value }
+                    withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.select) { selection = option.value }
                 } label: {
                     Text(option.label)
                         .font(.subheadline.weight(on ? .semibold : .medium))

@@ -6,9 +6,10 @@ import UIKit
 /// The Quire mark from the app icon: three lines of text and a streaming cursor. Used on empty
 /// states; the cursor breathes slowly unless Reduce Motion is on.
 ///
-/// Where it's `playful`, three taps write it out again: the cursor backspaces the lines away, then
-/// types them back a letter at a time, ticking at the end of each line, and the mark gives a
-/// little stamp when it's done.
+/// Where it's `playful`, three taps write it out again. The cursor narrows into a text caret, backs
+/// over the three lines, then types them back, gliding with the ink, blinking once at the end of each
+/// line as it drops to the next, with a soft tick for each. When the last line is down, the caret
+/// swells back into the block and the mark gives a little stamp.
 struct QuireMark: View {
     var width: CGFloat = 64
     var breathing = false
@@ -17,12 +18,15 @@ struct QuireMark: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dim = false
     @State private var written: CGFloat = 3
+    /// 0 is the block cursor of the icon, 1 a thin text caret.
+    @State private var caret: CGFloat = 0
     @State private var writing = false
     @State private var stamp = false
 
     var body: some View {
-        let mark = MarkDrawing(width: width, written: written, cursorOpacity: writing ? 1 : (dim ? 0.2 : 1))
-            .scaleEffect(stamp ? 1.1 : 1)
+        let mark = MarkDrawing(width: width, written: written, caret: caret,
+                               cursorOpacity: writing ? 1 : (dim ? 0.2 : 1))
+            .scaleEffect(stamp ? 1.08 : 1)
             .accessibilityHidden(true)
             .onAppear(perform: breathe)
         if playful {
@@ -53,11 +57,15 @@ struct QuireMark: View {
             breathe()
             return
         }
-        let erase = 0.4, pen = 2.0
-        withAnimation(.easeIn(duration: erase)) { written = 0 } completion: {
+        let narrow = 0.18, erase = 0.5, pen = 2.4
+        withAnimation(.easeOut(duration: narrow)) { caret = 1 }
+        withAnimation(.easeInOut(duration: erase).delay(narrow)) { written = 0 } completion: {
             withAnimation(.linear(duration: pen)) { written = 3 } completion: {
                 Haptics.success()
-                withAnimation(Motion.bouncy) { stamp = true } completion: {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.62)) {
+                    caret = 0
+                    stamp = true
+                } completion: {
                     withAnimation(Motion.bouncy) { stamp = false }
                 }
                 writing = false
@@ -67,7 +75,7 @@ struct QuireMark: View {
         }
         // A soft tick as each line is finished, like a carriage return.
         for line in 0..<3 {
-            let at = erase + pen * (Double(line) + MarkDrawing.lineShare) / 3
+            let at = narrow + erase + pen * (Double(line) + MarkDrawing.lineShare) / 3
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(at))
                 Haptics.soft()
@@ -77,29 +85,37 @@ struct QuireMark: View {
 }
 
 /// The mark itself, drawn with as much of its three lines on the page as `written` says (0 to 3).
-/// Each line fills in steps, a letter at a time, with a beat at its end before the next begins;
-/// the cursor sits just after the ink of the line being written.
+/// Each line runs out smoothly, easing in and out like a hand finding its pace, then rests a beat
+/// before the next begins; the cursor rides just after the ink of the line being written, and
+/// blinks once in each rest.
 private struct MarkDrawing: View, Animatable {
     let width: CGFloat
     var written: CGFloat
+    var caret: CGFloat
     let cursorOpacity: Double
 
     /// The part of each line's turn spent writing; the rest is the pause before the next.
-    static let lineShare: Double = 0.82
+    static let lineShare: Double = 0.8
 
-    var animatableData: CGFloat {
-        get { written }
-        set { written = newValue }
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(written, caret) }
+        set {
+            written = newValue.first
+            caret = newValue.second
+        }
     }
 
     var body: some View {
         let h = width * 0.1
         let lengths = [width, width * 0.8, width * 0.5]
         let centers = [h * 0.5, h * 2.9, h * 5.565]
-        let caretW = h * 0.87, caretH = h * 1.53
+        // The block of the icon, or a slim caret a little taller than the text.
+        let caretW = lerp(h * 0.87, h * 0.3, caret)
+        let caretH = lerp(h * 1.53, h * 1.75, caret)
+        let gap = lerp(h * 0.67, h * 0.4, caret)
         let line = (0..<3).first { inked($0) < 1 } ?? 2
         let ink = inked(line)
-        let caretX = lengths[line] * ink + (ink > 0 ? h * 0.67 : 0)
+        let caretX = lengths[line] * ink + (ink > 0 ? gap : 0)
         ZStack(alignment: .topLeading) {
             ForEach(0..<3, id: \.self) { i in
                 Capsule()
@@ -107,20 +123,30 @@ private struct MarkDrawing: View, Animatable {
                     .frame(width: lengths[i] * inked(i), height: h)
                     .offset(y: centers[i] - h / 2)
             }
-            RoundedRectangle(cornerRadius: h * 0.2, style: .continuous)
+            RoundedRectangle(cornerRadius: min(caretW, h) * 0.3, style: .continuous)
                 .fill(Color.qAccent)
                 .frame(width: caretW, height: caretH)
-                .opacity(cursorOpacity)
+                .opacity(cursorOpacity * blink)
                 .offset(x: caretX, y: centers[line] - caretH / 2)
         }
         .frame(width: width, height: h * 6.33, alignment: .topLeading)
     }
 
-    /// How much of line `i` is on the page, in steps of a letter (seven to a line).
+    /// How much of line `i` is on the page, eased so each line starts and finishes gently.
     private func inked(_ i: Int) -> CGFloat {
         let f = min(1, max(0, (written - CGFloat(i)) / CGFloat(Self.lineShare)))
-        return f >= 1 ? 1 : (f * 7).rounded(.down) / 7
+        return f * f * (3 - 2 * f)
     }
+
+    /// The caret dips once in the rest between lines, and only while it's a caret.
+    private var blink: Double {
+        let phase = Double(written - written.rounded(.down))
+        guard caret > 0.5, written < 3, phase > Self.lineShare else { return 1 }
+        let t = (phase - Self.lineShare) / (1 - Self.lineShare)
+        return 1 - 0.8 * sin(.pi * t)
+    }
+
+    private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a + (b - a) * t }
 }
 
 // MARK: - Small pieces

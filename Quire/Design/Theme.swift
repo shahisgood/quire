@@ -98,6 +98,38 @@ extension AppTheme {
         swatch: [Color(hex: 0x000000), Color(hex: 0x474747), Color(hex: 0xFFFFFF)])
 }
 
+/// How an app-wide look change (theme, light or dark, typeface, reply size) lands without a hitch.
+/// Re-colouring or re-setting every screen at once is too much work for one frame, and animating
+/// it in SwiftUI redraws all of it many times over. So the control that asked first finishes its
+/// own little motion, then the window cross-fades from a snapshot of the old look to the new one.
+/// That fade runs on the render server at the display's full rate, however heavy the change.
+enum AppearanceChange {
+    static func apply(after delay: Double = 0.26, _ change: @escaping () -> Void) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let window = appWindow else {
+                change()
+                return
+            }
+            UIView.transition(with: window, duration: 0.34,
+                              options: [.transitionCrossDissolve, .allowUserInteraction, .beginFromCurrentState]) {
+                var still = Transaction()
+                still.disablesAnimations = true
+                withTransaction(still) { change() }
+            }
+        }
+    }
+
+    /// The app's own window (not the one toasts float in).
+    private static var appWindow: UIWindow? {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .filter { !($0 is ToastWindow) }
+        return windows.first(where: \.isKeyWindow) ?? windows.first
+    }
+}
+
 /// The theme in use. Set from settings at launch and whenever it changes.
 @Observable
 final class ThemeStore {
@@ -363,6 +395,11 @@ enum Motion {
     static let drawerOut = Animation.smooth(duration: 0.3)
     /// First arrival of a screen's content (the empty chat). Rare, so it can take its time.
     static let entrance = Animation.smooth(duration: 0.55)
+    /// Something opening in place (an explanation, a group of settings): no bounce, so the rows
+    /// around it glide rather than wobble.
+    static let reveal = Animation.smooth(duration: 0.34)
+    /// A selection sliding to its new place, with a touch of life at the end.
+    static let select = Animation.spring(response: 0.34, dampingFraction: 0.86)
 }
 
 extension View {

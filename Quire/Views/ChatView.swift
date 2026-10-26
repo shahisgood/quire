@@ -458,7 +458,9 @@ private struct EmptyChatView: View {
     private var greeting: String {
         if let egg { return egg }
         guard session.chat.memoryEnabled else { return "Off the record." }
-        return Greeting.line(seed: session.chat.id, returning: app.chats.contains { $0.id != session.chat.id })
+        // Shared by every new chat until the app comes back from the background or the hour turns.
+        let hour = Calendar.current.component(.hour, from: Date())
+        return Greeting.line(seed: "\(app.greetingSeed)-\(hour)", returning: app.chats.contains { $0.id != session.chat.id })
     }
 
     /// The mark has just written itself out: the greeting says something about it, then goes back.

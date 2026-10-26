@@ -46,6 +46,9 @@ nonisolated struct Chat: Codable, Identifiable, Hashable, Sendable {
     var titleAuto: Bool?
     /// A reply finished while the chat wasn't on screen. Cleared on opening it.
     var unread: Bool?
+    /// The titles model has named this chat (or answered and had nothing better than its opening
+    /// line), so it's never asked again.
+    var titled: Bool?
 
     init(id: String = newID(), modelId: String, memoryEnabled: Bool) {
         let now = nowMs()
@@ -85,6 +88,7 @@ nonisolated struct Chat: Codable, Identifiable, Hashable, Sendable {
         lastPreview = c.lenient(.lastPreview, nil)
         titleAuto = c.lenient(.titleAuto, nil)
         unread = c.lenient(.unread, nil)
+        titled = c.lenient(.titled, nil)
     }
 }
 
