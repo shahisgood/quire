@@ -173,8 +173,9 @@ extension View {
 // MARK: - Greeting
 
 /// The line that opens an empty chat. It follows the clock, the day of the week and a few days of
-/// the year, and is picked from the pool by the chat's id, so it stays put for that chat instead of
-/// changing on every redraw.
+/// the year, and is picked from the pool by a seed, so it stays put instead of changing on every
+/// redraw. Every line, the mark's included, sits on one line at the greeting's size even on the
+/// narrowest iPhone, so keep new ones to about 28 characters.
 nonisolated enum Greeting {
     static func line(at date: Date = Date(), seed: String, returning: Bool) -> String {
         let cal = Calendar.current
@@ -185,48 +186,48 @@ nonisolated enum Greeting {
         var pool: [String]
         switch hour {
         case 0..<4:
-            pool = ["It's a late-night jam session.", "Burning the midnight oil?", "The quiet hours. Good for thinking.",
-                    "Still up? Let's make it count.", "The world's asleep. We're not.", "Small hours, big thoughts?",
-                    "Can't sleep, or won't?", "The night shift begins.", "Moonlight and a blinking cursor.",
-                    "Insomnia has its uses.", "Whispering hours. What's on your mind?", "Past midnight, and the page is blank."]
+            pool = ["It's a late-night jam session.", "Burning the midnight oil?", "Quiet hours, good thinking.",
+                    "Still up? Let's make it count.", "The world's asleep. Not us.", "Small hours, big thoughts?",
+                    "Can't sleep, or won't?", "The night shift begins.", "Moonlight, blinking cursor.",
+                    "Insomnia has its uses.", "The whispering hours.", "Midnight, and a blank page."]
         case 4..<7:
-            pool = ["Up before the sun.", "An early start. Coffee first?", "The world's still quiet. Let's begin.",
-                    "First light, first thoughts.", "The early bird has questions.", "Before the inbox wakes up.",
+            pool = ["Up before the sun.", "An early start. Coffee first?", "The world's still quiet.",
+                    "First light, first thoughts.", "The early bird asks first.", "Before the inbox wakes up.",
                     "A head start on the day.", "Still dark out. Bright idea?", "Dawn, and a fresh page."]
         case 7..<12:
-            pool = ["Good morning.", "Morning. What's on your mind?", "A fresh page for the morning.",
-                    "Morning. Where shall we start?", "Rise and write.", "A clean slate for the day.",
+            pool = ["Good morning.", "What's on your mind?", "Morning. A fresh page.",
+                    "Morning. Where to start?", "Rise and write.", "A clean slate for the day.",
                     "Coffee in hand? Let's go.", "Morning thoughts welcome.", "The day's wide open.",
                     "What's first on the list?", "Morning light, clear head."]
         case 12..<17:
             pool = ["Good afternoon.", "Afternoon. Let's get into it.", "Midday thoughts welcome.",
-                    "Halfway through the day.", "Afternoon. What needs untangling?", "A second wind, perhaps?",
-                    "The post-lunch push.", "What's on the afternoon's desk?", "Plenty of day left.",
-                    "Afternoon light, clear thinking."]
+                    "Halfway through the day.", "What needs untangling?", "A second wind, perhaps?",
+                    "The post-lunch push.", "What's on your desk?", "Plenty of day left.",
+                    "Afternoon light, clear mind."]
         case 17..<21:
-            pool = ["Good evening.", "Evening. Winding down or gearing up?", "The day's nearly done. What's left?",
-                    "Evening. Time to think it through.", "Golden hour, open page.", "Clocking off, or just starting?",
-                    "One more thing before tonight?", "The evening's yours.", "Dusk settles. Ideas don't.",
+            pool = ["Good evening.", "Unwinding, or gearing up?", "Nearly done. What's left?",
+                    "Time to think it through.", "Golden hour, open page.", "Clocking off, or on?",
+                    "One more thing, then rest?", "The evening's yours.", "Dusk settles. Ideas don't.",
                     "Supper's done? Let's begin."]
         default:
             pool = ["Night owl hours.", "A late one tonight?", "Settling in for the night.",
-                    "The house is quiet. Let's talk.", "Lamplight and loose ends.", "One last thought before bed?",
+                    "Quiet house. Let's talk.", "Lamplight and loose ends.", "One last thought tonight?",
                     "Night has its own clarity.", "Late, but not too late.", "Tea, a blanket, a question?",
                     "Winding down with words."]
         }
         switch weekday {
         case 1: pool += ["Sunday thoughts?", "A Sunday kind of question?"]
         case 2: pool += ["Monday. Let's ease in.", "A new week, a fresh quire."]
-        case 3: pool += ["Tuesday. Momentum's building."]
+        case 3: pool += ["Tuesday. Picking up speed."]
         case 4: pool += ["Midweek already."]
         case 5: pool += ["Almost Friday."]
-        case 6: pool += ["Friday. The finish line's in sight.", "Friday feeling?"]
+        case 6: pool += ["Friday. Home stretch.", "Friday feeling?"]
         default: pool += ["Happy Saturday.", "A slow Saturday?"]
         }
         switch (month, day) {
         case (1, 1): pool += ["Happy New Year.", "A new year, a blank page."]
         case (2, 14): pool += ["Happy Valentine's Day."]
-        case (10, 31): pool += ["Happy Halloween. Spooky question?"]
+        case (10, 31): pool += ["Happy Halloween.", "Got a spooky question?"]
         case (12, 24), (12, 25), (12, 26): pool += ["Happy holidays.", "Season's greetings."]
         case (12, 31): pool += ["The year's last page."]
         default: break
@@ -251,15 +252,15 @@ nonisolated enum Greeting {
         }
         if withHeart {
             return ["Made you something.", "A little something for you.", "With love, Quire.", "From me, to you.",
-                    "Heart-shaped, hand-typed.", "You get a heart. Don't tell the others."].randomElement() ?? "Made you something."
+                    "Heart-shaped, hand-typed.", "A heart. Don't tell anyone."].randomElement() ?? "Made you something."
         }
         return ["Freshly inked.", "Hand-lettered, just for you.", "Quire, at your service.", "Ahem. Where were we?",
                 "That tickles.", "Writing myself in.", "Fresh page, fresh ink.", "Again? Show-off.",
-                "Signed, sealed, typeset.", "Curiosity got the better of you?", "I do this when no one's looking.",
+                "Signed, sealed, typeset.", "Curiosity got the better of you?", "I practise this in secret.",
                 "Practising my penmanship.", "Three taps. Bold move.", "Ink everywhere. Worth it.",
                 "Shh, it's our little secret.", "Encore? Fine, one more.", "Look, no hands.",
-                "Typing… typing… done!", "Every quire starts with a line.", "That was my best one yet.",
-                "Careful, I might start a novel.", "Do you poke all your apps like this?", "Calligraphy, but make it pixels.",
+                "Typing… typing… done!", "It all starts with a line.", "That was my best one yet.",
+                "Careful, I'll start a novel.", "Do you poke every app?", "Calligraphy, in pixels.",
                 "Ta-da.", "Still got it."].randomElement() ?? "Freshly inked."
     }
 
@@ -268,19 +269,27 @@ nonisolated enum Greeting {
 
 // MARK: - Heart
 
-/// A little heart in type, which the new-chat mark draws you now and then after its trick. It grows
-/// up from the point, both sides at once, and closes over the lobes into the dip; beats once,
-/// lub-dub, with a soft tap for each; then lifts away and is gone. It takes no space and no touches,
-/// so it can't get in the way of anything.
+/// A little heart in type, which the new-chat mark draws you now and then after its trick. A pen
+/// traces it from the point, up both sides at once and over the lobes into the dip, each character
+/// landing with a small bounce; then it fills from the bottom up. It beats once, lub-dub, with a
+/// soft tap for each, and lifts away. It takes no space and no touches, so it can't get in the way.
 struct AsciiHeart: View {
     var onFinished: () -> Void = {}
     @State private var drawn: Double = 0
     @State private var beat: CGFloat = 1
+    @State private var glow = false
     @State private var gone = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// How much room it needs, so whoever places it can keep it clear of everything else.
+    static var size: CGSize { HeartType.size }
+
+    /// From the first stroke to the last of the fill.
+    static let drawing = 2.4
+
     var body: some View {
-        HeartType(drawn: drawn)
+        HeartType(drawn: drawn, bounces: !reduceMotion)
+            .shadow(color: Color.qAccent.opacity(glow ? 0.45 : 0), radius: 9)
             .scaleEffect(beat)
             .opacity(gone ? 0 : 1)
             .offset(y: gone && !reduceMotion ? -16 : 0)
@@ -291,9 +300,12 @@ struct AsciiHeart: View {
     }
 
     private func play() async {
-        withAnimation(.easeInOut(duration: 1.5)) { drawn = 1 }
-        guard await pause(1.6) else { return }
+        // A moment for the eye to come up from the mark before the pen starts.
+        guard await pause(0.12) else { return }
+        withAnimation(.timingCurve(0.3, 0.1, 0.5, 1, duration: Self.drawing)) { drawn = 1 }
+        guard await pause(Self.drawing + 0.35) else { return }
         if !reduceMotion {
+            withAnimation(.easeOut(duration: 0.3)) { glow = true }
             // Lub…
             Haptics.soft()
             withAnimation(.spring(response: 0.16, dampingFraction: 0.5)) { beat = 1.14 }
@@ -305,6 +317,7 @@ struct AsciiHeart: View {
             withAnimation(.spring(response: 0.16, dampingFraction: 0.5)) { beat = 1.08 }
             guard await pause(0.14) else { return }
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { beat = 1 }
+            withAnimation(.easeInOut(duration: 0.6)) { glow = false }
         }
         guard await pause(0.8) else { return }
         withAnimation(.easeIn(duration: 0.6)) { gone = true }
@@ -319,11 +332,13 @@ struct AsciiHeart: View {
     }
 }
 
-/// The heart's characters, each fading in at its turn as `drawn` runs from 0 to 1. A character's
-/// turn is its angle around the heart's middle, measured from the point: so the point comes first,
-/// the two sides rise together, and the lobes close in from the outside to meet at the dip.
+/// The heart's characters, each set down at its turn as `drawn` runs from 0 to 1. The outline
+/// goes first, in order of each character's angle around the heart's middle, measured from the
+/// point; the inside follows, a row at a time from the bottom, as if the ink were pooling up.
+/// A character lands a little large and dark, like wet ink, and settles to size and colour.
 private struct HeartType: View, Animatable {
     var drawn: Double
+    var bounces: Bool
 
     var animatableData: Double {
         get { drawn }
@@ -331,57 +346,93 @@ private struct HeartType: View, Animatable {
     }
 
     static let rows = [
-        "  .:::.   .:::.  ",
-        " :::::::.::::::: ",
-        " ::::::::::::::: ",
-        " ':::::::::::::' ",
-        "   ':::::::::'   ",
-        "     ':::::'     ",
-        "       ':'       ",
+        " .:::.   .:::. ",
+        ":::::::.:::::::",
+        ":::::::::::::::",
+        "':::::::::::::'",
+        "  ':::::::::'  ",
+        "    ':::::'    ",
+        "      ':'      ",
     ]
 
-    /// How long each character takes to fade in, as a share of the whole drawing.
-    static let window = 0.12
+    /// One character's square on the page: rows are about twice as tall as a character is wide.
+    static let cell = CGSize(width: 7.2, height: 13.2)
+    static var size: CGSize {
+        CGSize(width: cell.width * CGFloat(rows[0].count), height: cell.height * CGFloat(rows.count))
+    }
 
-    static let turns: [[Double]] = {
-        let rows = HeartType.rows
-        let cx = Double(rows[0].count - 1) / 2
-        let cy = 2.6
-        var angles = rows.map { Array(repeating: 0.0, count: $0.count) }
-        var widest = 0.0
-        for (r, row) in rows.enumerated() {
+    /// A character, where it sits, and when it's drawn (as shares of the whole drawing).
+    nonisolated struct Stroke {
+        let glyph: Character
+        let at: CGPoint
+        let start: Double
+        let length: Double
+    }
+
+    static let strokes: [Stroke] = {
+        let grid = HeartType.rows.map { Array($0) }
+        let cell = HeartType.cell
+        func inked(_ r: Int, _ c: Int) -> Bool {
+            grid.indices.contains(r) && grid[r].indices.contains(c) && grid[r][c] != " "
+        }
+        func place(_ r: Int, _ c: Int) -> CGPoint {
+            CGPoint(x: (Double(c) + 0.5) * cell.width, y: (Double(r) + 0.5) * cell.height)
+        }
+        let cx = Double(grid[0].count - 1) / 2, cy = 2.6
+        var outline: [(glyph: Character, at: CGPoint, turn: Double)] = []
+        var inside: [(glyph: Character, at: CGPoint, rise: Double)] = []
+        for (r, row) in grid.enumerated() {
             for (c, ch) in row.enumerated() where ch != " " {
-                // Rows are about twice as tall as a character is wide.
-                let a = atan2(abs(Double(c) - cx), (Double(r) - cy) * 2)
-                angles[r][c] = a
-                widest = max(widest, a)
+                let dx = abs(Double(c) - cx)
+                if inked(r - 1, c) && inked(r + 1, c) && inked(r, c - 1) && inked(r, c + 1) {
+                    // Rows up from the bottom, and a touch later the further from the middle.
+                    inside.append((ch, place(r, c), Double(grid.count - 1 - r) + dx * 0.08))
+                } else {
+                    outline.append((ch, place(r, c), atan2(dx, (Double(r) - cy) * 2)))
+                }
             }
         }
-        let window = HeartType.window
-        return angles.map { $0.map { $0 / max(widest, 0.001) * (1 - window) } }
+        // The pen takes the first 60%, each character a short stroke; the fill starts a little
+        // before the outline closes, each character pooling in more slowly.
+        let pen = 0.07, outlineEnd = 0.6, fillStart = 0.5, pool = 0.16
+        let lastTurn = max(outline.map { $0.turn }.max() ?? 1, 0.001)
+        let lastRise = max(inside.map { $0.rise }.max() ?? 1, 0.001)
+        return outline.map { Stroke(glyph: $0.glyph, at: $0.at, start: $0.turn / lastTurn * (outlineEnd - pen), length: pen) }
+            + inside.map { Stroke(glyph: $0.glyph, at: $0.at, start: fillStart + $0.rise / lastRise * (1 - fillStart - pool), length: pool) }
     }()
 
     var body: some View {
-        VStack(spacing: -1) {
-            ForEach(Self.rows.indices, id: \.self) { r in
-                Text(line(r))
+        let strokes = Self.strokes
+        let drawn = self.drawn, bounces = self.bounces
+        let ink = Color.qAccent, wet = Color.qInk
+        let font = Font.system(size: 12, weight: .bold, design: .monospaced)
+        Canvas { context, _ in
+            var dry: [Character: GraphicsContext.ResolvedText] = [:]
+            var fresh: [Character: GraphicsContext.ResolvedText] = [:]
+            for stroke in strokes {
+                let t = min(1, max(0, (drawn - stroke.start) / stroke.length))
+                guard t > 0 else { continue }
+                let glyph = dry[stroke.glyph] ?? context.resolve(Text(String(stroke.glyph)).font(font).foregroundStyle(ink))
+                dry[stroke.glyph] = glyph
+                var g = context
+                g.translateBy(x: stroke.at.x, y: stroke.at.y)
+                if bounces {
+                    // Back-out easing: a touch past full size just after halfway, then settles.
+                    let u = t - 1, k = 1.9
+                    let s = 0.35 + 0.65 * (1 + (k + 1) * u * u * u + k * u * u)
+                    g.scaleBy(x: s, y: s)
+                }
+                g.opacity = min(1, t * 1.8)
+                g.draw(glyph, at: .zero, anchor: .center)
+                if t < 1 {
+                    let shine = fresh[stroke.glyph] ?? context.resolve(Text(String(stroke.glyph)).font(font).foregroundStyle(wet))
+                    fresh[stroke.glyph] = shine
+                    g.opacity = (1 - t) * min(1, t * 3) * 0.7
+                    g.draw(shine, at: .zero, anchor: .center)
+                }
             }
         }
-        .font(.system(size: 11, weight: .bold, design: .monospaced))
-        .fixedSize()
-    }
-
-    private func line(_ r: Int) -> AttributedString {
-        var out = AttributedString()
-        for (c, ch) in Self.rows[r].enumerated() {
-            var piece = AttributedString(String(ch))
-            if ch != " " {
-                let shown = min(1, max(0, (drawn - Self.turns[r][c]) / Self.window))
-                piece[AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self] = Color.qAccent.opacity(shown)
-            }
-            out += piece
-        }
-        return out
+        .frame(width: Self.size.width, height: Self.size.height)
     }
 }
 

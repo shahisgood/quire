@@ -398,8 +398,11 @@ private struct EmptyChatView: View {
     /// What the mark says for a moment after it's been written out again.
     @State private var egg: String? = nil
     @State private var eggTask: Task<Void, Never>? = nil
-    /// Now and then, the mark's trick ends with a little heart drawn over it.
+    /// Now and then, the mark's trick ends with a little heart drawn above it.
     @State private var heart = false
+    @ScaledMetric(relativeTo: .title) private var greetingSize: CGFloat = 25
+    @ScaledMetric(relativeTo: .title2) private var compactGreetingSize: CGFloat = 21
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         if app.apiKey == nil {
@@ -423,11 +426,12 @@ private struct EmptyChatView: View {
         VStack(spacing: 0) {
             if !compact {
                 QuireMark(width: 40, breathing: true, playful: true, onWritten: showEgg)
-                    // Sits just above the mark, outside the layout, so nothing moves for it.
+                    // Drawn well clear above the mark, outside the layout, so nothing moves for it
+                    // and nothing covers it.
                     .overlay(alignment: .top) {
                         if heart {
                             AsciiHeart { heart = false }
-                                .alignmentGuide(.top) { $0[.bottom] + 16 }
+                                .offset(y: -(AsciiHeart.size.height + 26))
                         }
                     }
                     .padding(.bottom, 22)
@@ -435,11 +439,16 @@ private struct EmptyChatView: View {
             }
 
             Text(greeting)
-                .displayFont { .system(compact ? .title2 : .title, design: $0).weight(.semibold) }
+                .displayFont { .system(size: compact ? compactGreetingSize : greetingSize, weight: .semibold, design: $0) }
                 .tracking(-0.4)
                 .foregroundStyle(Color.qInk)
                 .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+                // One clean line, every greeting. Only at the accessibility sizes, where no line
+                // could fit, does it wrap rather than shrink out of reach.
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .allowsTightening(true)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.8)
+                .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
                 .contentTransition(.opacity)
                 .accessibilityAddTraits(.isHeader)
                 .entrance(shown, delay: 0.06)
@@ -480,7 +489,7 @@ private struct EmptyChatView: View {
         if withHeart { heart = true }
         eggTask?.cancel()
         eggTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(withHeart ? 5 : 4))
+            try? await Task.sleep(for: .seconds(withHeart ? 5.5 : 4))
             guard !Task.isCancelled else { return }
             withAnimation(Motion.standard) { egg = nil }
         }
