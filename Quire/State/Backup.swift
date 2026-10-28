@@ -62,7 +62,7 @@ extension AppModel {
         return url
     }
 
-    private static func slug(_ s: String) -> String {
+    static func slug(_ s: String) -> String {
         let t = s.lowercased()
             .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))

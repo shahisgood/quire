@@ -23,10 +23,15 @@ struct QuireApp: App {
                 .onChange(of: app.settings) { app.persistSettings() }
                 .onChange(of: app.settings.ui.typeface, initial: true) { _, face in NavigationTypography.apply(face) }
                 .onChange(of: app.settings.ui.colorTheme) { _, theme in ThemeStore.shared.use(theme) }
-                .onChange(of: phase) { _, newPhase in
+                .onChange(of: phase) { oldPhase, newPhase in
                     if newPhase == .background {
                         app.didEnterBackground()
                         QuickActions.refresh(chats: app.chats)
+                    }
+                    if oldPhase == .background, newPhase != .background {
+                        var still = Transaction()
+                        still.disablesAnimations = true
+                        withTransaction(still) { app.willEnterForeground() }
                     }
                     if newPhase == .active { Task { await app.refreshModels() } }
                 }

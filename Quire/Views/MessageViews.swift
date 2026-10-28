@@ -465,7 +465,9 @@ private struct ReplyMenuItems: View {
             }
             Button { actions.branch(message) } label: { Label("Branch into a new chat", systemImage: "arrow.triangle.branch") }
                 .disabled(!session.persisted)
-            Button(action: actions.shareThread) { Label("Share thread", systemImage: "square.and.arrow.up") }
+            Button(action: actions.exportPDF) { Label("Export as PDF", systemImage: "doc.richtext") }
+                .disabled(!session.persisted)
+            Button(action: actions.shareThread) { Label("Share as Markdown", systemImage: "square.and.arrow.up") }
         }
         Section {
             Button { actions.info(message) } label: { Label("Tokens, cost & request", systemImage: "info.circle") }

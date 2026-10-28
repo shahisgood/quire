@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import Charts
 import UniformTypeIdentifiers
 
@@ -39,7 +40,8 @@ struct SettingsView: View {
             Section {
                 link(.connection, "Connection", "key", .qTileSlate, app.apiKey == nil ? "No key" : (app.settings.keyMeta?.label ?? "Key saved"))
                 link(.data, "Data & backup", "externaldrive", .qTileRose, backupDetail)
-                link(.about, "About", "info.circle", .qTileSlate, nil)
+                link(.about, "About", "info.circle", .qTileSlate,
+                     (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String).map { "Version \($0)" })
             }
             .listRowBackground(Color.qRaised)
         }
@@ -978,6 +980,8 @@ private struct AppearanceSettings: View {
 
             SettingsGroup(label: "Behaviour",
                           footer: Text("Reasoning traces stay open while the model is still thinking either way. With a hardware keyboard, Shift-Return adds a line.")) {
+                toggleRow("Context window", isOn: $app.settings.ui.showContext,
+                          help: "A ring in the message box shows how much of the model's context this chat fills. Tap it for the exact count and what the chat has cost.")
                 toggleRow("Show reasoning by default", isOn: $app.settings.ui.showReasoningByDefault)
                 toggleRow("Show costs", isOn: $app.settings.ui.showCosts)
                 toggleRow("Haptics", isOn: $app.settings.ui.hapticsEnabled)
@@ -1023,8 +1027,8 @@ private struct AppearanceSettings: View {
         }
     }
 
-    private func toggleRow(_ title: String, isOn: Binding<Bool>) -> some View {
-        SettingRow(title) { Toggle(title, isOn: isOn).labelsHidden() }
+    private func toggleRow(_ title: String, isOn: Binding<Bool>, help: String? = nil) -> some View {
+        SettingRow(title, help: help) { Toggle(title, isOn: isOn).labelsHidden() }
     }
 }
 
@@ -1423,65 +1427,268 @@ private struct DataSettings: View {
 
 // MARK: - About
 
+/// About reads like the last pages of a book: what the word means, what you've gathered in it,
+/// where everything is kept, and a colophon of how this copy is made. Each part settles in after
+/// the one above it; the figures count up as they arrive.
 private struct AboutView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openURL) private var openURL
+    @ScaledMetric(relativeTo: .largeTitle) private var nameSize: CGFloat = 46
+    @State private var shown = false
+    @State private var messages = 0
+    @State private var bytes: Int? = nil
 
-    private var version: String {
-        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        let b = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-        return "\(v) (\(b))"
-    }
+    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?" }
+    private var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?" }
 
     var body: some View {
-        List {
-            Group {
-            Section {
-                VStack(spacing: 14) {
-                    QuireMark(width: 64, breathing: true)
-                    Text("Quire")
-                        .displayFont { .system(.title, design: $0).weight(.bold) }
-                        .foregroundStyle(Color.qInk)
-                    Text("A gathering of sheets, bound together.")
-                        .displayFont { .system(.subheadline, design: $0).italic() }
-                        .foregroundStyle(Color.qInk2)
-                    Text("Version \(version)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(Color.qInk2)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
-            }
-            .listRowBackground(Color.clear)
-
-            Section {
-                Label("No accounts, no analytics, no server.", systemImage: "hand.raised")
-                Label("Chats, memory and settings stay on this iPhone.", systemImage: "iphone")
-                Label("The key lives in the Keychain.", systemImage: "key")
-                Label("The only network traffic is to OpenRouter, or the base URL you set.", systemImage: "network")
-            } header: {
-                SectionLabel(text: "Privacy")
-            }
-            .font(.subheadline)
-            .foregroundStyle(Color.qInk)
-            .listRowBackground(Color.qRaised)
-
-            Section {
-                LabeledContent("Models in catalogue") { Text("\(app.models.count)").monospacedDigit() }
-                LabeledContent("Catalogue updated") {
-                    Text(app.catalogueFetchedAt > 0 ? Fmt.relative(app.catalogueFetchedAt) : "Never")
-                }
-                Link(destination: URL(string: "https://openrouter.ai/activity")!) {
-                    Label("OpenRouter activity", systemImage: "arrow.up.right.square")
-                }
-            }
-            .listRowBackground(Color.qRaised)
-            }
-            .listRowBackground(Color.qRaised)
+        SettingsPage(title: "About", inlineTitle: true) {
+            titlePage.entrance(shown)
+            gathered.entrance(shown, delay: 0.06)
+            kept.entrance(shown, delay: 0.12)
+            colophon.entrance(shown, delay: 0.18)
+            elsewhere.entrance(shown, delay: 0.24)
+            closing.entrance(shown, delay: 0.3)
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(Color.qBase)
-        .navigationTitle("About")
-        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { shown = true }
+        .task { await measure() }
+    }
+
+    // MARK: Title page
+
+    private var titlePage: some View {
+        VStack(spacing: 0) {
+            // It still writes itself out on three taps, here as on a new chat.
+            QuireMark(width: 56, breathing: true, playful: true)
+                .padding(.bottom, 24)
+            Text("Quire")
+                .displayFont { .system(size: nameSize, weight: .bold, design: $0) }
+                .tracking(-0.9)
+                .foregroundStyle(Color.qInk)
+                .accessibilityAddTraits(.isHeader)
+            Text("/ˈkwaɪər/ · noun")
+                .displayFont { .system(.subheadline, design: $0).italic() }
+                .foregroundStyle(Color.qInk2)
+                .padding(.top, 2)
+                .accessibilityLabel("noun")
+            Text("Sheets folded one inside another and sewn together: a book, gathered before it's bound.")
+                .displayFont { .system(.body, design: $0) }
+                .foregroundStyle(Color.qInk)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 300)
+                .padding(.top, 14)
+            Text("Version \(version), build \(build)")
+                .font(.footnote.monospacedDigit())
+                .foregroundStyle(Color.qInk2)
+                .padding(.top, 18)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 20)
+    }
+
+    // MARK: What you've gathered
+
+    private var gathered: some View {
+        let live = shown || reduceMotion
+        return VStack(alignment: .leading, spacing: 9) {
+            SectionLabel(text: "Your quire").padding(.horizontal, 4)
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 0) {
+                    figure(live ? app.chats.count : 0, app.chats.count == 1 ? "Chat" : "Chats")
+                    Spacer(minLength: 8)
+                    figure(live ? messages : 0, messages == 1 ? "Message" : "Messages")
+                    Spacer(minLength: 8)
+                    figure(live ? app.memory.count : 0, "Remembered")
+                }
+                if let line = gatheredLine {
+                    Text(line)
+                        .font(.footnote)
+                        .foregroundStyle(Color.qInk2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .contentTransition(.opacity)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
+            .card(radius: 20)
+        }
+    }
+
+    private func figure(_ value: Int, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value.formatted())
+                .displayFont { .system(.title, design: $0).weight(.semibold).monospacedDigit() }
+                .foregroundStyle(Color.qInk)
+                .contentTransition(.numericText(value: Double(value)))
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(Color.qInk2)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// When it began, what else is in it, and how much room it takes.
+    private var gatheredLine: String? {
+        var parts: [String] = []
+        if let first = app.chats.map(\.createdAt).min() {
+            parts.append("Begun \(Date(timeIntervalSince1970: first / 1000).formatted(date: .long, time: .omitted))")
+        }
+        let personas = app.presets.count, projects = app.projects.count
+        if personas > 0 { parts.append("\(personas) persona\(personas == 1 ? "" : "s")") }
+        if projects > 0 { parts.append("\(projects) project\(projects == 1 ? "" : "s")") }
+        if let bytes { parts.append("\(Fmt.bytes(bytes)) on this iPhone") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    // MARK: Where things are kept
+
+    private var host: String {
+        guard let base = app.settings.proxyBaseUrl, let h = URL(string: base)?.host(), !h.isEmpty else { return "OpenRouter" }
+        return h
+    }
+
+    private var kept: some View {
+        SettingsGroup(label: "Where things are kept") {
+            fact("iphone", "On this iPhone",
+                 "Chats, memory, personas and settings live in Quire's own files here. Quire doesn't sync them anywhere.")
+            fact("key", "In the Keychain",
+                 "Your OpenRouter key is kept by iOS, apart from everything else. A backup carries it only if you ask.")
+            fact("paperplane", "Straight to \(host)",
+                 "Messages, titles and memory go from this iPhone to \(host) and nowhere else. There's no Quire server.")
+            fact("eye.slash", "Nothing watching",
+                 "No account, no analytics, no tracking, no ads.")
+        }
+    }
+
+    private func fact(_ symbol: String, _ title: String, _ detail: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: symbol)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Color.qAccent)
+                .frame(width: 22)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Color.qInk)
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(Color.qInk2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 13)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Colophon
+
+    private var setIn: String {
+        let ui = app.settings.ui
+        let titles = ui.typeface.name
+        let replies = ui.readingFace == .serif ? "New York" : ui.typeface.sansName
+        return titles == replies ? titles : "\(titles), replies in \(replies)"
+    }
+
+    private var colours: String {
+        let ui = app.settings.ui
+        switch ui.theme {
+        case .dark: return "\(ui.colorTheme.name), dark"
+        case .light: return "\(ui.colorTheme.name), light"
+        case .system: return "\(ui.colorTheme.name), light or dark with iOS"
+        }
+    }
+
+    private var colophon: some View {
+        SettingsGroup(label: "Colophon",
+                      footer: Text("A colophon is the note at the back of a book on how it was made.")) {
+            line("Version", version)
+            line("Build", build)
+            line("Set in", setIn)
+            line("Colours", colours)
+            line("Models", app.models.isEmpty ? "None loaded yet" : "\(app.models.count.formatted()) from OpenRouter")
+            if app.catalogueFetchedAt > 0 {
+                line("List updated", Fmt.relative(app.catalogueFetchedAt))
+            }
+            line("Running on", "iOS \(UIDevice.current.systemVersion)")
+            line("Made with", "SwiftUI, for iOS 26")
+        }
+    }
+
+    private func line(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .foregroundStyle(Color.qInk2)
+            Spacer(minLength: 8)
+            Text(value)
+                .displayFont { .system(.body, design: $0) }
+                .foregroundStyle(Color.qInk)
+                .multilineTextAlignment(.trailing)
+                .contentTransition(.opacity)
+        }
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Elsewhere
+
+    private var elsewhere: some View {
+        SettingsGroup(label: "On OpenRouter") {
+            web("Activity", "Every request, its model and what it cost", "https://openrouter.ai/activity")
+            web("Credits", "Your balance, and topping it up", "https://openrouter.ai/settings/credits")
+            web("Models", "Everything you can talk to, with prices", "https://openrouter.ai/models")
+            web("Privacy policy", "How OpenRouter handles what you send", "https://openrouter.ai/privacy")
+        }
+    }
+
+    private func web(_ title: String, _ detail: String, _ address: String) -> some View {
+        Button {
+            guard let url = URL(string: address) else { return }
+            Haptics.tap()
+            openURL(url)
+        } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .foregroundStyle(Color.qInk)
+                    Text(detail)
+                        .font(.footnote)
+                        .foregroundStyle(Color.qInk2)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.qInk2)
+            }
+            .padding(.vertical, 13)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.row)
+        .accessibilityHint("Opens in Safari")
+    }
+
+    // MARK: Close
+
+    private var closing: some View {
+        VStack(spacing: 10) {
+            QuireMark(width: 22)
+                .opacity(0.55)
+            Text("Every chat a leaf; together, a quire.")
+                .displayFont { .system(.footnote, design: $0).italic() }
+                .foregroundStyle(Color.qInk2)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 8)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func measure() async {
+        await app.store.flush()
+        bytes = app.store.diskUsage()
+        let count = app.chats.reduce(0) { $0 + app.allMessages($1.id).count }
+        withAnimation(reduceMotion ? nil : Motion.standard) { messages = count }
     }
 }

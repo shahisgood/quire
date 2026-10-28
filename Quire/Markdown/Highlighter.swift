@@ -79,17 +79,18 @@ enum Highlighter {
         return out
     }
 
-    private enum Kind { case comment, string, number, keyword }
+    enum Kind { case comment, string, number, keyword }
 
-    private static func compute(_ code: String, lang: String) -> AttributedString {
-        // Plain text, prose-like languages and very large blocks are left alone.
+    /// Where each coloured token sits in `code` (UTF-16 ranges), and what it is. Empty for plain
+    /// text, prose-like languages and very large blocks, which are left alone.
+    static func tokens(_ code: String, lang: String) -> [(range: NSRange, kind: Kind)] {
         let plain: Set<String> = ["", "text", "txt", "plain", "plaintext", "markdown", "md", "output", "console", "log"]
-        if plain.contains(lang) || code.utf16.count > 20_000 { return AttributedString(code) }
+        if plain.contains(lang) || code.utf16.count > 20_000 { return [] }
 
         let ns = code as NSString
         let full = NSRange(location: 0, length: ns.length)
         var claimed = IndexSet()
-        var spans: [(NSRange, Kind)] = []
+        var spans: [(range: NSRange, kind: Kind)] = []
 
         func claim(_ re: NSRegularExpression, _ kind: Kind, filter: ((String) -> Bool)? = nil) {
             for m in re.matches(in: code, range: full) {
@@ -108,6 +109,12 @@ enum Highlighter {
         if dashLangs.contains(lang) { claim(dashComment, .comment) }
         claim(number, .number)
         claim(word, .keyword, filter: { keywords.contains($0) })
+        return spans
+    }
+
+    private static func compute(_ code: String, lang: String) -> AttributedString {
+        let spans = tokens(code, lang: lang)
+        if spans.isEmpty { return AttributedString(code) }
 
         var out = AttributedString(code)
         for (range, kind) in spans {

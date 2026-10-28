@@ -92,18 +92,6 @@ struct ComposerView: View {
             if isFocused { onFocus() }
             onFocusChange(isFocused)
         }
-        .onChange(of: session.prefill) { _, new in
-            guard let new else { return }
-            session.prefill = nil
-            // An empty box (or one holding only another starter) takes it; otherwise it leads.
-            let current = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if current.isEmpty || StarterGroup.isStarter(text) {
-                text = new
-            } else {
-                text = new + text
-            }
-            focused = true
-        }
         .onAppear { text = session.draft }
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 6, matching: .images)
         .onChange(of: photoItems) { _, items in
@@ -137,7 +125,10 @@ struct ComposerView: View {
             attachMenu
             modelMenu
             Spacer(minLength: 4)
-            contextButton
+            if app.settings.ui.showContext {
+                contextButton
+                    .transition(.opacity)
+            }
             if showsAction {
                 actionButton
                     .transition(reduceMotion ? .opacity : .pop)

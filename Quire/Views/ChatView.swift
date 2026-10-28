@@ -9,6 +9,7 @@ struct MessageActions {
     var selectText: (Message) -> Void
     var delete: (Message) -> Void
     var shareThread: () -> Void
+    var exportPDF: () -> Void
     var openChatSettings: () -> Void
     var fixKey: () -> Void
     var viewImage: (Attachment) -> Void
@@ -41,6 +42,7 @@ struct ChatView: View {
     @State private var deleting: Message? = nil
     @State private var viewingImage: Attachment? = nil
     @State private var share: SharedFile? = nil
+    @State private var exportingPDF = false
 
     /// Roughly how much text the thread lays out at once. Everything in the window is laid out in
     /// full (not lazily), so heights are exact: the scroll bar never jumps, a long chat opens at its
@@ -55,14 +57,6 @@ struct ChatView: View {
     private var visiblePath: ArraySlice<String> { session.path[windowStart...] }
     private var hiddenCount: Int { windowStart }
     private var density: CGFloat { app.settings.ui.density == "compact" ? 18 : 30 }
-
-    /// Starters sit just above the message box on an empty chat whenever the box is empty: they
-    /// step aside as soon as there's anything in it (a starter included) and come back if you clear
-    /// it again.
-    private var showsStarters: Bool {
-        guard session.path.isEmpty, app.apiKey != nil else { return false }
-        return session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
 
     var body: some View {
         Group {
@@ -79,16 +73,7 @@ struct ChatView: View {
             }
         }
         .animation(reduceMotion ? nil : Motion.standard, value: session.path.isEmpty)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 6) {
-                if showsStarters {
-                    StarterMenu(session: session)
-                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 12)))
-                }
-                composer
-            }
-            .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.standard, value: showsStarters)
-        }
+        .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
         .sheet(isPresented: $showSettings) { ChatSettingsSheet(session: session) }
@@ -102,6 +87,7 @@ struct ChatView: View {
         }
         .sheet(item: $selecting) { m in SelectTextSheet(text: m.content) }
         .sheet(item: $share) { f in ShareSheet(items: [f.url]).presentationDetents([.medium, .large]) }
+        .sheet(isPresented: $exportingPDF) { PDFExportSheet(chatId: session.chat.id) }
         .fullScreenCover(item: $viewingImage) { a in
             ImageGallery(images: galleryImages, startId: a.id)
         }
@@ -231,6 +217,7 @@ struct ChatView: View {
             selectText: { selecting = $0 },
             delete: { deleting = $0 },
             shareThread: shareMarkdown,
+            exportPDF: { exportingPDF = true },
             openChatSettings: { showSettings = true },
             fixKey: { app.push(.section(.connection)) },
             viewImage: { viewingImage = $0 }
@@ -387,9 +374,9 @@ private struct IncognitoToggle: View {
 
 /// A new chat says only what you need before you start: a greeting, and what's different about
 /// this chat (incognito, a project, a persona) if anything.
-/// The model lives in the message box and the starters just above it. It sits in the middle of the
-/// space between the bar and the starters, and gives up its extras when that space is short (the
-/// keyboard is up on a small phone, say).
+/// The model lives in the message box. It sits in the middle of the space between the bar and the
+/// message box, and gives up its extras when that space is short (the keyboard is up on a small
+/// phone, say).
 private struct EmptyChatView: View {
     let session: ChatSession
     let openSettings: () -> Void
@@ -544,106 +531,6 @@ private struct EmptyChatView: View {
         }
         .buttonStyle(.pressable)
         .accessibilityHint("Opens chat settings")
-    }
-}
-
-/// Ways to begin, as two quiet lines just above the message box, where your thumb already is. A
-/// line opens in place into three more specific openings (the other steps aside); picking one fills
-/// the message box and brings up the keyboard. Nothing is sent until you send it.
-private struct StarterMenu: View {
-    let session: ChatSession
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var openId: String? = nil
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(StarterGroup.all) { g in
-                if openId == nil || openId == g.id {
-                    groupRow(g)
-                        .transition(.opacity)
-                    if openId == g.id {
-                        ForEach(Array(g.options.enumerated()), id: \.element.id) { i, o in
-                            optionRow(o)
-                                .transition(reduceMotion ? .opacity : .asymmetric(
-                                    insertion: .opacity.combined(with: .offset(y: 6))
-                                        .animation(Motion.standard.delay(0.04 * Double(i + 1))),
-                                    removal: .opacity.animation(Motion.quick)))
-                        }
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.standard, value: openId)
-    }
-
-    private func groupRow(_ g: StarterGroup) -> some View {
-        let open = openId == g.id
-        return Button {
-            Haptics.selection()
-            openId = open ? nil : g.id
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: g.symbol)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(open ? Color.qAccent : Color.qInk2)
-                    .frame(width: 20)
-                Text(g.title)
-                    .font(.subheadline.weight(open ? .semibold : .regular))
-                    .foregroundStyle(open ? Color.qInk : Color.qInk2)
-                Spacer(minLength: 0)
-                if open {
-                    Image(systemName: "xmark")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(Color.qInk2.opacity(0.7))
-                        .transition(.opacity)
-                }
-            }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 40)
-            .contentShape(.rect)
-        }
-        .buttonStyle(StarterRowStyle())
-        .accessibilityHint(open ? "Closes" : "Shows three ways to start")
-        .accessibilityAddTraits(open ? .isSelected : [])
-    }
-
-    private func optionRow(_ o: StarterOption) -> some View {
-        Button {
-            Haptics.selection()
-            session.prefill = o.text
-        } label: {
-            HStack(spacing: 12) {
-                Color.clear.frame(width: 20, height: 1)
-                Text(o.title)
-                    .font(.subheadline)
-                    .foregroundStyle(Color.qInk)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 38)
-            // A hairline under the group's icon, so the openings read as belonging to it. Drawn
-            // behind the row at the row's own height, so it can't stretch the row.
-            .background(alignment: .leading) {
-                Rectangle()
-                    .fill(Color.qRule)
-                    .frame(width: 1)
-                    .padding(.leading, 14 + 9.5)
-            }
-            .contentShape(.rect)
-        }
-        .buttonStyle(StarterRowStyle())
-        .accessibilityHint("Starts your message with “\(o.text.trimmingCharacters(in: .whitespacesAndNewlines))”")
-    }
-}
-
-/// A row that shows a soft wash under your finger, like a list row, without a list.
-private struct StarterRowStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(Color.qInk.opacity(configuration.isPressed ? 0.07 : 0), in: .rect(cornerRadius: 12, style: .continuous))
-            .animation(Motion.press, value: configuration.isPressed)
     }
 }
 

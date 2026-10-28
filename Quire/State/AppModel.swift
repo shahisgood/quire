@@ -47,7 +47,7 @@ final class AppModel {
     /// are dropped when another chat opens so memory stays bounded.
     @ObservationIgnored var sessions: [String: ChatSession] = [:]
 
-    /// Navigation, owned here so a cold launch can resume the last chat and search hits can deep-link.
+    /// Navigation, owned here so launch can decide where to land and search hits can deep-link.
     var path: [Route] = []
 
     /// Settings opens as its own layer that slides in from the leading edge (the gear sits top-left),
@@ -76,7 +76,7 @@ final class AppModel {
         folders = store.loadFolders().sorted { $0.order < $1.order }
         if let c = store.loadCatalogue() { applyCatalogue(c.models, fetchedAt: c.fetchedAt) }
         Haptics.enabled = settings.ui.hapticsEnabled
-        resumeLastChat()
+        land()
     }
 
     func persistSettings() {
@@ -99,11 +99,46 @@ final class AppModel {
 
     // MARK: Navigation
 
-    private func resumeLastChat() {
-        let visible = chats.filter { !$0.archived }
-        if let last = settings.lastChatId, visible.contains(where: { $0.id == last }) { path = stack(for: last) }
-        else if let newest = visible.first { path = stack(for: newest.id) }
-        else { path = [.chat(newChat().chat.id)] }
+    /// How long you can be away and come back to the chat you left. Any longer, and Quire opens on
+    /// a fresh chat instead, the way you'd turn to a clean page.
+    static let resumeWindow: TimeInterval = 30
+
+    /// When the app last went to the background, and the chat on screen then (if it was one).
+    /// Kept out of settings so backups never carry them.
+    private enum Left {
+        static let at = "quire.left.at"
+        static let chat = "quire.left.chat"
+    }
+
+    /// Cold launch: back on the chat you left if you were on one and it's been under half a
+    /// minute (the system closed the app, or you swiped it away and straight back); otherwise a
+    /// fresh chat.
+    private func land() {
+        let defaults = UserDefaults.standard
+        let leftAt = defaults.double(forKey: Left.at)
+        let recent = leftAt > 0 && Date().timeIntervalSince1970 - leftAt < Self.resumeWindow
+        if recent, let id = defaults.string(forKey: Left.chat), let c = chat(id), !c.archived {
+            path = stack(for: id)
+        } else {
+            path = [.chat(newChat().chat.id)]
+        }
+    }
+
+    /// The saved chat on screen, if a chat is what's on screen.
+    private var chatOnScreen: String? {
+        guard !settingsOpen, case .chat(let id)? = path.last, chat(id) != nil else { return nil }
+        return id
+    }
+
+    /// Back from the background: after more than half a minute away, a fresh chat, unless the one
+    /// on screen already is one. Called as the app comes forward, before it's seen (and without
+    /// animation), so you simply arrive on a clean page.
+    func willEnterForeground() {
+        let leftAt = UserDefaults.standard.double(forKey: Left.at)
+        guard leftAt > 0, Date().timeIntervalSince1970 - leftAt >= Self.resumeWindow else { return }
+        if !settingsOpen, case .chat(let id)? = path.last, chat(id) == nil, sessions[id] != nil { return }
+        settingsPath = []
+        startNewChat()
     }
 
     func openChat(_ id: String, highlight: String? = nil) {
@@ -549,6 +584,9 @@ final class AppModel {
 
     func didEnterBackground() {
         greetingSeed = UUID().uuidString
+        let defaults = UserDefaults.standard
+        defaults.set(Date().timeIntervalSince1970, forKey: Left.at)
+        defaults.set(chatOnScreen, forKey: Left.chat)
         for s in sessions.values { s.flushDraft() }
         persistSettings()
         let store = self.store

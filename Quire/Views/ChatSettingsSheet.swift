@@ -8,6 +8,7 @@ struct ChatSettingsSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var showModels = false
+    @State private var exportingPDF = false
 
     private var overrideCount: Int {
         (session.chat.settingsOverride?.setCount ?? 0) + (session.chat.systemPromptInline == nil ? 0 : 1)
@@ -56,6 +57,15 @@ struct ChatSettingsSheet: View {
                                              set: { session.setOverrides($0) }),
                              base: session.inheritedSettings)
 
+                if session.persisted && !session.path.isEmpty {
+                    SettingsGroup(label: "Export") {
+                        Button { exportingPDF = true } label: {
+                            LinkRow(title: "Export as PDF", detail: "The conversation, typeset to read, print or send")
+                        }
+                        .buttonStyle(.row)
+                    }
+                }
+
                 if overrideCount > 0 {
                     SettingsGroup {
                         Button {
@@ -79,6 +89,7 @@ struct ChatSettingsSheet: View {
             .sheet(isPresented: $showModels) {
                 ModelPickerView(title: "Model for this chat", selected: session.chat.modelId) { id in session.setModel(id) }
             }
+            .sheet(isPresented: $exportingPDF) { PDFExportSheet(chatId: session.chat.id) }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)

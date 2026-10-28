@@ -18,8 +18,6 @@ final class ChatSession {
     @ObservationIgnored private(set) var deleted = false
     /// A title request is in flight (so the send-time and reply-time attempts don't race).
     @ObservationIgnored private var titling = false
-    /// Text for the message box to take (a starter prompt); the composer consumes it and clears it.
-    var prefill: String? = nil
 
     // Live view of the streaming reply, published at most 20 times a second so the message list
     // doesn't re-render per token.

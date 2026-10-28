@@ -471,38 +471,3 @@ struct LiveDot: View {
         }
     }
 }
-
-// MARK: - Starter prompts
-
-/// Ways to begin a chat, in a few groups that each open into three. Picking one only fills the
-/// message box; you finish the sentence and send it yourself.
-struct StarterGroup: Identifiable, Hashable {
-    let title: String
-    let symbol: String
-    let options: [StarterOption]
-    var id: String { title }
-
-    static let all: [StarterGroup] = [
-        StarterGroup(title: "Write or edit", symbol: "pencil.line", options: [
-            StarterOption(title: "Help me write something", text: "Help me write "),
-            StarterOption(title: "Rewrite this to read better", text: "Rewrite this so it reads more clearly:\n\n"),
-            StarterOption(title: "Proofread and fix mistakes", text: "Proofread this and fix any mistakes:\n\n"),
-        ]),
-        StarterGroup(title: "Explain something", symbol: "lightbulb", options: [
-            StarterOption(title: "Explain it simply", text: "Explain in simple terms: "),
-            StarterOption(title: "Walk me through it, step by step", text: "Walk me through, step by step, how "),
-            StarterOption(title: "Compare two things", text: "What's the difference between "),
-        ]),
-    ]
-
-    /// Whether the message box holds nothing but a starter's opening.
-    static func isStarter(_ text: String) -> Bool {
-        all.contains { $0.options.contains { $0.text == text } }
-    }
-}
-
-struct StarterOption: Identifiable, Hashable {
-    let title: String
-    let text: String
-    var id: String { text }
-}

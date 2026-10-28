@@ -393,6 +393,8 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
     var hapticsEnabled: Bool
     /// How strongly a reply's running text is inked, from 0.6 (soft) to 1 (as strong as bold).
     var textStrength: Double
+    /// iOS only: the context ring in the message box.
+    var showContext: Bool
 
     static let defaultTextStrength = 0.86
 
@@ -400,6 +402,7 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
         theme = .dark; fontScale = 1; density = "comfortable"; readingFace = .serif; typeface = .newYork; colorTheme = .quire
         showReasoningByDefault = false; showCosts = true; sendOnEnter = true; hapticsEnabled = true
         textStrength = Self.defaultTextStrength
+        showContext = true
     }
 
     init(from decoder: Decoder) throws {
@@ -415,6 +418,7 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
         sendOnEnter = c.lenient(.sendOnEnter, true)
         hapticsEnabled = c.lenient(.hapticsEnabled, true)
         textStrength = min(1, max(0.6, c.lenient(.textStrength, Self.defaultTextStrength)))
+        showContext = c.lenient(.showContext, true)
     }
 }
 

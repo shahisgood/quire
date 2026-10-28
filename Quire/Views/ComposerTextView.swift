@@ -59,7 +59,7 @@ struct ComposerTextView: UIViewRepresentable {
             tv.font = Self.font(rounded: rounded)
             tv.invalidateIntrinsicContentSize()
         }
-        // Text set from outside (a starter, sending, a restored draft). Never while the keyboard is
+        // Text set from outside (sending, a restored draft). Never while the keyboard is
         // composing (Japanese, Chinese, …), which would throw that composition away.
         if tv.text != text, tv.markedTextRange == nil {
             tv.text = text

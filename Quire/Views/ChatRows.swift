@@ -11,6 +11,7 @@ final class ListSheets {
     var renameText = ""
     var deletingChats: Set<String>? = nil
     var share: SharedFile? = nil
+    var pdf: PDFRequest? = nil
     var editor: ProjectEditorRequest? = nil
     var instructionsFor: Project? = nil
     var deletingProject: Project? = nil
@@ -145,9 +146,12 @@ struct ChatListRow: View {
         Button {
             if app.duplicateChat(chat.id) != nil { app.toasts.show("Duplicated", symbol: "plus.square.on.square") }
         } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
-        Button {
-            if let url = try? app.exportChats([chat.id]) { sheets.share = SharedFile(url: url) }
-        } label: { Label("Export as JSON", systemImage: "square.and.arrow.up") }
+        Menu {
+            Button { sheets.pdf = PDFRequest(chatId: chat.id) } label: { Label("PDF", systemImage: "doc.richtext") }
+            Button {
+                if let url = try? app.exportChats([chat.id]) { sheets.share = SharedFile(url: url) }
+            } label: { Label("JSON backup", systemImage: "curlybraces") }
+        } label: { Label("Export", systemImage: "square.and.arrow.up") }
         Button { ChatOps.archive(app, [chat.id], to: !chat.archived) } label: {
             Label(chat.archived ? "Unarchive" : "Archive", systemImage: "archivebox")
         }
@@ -276,6 +280,7 @@ private struct ListSheetsHost: ViewModifier {
                 Text("Every message and branch is removed from this iPhone. This can't be undone.")
             }
             .sheet(item: $sheets.share) { f in ShareSheet(items: [f.url]).presentationDetents([.medium, .large]) }
+            .sheet(item: $sheets.pdf) { r in PDFExportSheet(chatId: r.chatId) }
             .sheet(item: $sheets.editor, onDismiss: editorClosed) { r in
                 ProjectEditor(project: r.project,
                               newTint: .suggested(after: app.folders.count),
