@@ -175,7 +175,7 @@ enum ChatPDF {
     }
 
     private static func blocks(_ list: [MDBlock]) -> String {
-        list.map(block).joined()
+        list.map { block($0) }.joined()
     }
 
     private static func block(_ b: MDBlock) -> String {
