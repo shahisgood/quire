@@ -16,7 +16,6 @@ struct QuireMark: View {
     var playful = false
     var onWritten: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dim = false
     @State private var written: CGFloat = 3
     /// 0 is the block cursor of the icon, 1 a thin text caret.
     @State private var caret: CGFloat = 0
@@ -25,10 +24,9 @@ struct QuireMark: View {
 
     var body: some View {
         let mark = MarkDrawing(width: width, written: written, caret: caret,
-                               cursorOpacity: writing ? 1 : (dim ? 0.2 : 1))
+                               breathes: breathing && !writing && !reduceMotion)
             .scaleEffect(stamp ? 1.08 : 1)
             .accessibilityHidden(true)
-            .onAppear(perform: breathe)
         if playful {
             mark
                 .contentShape(.rect)
@@ -36,14 +34,6 @@ struct QuireMark: View {
         } else {
             mark
         }
-    }
-
-    private func breathe() {
-        guard breathing, !reduceMotion else { return }
-        var still = Transaction()
-        still.disablesAnimations = true
-        withTransaction(still) { dim = false }
-        withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { dim = true }
     }
 
     private func write() {
@@ -54,7 +44,6 @@ struct QuireMark: View {
             Haptics.success()
             writing = false
             onWritten()
-            breathe()
             return
         }
         let narrow = 0.18, erase = 0.5, pen = 2.4
@@ -69,7 +58,6 @@ struct QuireMark: View {
                     withAnimation(Motion.bouncy) { stamp = false }
                 }
                 writing = false
-                breathe()
                 onWritten()
             }
         }
@@ -92,7 +80,8 @@ private struct MarkDrawing: View, Animatable {
     let width: CGFloat
     var written: CGFloat
     var caret: CGFloat
-    let cursorOpacity: Double
+    /// The cursor dims and brightens on a loop while the mark is at rest.
+    let breathes: Bool
 
     /// The part of each line's turn spent writing; the rest is the pause before the next.
     static let lineShare: Double = 0.8
@@ -123,13 +112,27 @@ private struct MarkDrawing: View, Animatable {
                     .frame(width: lengths[i] * inked(i), height: h)
                     .offset(y: centers[i] - h / 2)
             }
-            RoundedRectangle(cornerRadius: min(caretW, h) * 0.3, style: .continuous)
-                .fill(Color.qAccent)
-                .frame(width: caretW, height: caretH)
-                .opacity(cursorOpacity * blink)
+            cursor(width: caretW, height: caretH, radius: min(caretW, h) * 0.3)
                 .offset(x: caretX, y: centers[line] - caretH / 2)
         }
         .frame(width: width, height: h * 6.33, alignment: .topLeading)
+    }
+
+    /// The cursor's breathing runs on a loop of its own (rather than a repeating animation started
+    /// from outside), so it can never catch anything else that happens to be moving at the time,
+    /// like the bar's buttons settling as a screen first appears.
+    @ViewBuilder
+    private func cursor(width: CGFloat, height: CGFloat, radius: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .fill(Color.qAccent)
+            .frame(width: width, height: height)
+        if breathes {
+            shape.phaseAnimator([false, true]) { view, dimmed in
+                view.opacity(dimmed ? 0.2 : 1)
+            } animation: { _ in .easeInOut(duration: 0.9) }
+        } else {
+            shape.opacity(blink)
+        }
     }
 
     /// How much of line `i` is on the page, eased so each line starts and finishes gently.

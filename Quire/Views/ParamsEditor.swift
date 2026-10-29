@@ -90,7 +90,7 @@ struct ParamsEditor: View {
     // MARK: Sampling
 
     private var samplingGroup: some View {
-        SettingsGroup(label: "Sampling",
+        SettingsGroup(label: "Sampling", detail: SamplingPreset.all.first(where: { $0.matches(display) })?.name ?? "Your own mix",
                       footer: overrideMode ? Text("A dot marks a value set here. Everything else is inherited.") : nil) {
             SettingRow("Style", detail: presetDetail,
                        help: "A starting point for temperature, Top P and the two penalties. Move any of them and it becomes your own mix.") {
@@ -98,6 +98,10 @@ struct ParamsEditor: View {
             } below: {
                 presetStrip
             }
+            NextWordOdds(temperature: supports("temperature") ? display.temperature ?? 1 : 1,
+                         topP: supports("top_p") ? display.topP ?? 1 : 1,
+                         topK: supports("top_k") ? display.topK ?? 0 : 0,
+                         minP: supports("min_p") ? display.minP ?? 0 : 0)
             ForEach(Self.sampling.filter { supports($0.api) }, id: \.api) { sliderRow($0) }
             if supports("top_k") {
                 SettingRow("Top K", help: "Only consider the K most likely next tokens. 0 turns it off.", overridden: isSet(\.topK),
@@ -151,7 +155,9 @@ struct ParamsEditor: View {
     // MARK: Repetition
 
     private var repetitionGroup: some View {
-        SettingsGroup(label: "Repetition") {
+        let specs = Self.repetition.filter { supports($0.api) }
+        let active = specs.filter { abs((display[keyPath: $0.keyPath] ?? $0.fallback) - ($0.neutral ?? $0.fallback)) > 1e-6 }.count
+        return SettingsGroup(label: "Repetition", detail: active == 0 ? "Off" : "\(active) of \(specs.count) on") {
             ForEach(Self.repetition.filter { supports($0.api) }, id: \.api) { sliderRow($0) }
         }
     }
@@ -159,7 +165,7 @@ struct ParamsEditor: View {
     // MARK: Output
 
     private var outputGroup: some View {
-        SettingsGroup(label: "Output") {
+        SettingsGroup(label: "Output", detail: display.maxTokens.map { "Up to \($0.formatted()) tokens" } ?? "Model's limit") {
             if supports("max_tokens") {
                 SettingRow("Max output tokens", help: "Hard cap on the reply's length. Empty lets the model decide, up to its limit.",
                            overridden: isSet(\.maxTokens), onInherit: overrideMode ? { target.maxTokens = nil } : nil) {
@@ -234,7 +240,7 @@ struct ParamsEditor: View {
         var modes: [(value: ReasoningSettings.Mode, label: String)] = []
         if style.canDisable { modes.append((.off, "Off")) }
         modes += [(.effort, "Effort"), (.budget, "Budget")]
-        return SettingsGroup(label: "Reasoning", footer: Text(style.note)) {
+        return SettingsGroup(label: "Reasoning", detail: reasoningSummary(style), footer: Text(style.note)) {
             SettingRow("Thinking", detail: reasoningDetail(style),
                        help: "Let the model think before answering. Thinking tokens are billed as output.",
                        overridden: isSet(\.reasoning), onInherit: overrideMode ? { target.reasoning = nil } : nil) {
@@ -275,6 +281,14 @@ struct ParamsEditor: View {
                 Toggle("Hide the trace", isOn: Binding(get: { reasoning.exclude }, set: { v in setReasoning { $0.exclude = v } }))
                     .labelsHidden()
             }
+        }
+    }
+
+    private func reasoningSummary(_ style: ReasoningStyle) -> String {
+        switch reasoning.mode {
+        case .off: style.canDisable ? "Off" : "Always on"
+        case .effort: "\((reasoning.effort ?? .medium).label) effort"
+        case .budget: "\((reasoning.maxTokens ?? style.defaultBudget).formatted()) tokens"
         }
     }
 
@@ -486,5 +500,87 @@ struct ParamsEditor: View {
 
     private func isSet<T>(_ kp: KeyPath<GenerationSettings, T?>) -> Bool {
         overrideMode && target[keyPath: kp] != nil
+    }
+}
+
+// MARK: - The next word
+
+/// What the sampling settings do to the choice of each next word, drawn on a typical spread of
+/// sixteen candidates, likeliest first: each bar is one word's chance. Temperature sharpens or
+/// flattens the spread; Top P, Top K and Min P take words out of the running, and those fade.
+private struct NextWordOdds: View {
+    let temperature: Double
+    let topP: Double
+    let topK: Double
+    let minP: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let logits: [Double] = [4.6, 3.9, 3.4, 3.0, 2.6, 2.3, 2.0, 1.7, 1.4, 1.1, 0.8, 0.5, 0.2, -0.1, -0.4, -0.7]
+    private static let height: CGFloat = 40
+
+    /// Each word's chance before any cut, and whether it's still in the running after.
+    private var odds: (chances: [Double], kept: [Bool]) {
+        let chances: [Double]
+        if temperature < 0.02 {
+            chances = Self.logits.indices.map { $0 == 0 ? 1 : 0 }
+        } else {
+            let scaled = Self.logits.map { $0 / temperature }
+            let top = scaled.max() ?? 0
+            let e = scaled.map { exp($0 - top) }
+            let sum = e.reduce(0, +)
+            chances = e.map { $0 / sum }
+        }
+        var kept = Array(repeating: true, count: chances.count)
+        var before = 0.0
+        for i in chances.indices {
+            if topK >= 1 && Double(i) >= topK.rounded() { kept[i] = false }
+            if topP < 1 && before >= topP { kept[i] = false }
+            if minP > 0 && chances[i] < minP * chances[0] { kept[i] = false }
+            before += chances[i]
+        }
+        kept[0] = true
+        return (chances, kept)
+    }
+
+    var body: some View {
+        let o = odds
+        let chances = o.chances, kept = o.kept
+        let pool = zip(chances, kept).filter { $0.1 }.map { $0.0 }.reduce(0, +)
+        let share = pool > 0 ? chances[0] / pool : 1
+        // Words with a real chance, at least one in a hundred once the cuts are made.
+        let likely = zip(chances, kept).filter { $0.1 && $0.0 / max(pool, 1e-9) >= 0.01 }.count
+        let summary = likely <= 1 ? "Always the likeliest word" : "\(likely) likely words · top \(Int((share * 100).rounded()))%"
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("The next word")
+                    .foregroundStyle(Color.qInk)
+                Spacer(minLength: 8)
+                Text(summary)
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(Color.qInk2)
+                    .contentTransition(.numericText())
+            }
+            HStack(alignment: .bottom, spacing: 3) {
+                ForEach(chances.indices, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(kept[i] ? Color.qAccent.opacity(i == 0 ? 1 : 0.62) : Color.qInk2.opacity(0.16))
+                        .frame(height: max(3, Self.height * chances[i] / max(chances[0], 1e-9)))
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(height: Self.height, alignment: .bottom)
+            HStack {
+                Text("Likeliest")
+                Spacer()
+                Text("Least likely")
+            }
+            .font(.caption2)
+            .foregroundStyle(Color.qInk2.opacity(0.8))
+        }
+        .padding(.vertical, 13)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.22), value: [temperature, topP, topK, minP])
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("The next word")
+        .accessibilityValue(likely <= 1 ? "Always the likeliest word" : "\(likely) likely words; the top one is picked \(Int((share * 100).rounded())) percent of the time")
     }
 }

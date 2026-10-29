@@ -415,6 +415,31 @@ private struct GenerationSettingsView: View {
 
     private func shortName(_ id: String) -> String { app.model(id)?.shortName ?? app.modelName(id) }
 
+    private func traitRow(_ traits: [String]) -> some View {
+        HStack(spacing: 6) {
+            ForEach(traits, id: \.self) { t in
+                Text(t)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Color.qInk2)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(Color.qSunken, in: .capsule)
+                    .fixedSize()
+            }
+        }
+    }
+
+    /// What the model can do beyond text, in a word each.
+    private static func traits(of m: ORModel) -> [String] {
+        var out: [String] = []
+        if m.acceptsImages { out.append("Images") }
+        if m.acceptsFiles { out.append("Files") }
+        if m.supportsReasoning { out.append("Thinks") }
+        if m.supportsTools { out.append("Tools") }
+        if m.isFree { out.append("Free") }
+        return out
+    }
+
     /// The model new chats start with, set out like the Spending headline, with what it holds and
     /// what it costs underneath. Tap to change it.
     private func hero(_ model: ORModel?) -> some View {
@@ -451,6 +476,15 @@ private struct GenerationSettingsView: View {
                         figure(Pricing.perMillion(model.pricing.prompt), "In, per million")
                         Spacer(minLength: 8)
                         figure(Pricing.perMillion(model.pricing.completion), "Out, per million")
+                    }
+                    let traits = Self.traits(of: model)
+                    if !traits.isEmpty {
+                        // All of them if they fit on the line, else the first few.
+                        ViewThatFits(in: .horizontal) {
+                            traitRow(traits)
+                            traitRow(Array(traits.prefix(3)))
+                        }
+                        .accessibilityElement(children: .combine)
                     }
                 } else if !app.models.isEmpty {
                     Text("Not in OpenRouter's catalogue right now. It's still sent as-is; pick another if requests fail.")
@@ -511,7 +545,7 @@ struct PromptsSettingsView: View {
     var body: some View {
         @Bindable var app = app
         SettingsPage(title: "Personas") {
-            SettingsGroup(label: "Global prompt",
+            SettingsGroup(label: "Global prompt", detail: app.settings.globalSystemPrompt.isEmpty ? "None" : "In use",
                           footer: Text("Sent at the start of every chat that has no persona or prompt of its own. Personas and per-chat prompts replace it.")) {
                 NavigationLink {
                     PromptEditorView(title: "Global system prompt", text: $app.settings.globalSystemPrompt,
@@ -523,8 +557,15 @@ struct PromptsSettingsView: View {
                 .buttonStyle(.row)
             }
 
-            SettingsGroup(label: "Personas",
+            SettingsGroup(label: "Personas", detail: app.presets.isEmpty ? nil : "\(app.presets.count)",
                           footer: Text("A persona is a saved system prompt, optionally with its own model and settings. Hold the compose button to start a chat with one; hold a persona here for more.")) {
+                if app.presets.isEmpty {
+                    Text("None yet. Keep a voice you return to (an editor, a tutor, a terse engineer) and start chats in it.")
+                        .displayFont { .system(.subheadline, design: $0).italic() }
+                        .foregroundStyle(Color.qInk2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.vertical, 14)
+                }
                 ForEach(app.presets) { p in
                     Button { editing = p } label: { PersonaRow(preset: p) }
                         .buttonStyle(.row)
@@ -614,6 +655,12 @@ private struct PersonaRow: View {
     let preset: Preset
     @Environment(AppModel.self) private var app
 
+    /// How many chats speak in this voice.
+    private var usage: String {
+        let n = app.chats.filter { $0.systemPromptId == preset.id }.count
+        return n == 0 ? "Not used yet" : "In \(n) chat\(n == 1 ? "" : "s")"
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             Text(preset.icon?.isEmpty == false ? preset.icon! : "◦")
@@ -641,6 +688,10 @@ private struct PersonaRow: View {
                     .foregroundStyle(Color.qInk2)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
+                Text(usage)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(Color.qInk2.opacity(0.85))
+                    .padding(.top, 1)
             }
             Spacer(minLength: 8)
             Image(systemName: "chevron.right")
@@ -823,6 +874,31 @@ private struct MemorySettingsView: View {
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(Color.qInk2)
                 }
+                if let mix = memoryMix {
+                    Text(mix)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(Color.qInk2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let latest = app.memory.filter({ !$0.disabled }).max(by: { $0.updatedAt < $1.updatedAt }) {
+                    // The newest thing it knows, set like a pull quote.
+                    HStack(alignment: .top, spacing: 11) {
+                        RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                            .fill(Color.qAccent.opacity(0.5))
+                            .frame(width: 3)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(latest.text)
+                                .displayFont { .system(.subheadline, design: $0).italic() }
+                                .foregroundStyle(Color.qInk)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text("Latest · \(latest.category.singular) · \(Fmt.relative(latest.updatedAt))")
+                                .font(.caption)
+                                .foregroundStyle(Color.qInk2)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                }
                 NavigationLink(value: Route.memory) {
                     Label("Open memory", systemImage: "brain")
                         .font(.subheadline.weight(.semibold))
@@ -867,6 +943,19 @@ private struct MemorySettingsView: View {
         .sheet(isPresented: $pickModel) {
             ModelPickerView(title: "Memory model", selected: app.settings.memory.extractionModelId) { id in app.settings.memory.extractionModelId = id }
         }
+    }
+
+    /// What it knows, by kind, the biggest first, and how many are pinned.
+    private var memoryMix: String? {
+        guard !app.memory.isEmpty else { return nil }
+        var parts = MemoryCategory.allCases
+            .map { c in (c, app.memory.filter { $0.category == c }.count) }
+            .filter { $0.1 > 0 }
+            .sorted { $0.1 > $1.1 }
+            .map { "\($0.0.title) \($0.1)" }
+        let pinned = app.memory.filter(\.pinned).count
+        if pinned > 0 { parts.append("\(pinned) pinned") }
+        return parts.joined(separator: " · ")
     }
 
     private var footer: Text {
@@ -1434,7 +1523,7 @@ private struct AboutView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openURL) private var openURL
-    @ScaledMetric(relativeTo: .largeTitle) private var nameSize: CGFloat = 46
+    @ScaledMetric(relativeTo: .largeTitle) private var nameSize: CGFloat = 40
     @State private var shown = false
     @State private var messages = 0
     @State private var bytes: Int? = nil
@@ -1444,7 +1533,7 @@ private struct AboutView: View {
 
     var body: some View {
         SettingsPage(title: "About", inlineTitle: true) {
-            titlePage.entrance(shown)
+            entry.entrance(shown)
             gathered.entrance(shown, delay: 0.06)
             kept.entrance(shown, delay: 0.12)
             colophon.entrance(shown, delay: 0.18)
@@ -1455,37 +1544,67 @@ private struct AboutView: View {
         .task { await measure() }
     }
 
-    // MARK: Title page
+    // MARK: The entry
 
-    private var titlePage: some View {
-        VStack(spacing: 0) {
-            // It still writes itself out on three taps, here as on a new chat.
-            QuireMark(width: 56, breathing: true, playful: true)
-                .padding(.bottom, 24)
-            Text("Quire")
-                .displayFont { .system(size: nameSize, weight: .bold, design: $0) }
-                .tracking(-0.9)
-                .foregroundStyle(Color.qInk)
-                .accessibilityAddTraits(.isHeader)
-            Text("/ˈkwaɪər/ · noun")
-                .displayFont { .system(.subheadline, design: $0).italic() }
+    /// Set like a dictionary entry, flush left: the headword, how it's said and what it is, then
+    /// its senses a size smaller, and where the word comes from. The mark stands opposite the
+    /// headword, the way a printer's device sits in the margin.
+    private var entry: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: 12) {
+                Text("Quire")
+                    .displayFont { .system(size: nameSize, weight: .bold, design: $0) }
+                    .tracking(-0.9)
+                    .foregroundStyle(Color.qInk)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 12)
+                // It still writes itself out on three taps, here as on a new chat.
+                QuireMark(width: 34, breathing: true, playful: true)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("/ˈkwaɪər/")
+                    .displayFont { .system(.subheadline, design: $0) }
+                    .foregroundStyle(Color.qInk2)
+                    .accessibilityHidden(true)
+                Text("noun")
+                    .displayFont { .system(.subheadline, design: $0).italic() }
+                    .foregroundStyle(Color.qAccent)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                sense(1, "A set of sheets folded one inside another and sewn together: a book, gathered before it's bound.")
+                sense(2, "This app. Your conversations, gathered and kept on this iPhone.")
+            }
+            .padding(.top, 16)
+
+            Text("**Origin**  Middle English, from Old French *quaier*, from Latin *quaterni*, ‘four each’.")
+                .displayFont { .system(.footnote, design: $0) }
                 .foregroundStyle(Color.qInk2)
-                .padding(.top, 2)
-                .accessibilityLabel("noun")
-            Text("Sheets folded one inside another and sewn together: a book, gathered before it's bound.")
-                .displayFont { .system(.body, design: $0) }
-                .foregroundStyle(Color.qInk)
-                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 300)
                 .padding(.top, 14)
+
             Text("Version \(version), build \(build)")
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(Color.qInk2)
-                .padding(.top, 18)
+                .padding(.top, 6)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
+        .padding(.top, 10)
+    }
+
+    /// One sense of the word: its number in the accent, hung in the margin, and the definition.
+    private func sense(_ n: Int, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("\(n)")
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(Color.qAccent)
+            Text(text)
+                .displayFont { .system(.subheadline, design: $0) }
+                .foregroundStyle(Color.qInk)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: What you've gathered
@@ -1502,6 +1621,7 @@ private struct AboutView: View {
                     Spacer(minLength: 8)
                     figure(live ? app.memory.count : 0, "Remembered")
                 }
+                if weeks.contains(where: { $0 > 0 }) { weekStrip(live) }
                 if let line = gatheredLine {
                     Text(line)
                         .font(.footnote)
@@ -1514,6 +1634,51 @@ private struct AboutView: View {
             .padding(.vertical, 16)
             .card(radius: 20)
         }
+    }
+
+    /// Replies in each of the last twelve weeks, oldest first, this week lit. The bars grow in as
+    /// the figures count up.
+    private func weekStrip(_ live: Bool) -> some View {
+        let w = weeks
+        let top = max(1, w.max() ?? 1)
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .bottom, spacing: 4) {
+                ForEach(w.indices, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(i == w.count - 1 ? Color.qAccent : Color.qAccent.opacity(0.35))
+                        .frame(height: live ? max(3, 34 * CGFloat(w[i]) / CGFloat(top)) : 3)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(height: 34, alignment: .bottom)
+            .animation(reduceMotion ? nil : Motion.entrance.delay(0.1), value: live)
+            HStack {
+                Text("Replies, last 12 weeks")
+                Spacer()
+                Text("\(w.reduce(0, +).formatted()) in all")
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            .foregroundStyle(Color.qInk2)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Replies over the last 12 weeks")
+        .accessibilityValue("\(w.reduce(0, +)) in all, \(w.last ?? 0) this week")
+    }
+
+    /// Replies per week, from the day totals, for the last twelve weeks (each ending on today's
+    /// weekday).
+    private var weeks: [Int] {
+        var byDay: [String: Int] = [:]
+        for c in app.costs { byDay[c.day, default: 0] += c.messages }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        var out = Array(repeating: 0, count: 12)
+        for back in 0..<84 {
+            guard let d = cal.date(byAdding: .day, value: -back, to: today) else { continue }
+            out[11 - back / 7] += byDay[dayKey(d.timeIntervalSince1970 * 1000)] ?? 0
+        }
+        return out
     }
 
     private func figure(_ value: Int, _ label: String) -> some View {

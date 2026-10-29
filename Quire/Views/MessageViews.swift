@@ -621,7 +621,6 @@ private struct WaitingIndicator: View {
     let retryAt: Double?
     let reason: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dim = false
 
     var body: some View {
         if let retryAt {
@@ -638,14 +637,13 @@ private struct WaitingIndicator: View {
                 .foregroundStyle(Color.qAccent)
             }
         } else {
+            // Pulses on a loop of its own, so the pulse can't catch the thread moving around it.
             RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                 .fill(Color.qAccent)
                 .frame(width: 8, height: 18)
-                .opacity(dim ? 0.25 : 1)
-                .onAppear {
-                    guard !reduceMotion else { return }
-                    withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) { dim = true }
-                }
+                .phaseAnimator(reduceMotion ? [false] : [false, true]) { view, dimmed in
+                    view.opacity(dimmed ? 0.25 : 1)
+                } animation: { _ in .easeInOut(duration: 0.6) }
                 .accessibilityLabel("Waiting for the first token")
         }
     }

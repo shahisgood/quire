@@ -23,15 +23,11 @@ struct QuireApp: App {
                 .onChange(of: app.settings) { app.persistSettings() }
                 .onChange(of: app.settings.ui.typeface, initial: true) { _, face in NavigationTypography.apply(face) }
                 .onChange(of: app.settings.ui.colorTheme) { _, theme in ThemeStore.shared.use(theme) }
-                .onChange(of: phase) { oldPhase, newPhase in
+                .onChange(of: phase) { _, newPhase in
+                    if newPhase == .inactive { app.noteLeaving() }
                     if newPhase == .background {
                         app.didEnterBackground()
                         QuickActions.refresh(chats: app.chats)
-                    }
-                    if oldPhase == .background, newPhase != .background {
-                        var still = Transaction()
-                        still.disablesAnimations = true
-                        withTransaction(still) { app.willEnterForeground() }
                     }
                     if newPhase == .active { Task { await app.refreshModels() } }
                 }
@@ -44,6 +40,10 @@ struct RootView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var drawer = SettingsDrawer()
+    /// What was on screen, kept by iOS with the scene (see `AppModel.screen`).
+    @SceneStorage("quire.screen") private var savedScreen = ""
+    /// Launch has put you somewhere. Until then a plain page covers the stack.
+    @State private var landed = false
 
     /// 0 with settings closed, 1 with it covering the chats; follows the finger mid-swipe, either way.
     private var reveal: CGFloat {
@@ -101,15 +101,49 @@ struct RootView: View {
         // rather than whatever is underneath (the bar's buttons, a sheet).
         .onAppear { ToastWindow.install(app: app) }
         .background(Color.qBase.ignoresSafeArea())
-        // Home Screen quick actions, including one that launched the app before this view existed.
-        .onChange(of: QuickActions.shared.pending, initial: true) { _, action in
-            guard let action else { return }
-            QuickActions.shared.pending = nil
-            switch action {
-            case .newChat: app.startNewChat()
-            case .incognito: app.startNewChat(incognito: true)
-            case .open(let id): if app.chat(id) != nil { app.openChat(id) }
+        .overlay {
+            if !landed {
+                Color.qBase
+                    .ignoresSafeArea()
+                    .transition(.opacity)
             }
+        }
+        .task { await land() }
+        .onChange(of: app.screen) { _, screen in
+            if landed { savedScreen = screen }
+        }
+        // Home Screen quick actions, including one that launched the app before this view existed
+        // (that one waits for the landing, below).
+        .onChange(of: QuickActions.shared.pending, initial: true) { _, _ in
+            if landed { takeQuickAction() }
+        }
+    }
+
+    /// Puts launch somewhere, once the stack is in its window. Pushing a chat in the same moment
+    /// the stack first appears could leave the chat without its back button and its bar items
+    /// drifting into place, so the stack starts on its root, settles, and the chat (or wherever
+    /// you were) goes on top without animation, under a plain page that then lifts.
+    private func land() async {
+        guard !landed else { return }
+        try? await Task.sleep(for: .milliseconds(60))
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) {
+            app.land(restoring: savedScreen)
+            takeQuickAction()
+        }
+        savedScreen = app.screen
+        try? await Task.sleep(for: .milliseconds(30))
+        withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.22)) { landed = true }
+    }
+
+    private func takeQuickAction() {
+        guard let action = QuickActions.shared.pending else { return }
+        QuickActions.shared.pending = nil
+        switch action {
+        case .newChat: app.startNewChat()
+        case .incognito: app.startNewChat(incognito: true)
+        case .open(let id): if app.chat(id) != nil { app.openChat(id) }
         }
     }
 }

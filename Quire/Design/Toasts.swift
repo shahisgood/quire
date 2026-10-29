@@ -60,7 +60,12 @@ struct ToastOverlay: View {
         VStack(spacing: 0) {
             if let t = center.current {
                 ToastCard(toast: t, center: center)
-                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onFrame($0) }
+                    // Only the toast that's showing claims touches. One on its way out still
+                    // reports where it is as it slides off, and must not leave that behind,
+                    // or the window would go on taking taps meant for the bar beneath it.
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                        if center.current?.id == t.id { onFrame(frame) }
+                    }
                     .transition(reduceMotion ? .opacity : .toast)
                     .id(t.id)
             }
@@ -69,7 +74,7 @@ struct ToastOverlay: View {
         .frame(maxWidth: .infinity)
         .animation(reduceMotion ? .easeInOut(duration: 0.18) : .spring(response: 0.42, dampingFraction: 0.8),
                    value: center.current)
-        .onChange(of: center.current == nil) { _, gone in if gone { onFrame(.zero) } }
+        .onChange(of: center.current?.id) { _, id in if id == nil { onFrame(.zero) } }
     }
 }
 

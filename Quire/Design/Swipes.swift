@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 import ObjectiveC
 
 // MARK: - Settings drawer
@@ -443,4 +444,61 @@ struct OpticalSymbol: View {
         func correction(_ d: Double) -> CGFloat { abs(d) < 0.25 ? 0 : CGFloat(max(-2, min(2, -d))) }
         return CGSize(width: correction(dx), height: correction(dy))
     }
+}
+
+// MARK: - Keyboard
+
+/// A swipe down anywhere on a chat puts the keyboard away. It only ever watches: the thread still
+/// scrolls under the same finger, and buttons, menus and text selection work as before. A pull
+/// that starts upward or sideways is ignored, and each swipe acts once.
+struct KeyboardSwipe: UIGestureRecognizerRepresentable {
+    func makeUIGestureRecognizer(context: Context) -> DownSwipeRecognizer {
+        let pan = DownSwipeRecognizer()
+        pan.maximumNumberOfTouches = 1
+        pan.cancelsTouchesInView = false
+        pan.delaysTouchesBegan = false
+        pan.delaysTouchesEnded = false
+        return pan
+    }
+
+    func handleUIGestureRecognizerAction(_ pan: DownSwipeRecognizer, context: Context) {
+        guard pan.state == .changed || pan.state == .ended, !pan.fired else { return }
+        let t = pan.translation(in: pan.view)
+        let v = pan.velocity(in: pan.view)
+        // A decided pull, or a quick flick.
+        guard t.y > 44 || (t.y > 16 && v.y > 650) else { return }
+        pan.fired = true
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+
+/// Recognises only a finger that sets off downward, and never stands in anything else's way.
+final class DownSwipeRecognizer: UIPanGestureRecognizer {
+    var fired = false
+    private var origin: CGPoint?
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesBegan(touches, with: event)
+        if origin == nil { origin = touches.first?.location(in: view?.window) }
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        if state == .possible, let origin, let point = touches.first?.location(in: view?.window) {
+            let dx = point.x - origin.x, dy = point.y - origin.y
+            if max(abs(dx), abs(dy)) > 6 && (dy <= 0 || abs(dx) > dy) {
+                state = .failed
+                return
+            }
+        }
+        super.touchesMoved(touches, with: event)
+    }
+
+    override func reset() {
+        super.reset()
+        origin = nil
+        fired = false
+    }
+
+    override func canPrevent(_ other: UIGestureRecognizer) -> Bool { false }
+    override func canBePrevented(by other: UIGestureRecognizer) -> Bool { false }
 }

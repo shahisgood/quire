@@ -76,7 +76,6 @@ final class AppModel {
         folders = store.loadFolders().sorted { $0.order < $1.order }
         if let c = store.loadCatalogue() { applyCatalogue(c.models, fetchedAt: c.fetchedAt) }
         Haptics.enabled = settings.ui.hapticsEnabled
-        land()
     }
 
     func persistSettings() {
@@ -110,35 +109,46 @@ final class AppModel {
         static let chat = "quire.left.chat"
     }
 
-    /// Cold launch: back on the chat you left if you were on one and it's been under half a
-    /// minute (the system closed the app, or you swiped it away and straight back); otherwise a
-    /// fresh chat.
-    private func land() {
-        let defaults = UserDefaults.standard
-        let leftAt = defaults.double(forKey: Left.at)
-        let recent = leftAt > 0 && Date().timeIntervalSince1970 - leftAt < Self.resumeWindow
-        if recent, let id = defaults.string(forKey: Left.chat), let c = chat(id), !c.archived {
-            path = stack(for: id)
-        } else {
-            path = [.chat(newChat().chat.id)]
+    /// What's on screen, in a word, for the scene to keep: a saved chat by its id, a chat not yet
+    /// begun, or the list. iOS keeps it while the app is merely put away, even if the system ends
+    /// it in the background to free memory, and throws it away when you close the app yourself.
+    var screen: String {
+        guard case .chat(let id)? = path.last else { return "list" }
+        return chat(id) != nil ? "chat:\(id)" : "new"
+    }
+
+    /// Where a launch lands. Only a launch decides: coming back to an app that's still open never
+    /// moves you.
+    ///
+    /// If iOS kept the scene (`saved` isn't empty), you never closed Quire, even if the system
+    /// ended it in the background: you're put back where you were. If you closed it yourself,
+    /// you're back on the chat you left when it's been under half a minute; otherwise a fresh
+    /// chat is waiting.
+    func land(restoring saved: String) {
+        if saved == "list" {
+            path = []
+            return
         }
+        if saved.hasPrefix("chat:"), let c = chat(String(saved.dropFirst(5))), !c.archived {
+            path = stack(for: c.id)
+            return
+        }
+        if saved.isEmpty {
+            let defaults = UserDefaults.standard
+            let leftAt = defaults.double(forKey: Left.at)
+            let recent = leftAt > 0 && Date().timeIntervalSince1970 - leftAt < Self.resumeWindow
+            if recent, let id = defaults.string(forKey: Left.chat), let c = chat(id), !c.archived {
+                path = stack(for: id)
+                return
+            }
+        }
+        path = [.chat(newChat().chat.id)]
     }
 
     /// The saved chat on screen, if a chat is what's on screen.
     private var chatOnScreen: String? {
         guard !settingsOpen, case .chat(let id)? = path.last, chat(id) != nil else { return nil }
         return id
-    }
-
-    /// Back from the background: after more than half a minute away, a fresh chat, unless the one
-    /// on screen already is one. Called as the app comes forward, before it's seen (and without
-    /// animation), so you simply arrive on a clean page.
-    func willEnterForeground() {
-        let leftAt = UserDefaults.standard.double(forKey: Left.at)
-        guard leftAt > 0, Date().timeIntervalSince1970 - leftAt >= Self.resumeWindow else { return }
-        if !settingsOpen, case .chat(let id)? = path.last, chat(id) == nil, sessions[id] != nil { return }
-        settingsPath = []
-        startNewChat()
     }
 
     func openChat(_ id: String, highlight: String? = nil) {
@@ -582,11 +592,18 @@ final class AppModel {
 
     // MARK: Lifecycle
 
-    func didEnterBackground() {
-        greetingSeed = UUID().uuidString
+    /// Notes when you left and what you were on, for the next launch's half-minute rule. Also
+    /// called as the app goes inactive, since closing it from the app switcher may never take it
+    /// as far as the background.
+    func noteLeaving() {
         let defaults = UserDefaults.standard
         defaults.set(Date().timeIntervalSince1970, forKey: Left.at)
         defaults.set(chatOnScreen, forKey: Left.chat)
+    }
+
+    func didEnterBackground() {
+        greetingSeed = UUID().uuidString
+        noteLeaving()
         for s in sessions.values { s.flushDraft() }
         persistSettings()
         let store = self.store

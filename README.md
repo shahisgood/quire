@@ -15,7 +15,8 @@ Requires **iOS 26**. Built on GitHub's macOS runners, so you don't need a Mac.
 - Attachments from Photos, the camera, Files or the clipboard. Images are resized to 1600 px, as in the web app.
 - Images the model draws (for models that output images) are kept on the reply. Tap any image in a chat to see it full screen and swipe through all of them, with pinch and double-tap zoom and swipe down to close.
 - A composer after Claude's: attach, the model with its thinking level, a context ring (tap for details and the chat's cost; Settings → Appearance → Context window hides it), and a send button that appears once there's something to send. Offline is detected and your draft waits.
-- Quire opens on a fresh chat. Come back within 30 seconds of leaving a chat and you're back in it; any longer and a clean page is waiting.
+- Quire opens on a fresh chat after you close it. Reopen within 30 seconds of leaving a chat and you're back in it. Switching away and back never moves you, and if iOS ends Quire in the background to free memory, you come back exactly where you were.
+- Swipe down anywhere on a chat to put the keyboard away.
 - A greeting on every new chat that follows the time of day, always on one clean line.
 - Chats are named from their opening exchange (Settings → Models → Name new chats), and a chat that missed its name (offline, a failed first reply) gets one when you next open it.
 - Home Screen quick actions: press and hold the icon for New chat, Incognito chat, or one of your two most recent chats.
@@ -38,7 +39,7 @@ Requires **iOS 26**. Built on GitHub's macOS runners, so you don't need a Mac.
 - Projects: homes for related chats, each with its own symbol and colour. Give one instructions and every chat in it follows them (added after the system prompt), or leave it as a plain group. A project can also choose the model its new chats start with. Hold a project's card to start a chat in it, edit it, or delete it (keeping its chats or not, with Undo for the first); chats move in and out from their menu or in bulk. Stored as the web app's folders, so backups still round-trip.
 - Costs: a live estimate while streaming, replaced by OpenRouter's authoritative figure a few seconds later. Settings shows the last 30 days at a glance; the breakdown charts cost, tokens or replies over 7 days to all time, stacked by model (each model keeps its colour), with a model table, the token mix and the costliest chats.
 - Appearance: four themes (Quire's ink, paper and periwinkle; Velvet's obsidian, velvet and almond; Amethyst's noir, amethyst and steel; and Pitch, true black and white for OLED screens), each in light, dark or auto, and the whole app re-colours as you pick; a typeface for the whole app, picked from three specimens (New York, SF Pro or SF Pro Rounded), with replies following it or kept in New York; reply size on top of Dynamic Type; comfortable or compact; text strength; haptics.
-- About reads like the back pages of a book: what a quire is, what you've gathered (chats, messages, remembered facts, the room it takes), where everything is kept, and a colophon of how your copy is set.
+- About opens on a dictionary entry for the word, then what you've gathered (chats, messages, remembered facts, replies week by week, the room it takes), where everything is kept, and a colophon of how your copy is set.
 - Backups in the web app's format, so you can move between the two in either direction. A reminder appears after 200 messages or 30 days.
 
 Accessibility: Dynamic Type throughout, VoiceOver labels and custom actions on messages, spoken "reply finished", Reduce Motion honoured everywhere (motion becomes a crossfade), and 44 pt touch targets.

@@ -31,9 +31,11 @@ struct SettingsPage<Content: View>: View {
 
 // MARK: - Group
 
-/// A small label, a card of rows divided by hairlines, and an optional note under it.
+/// A small label, a card of rows divided by hairlines, and an optional note under it. Opposite the
+/// label, a word or two can say how things stand inside at a glance.
 struct SettingsGroup<Content: View>: View {
     var label: String? = nil
+    var detail: String? = nil
     var footer: Text? = nil
     @ViewBuilder var content: Content
     @Environment(\.displayScale) private var displayScale
@@ -41,8 +43,18 @@ struct SettingsGroup<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             if let label {
-                SectionLabel(text: label)
-                    .padding(.horizontal, 4)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    SectionLabel(text: label)
+                    Spacer(minLength: 8)
+                    if let detail {
+                        Text(detail)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(Color.qInk2)
+                            .lineLimit(1)
+                            .contentTransition(.opacity)
+                    }
+                }
+                .padding(.horizontal, 4)
             }
             Group(subviews: content) { rows in
                 VStack(spacing: 0) {
