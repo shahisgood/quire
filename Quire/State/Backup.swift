@@ -213,6 +213,12 @@ extension AppModel {
                 lines += ["## \(m.modelId ?? "Assistant")", ""]
                 if let r = m.reasoning, !r.isEmpty { lines += ["<details><summary>Reasoning</summary>", "", r, "", "</details>", ""] }
                 lines += [m.content, ""]
+                let sources = Source.of(m)
+                if !sources.isEmpty {
+                    lines += ["**Sources**", ""]
+                    lines += sources.enumerated().map { i, s in "\(i + 1). [\(s.title ?? s.host)](\(s.url.absoluteString))" }
+                    lines += [""]
+                }
             }
         }
         return lines.joined(separator: "\n")

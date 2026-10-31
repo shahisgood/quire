@@ -33,7 +33,7 @@ struct SettingsView: View {
                 link(.memory, "Memory", "brain", .qTileTeal,
                      app.settings.memory.enabled ? "\(app.memory.count) facts · on" : "Off")
                 link(.appearance, "Appearance", "textformat", .qTileAmber,
-                     "\(app.settings.ui.colorTheme.name) · \(app.settings.ui.theme.label) · \(app.settings.ui.typeface.name)")
+                     "\(app.settings.ui.colorTheme.name) · \(app.settings.ui.theme.label) · \(app.settings.ui.titleFace.name)")
             }
             .listRowBackground(Color.qRaised)
 
@@ -977,6 +977,7 @@ private struct AppearanceSettings: View {
     @State private var theme: AppTheme = .quire
     @State private var mode: ThemeChoice = .dark
     @State private var face: Typeface = .newYork
+    @State private var geist: GeistStyle = .serif
     @State private var replyFace: ReadingFace = .serif
     @State private var size: ReadingSize = .standard
     @State private var density = "comfortable"
@@ -984,17 +985,23 @@ private struct AppearanceSettings: View {
     @State private var loaded = false
     @State private var strengthCommit: Task<Void, Never>? = nil
 
-    private var replyDesign: Font.Design {
-        replyFace == .serif ? .serif : (face == .sfRounded ? .rounded : .default)
+    private var replyDesign: Face {
+        UISettings.replyFace(typeface: face, style: geist, reading: replyFace)
+    }
+
+    /// The two faces replies can be set in under this typeface.
+    private var replyOptions: [(value: ReadingFace, label: String)] {
+        [(.serif, UISettings.replyFace(typeface: face, style: geist, reading: .serif).name),
+         (.sans, UISettings.replyFace(typeface: face, style: geist, reading: .sans).name)]
     }
 
     var body: some View {
         @Bindable var app = app
         SettingsPage(title: "Appearance") {
             labelled("Preview") {
-                ReadingPreview(replyDesign: replyDesign, replyFace: replyFace == .serif ? "New York" : face.sansName,
-                               typeface: face, size: size, compact: density == "compact", ink: strength)
-                    .environment(\.displayDesign, face.design)
+                ReadingPreview(replyDesign: replyDesign, titleName: face.face(geist).name,
+                               size: size, compact: density == "compact", ink: strength)
+                    .environment(\.displayFace, face.face(geist))
                     .padding(18)
                     .card(radius: 22)
                     .animation(reduceMotion ? nil : Motion.standard, value: size)
@@ -1017,14 +1024,28 @@ private struct AppearanceSettings: View {
 
             VStack(alignment: .leading, spacing: 9) {
                 SectionLabel(text: "Typeface").padding(.horizontal, 4)
-                TypefacePicker(selection: face) { picked in
+                TypefacePicker(selection: face, geist: geist) { picked in
                     // Replies follow the typeface; they can be set apart again below.
+                    let reading: ReadingFace = picked == .geist ? geist.readingFace : (picked == .newYork ? .serif : .sans)
                     face = picked
-                    replyFace = picked == .newYork ? .serif : .sans
+                    replyFace = reading
                     AppearanceChange.apply {
                         app.settings.ui.typeface = picked
-                        app.settings.ui.readingFace = picked == .newYork ? .serif : .sans
+                        app.settings.ui.readingFace = reading
                     }
+                }
+                if face == .geist {
+                    GeistCutPicker(selection: geist) { picked in
+                        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : Motion.select) {
+                            geist = picked
+                            replyFace = picked.readingFace
+                        }
+                        AppearanceChange.apply {
+                            app.settings.ui.geistStyle = picked
+                            app.settings.ui.readingFace = picked.readingFace
+                        }
+                    }
+                    .transition(.opacity.combined(with: .offset(y: -6)))
                 }
                 Text(face.blurb)
                     .font(.footnote)
@@ -1034,11 +1055,12 @@ private struct AppearanceSettings: View {
                     .contentTransition(.opacity)
                     .animation(Motion.quick, value: face)
             }
+            .animation(reduceMotion ? .easeInOut(duration: 0.2) : Motion.reveal, value: face == .geist)
 
             SettingsGroup(label: "Reading",
                           footer: Text("Replies follow the typeface unless you set them apart: SF Pro titles over New York replies reads like a magazine. Reply size is relative to the system text size, so it follows Dynamic Type.")) {
                 SettingRow("Replies in") { EmptyView() } below: {
-                    ChoiceStrip(options: [(value: ReadingFace.serif, label: "New York"), (value: ReadingFace.sans, label: face.sansName)],
+                    ChoiceStrip(options: replyOptions,
                                 selection: deferred($replyFace) { app.settings.ui.readingFace = $0 }, label: "Replies in")
                 }
                 SettingRow("Reply size", detail: size.label) { EmptyView() } below: {
@@ -1071,6 +1093,8 @@ private struct AppearanceSettings: View {
                           footer: Text("Reasoning traces stay open while the model is still thinking either way. With a hardware keyboard, Shift-Return adds a line.")) {
                 toggleRow("Context window", isOn: $app.settings.ui.showContext,
                           help: "A ring in the message box shows how much of the model's context this chat fills. Tap it for the exact count and what the chat has cost.")
+                toggleRow("Site icons", isOn: $app.settings.ui.siteIcons,
+                          help: "Each source a reply cites shows its site's icon beside its name. Icons come from DuckDuckGo's icon service, which is told the site's address and nothing else. Off, none are fetched.")
                 toggleRow("Show reasoning by default", isOn: $app.settings.ui.showReasoningByDefault)
                 toggleRow("Show costs", isOn: $app.settings.ui.showCosts)
                 toggleRow("Haptics", isOn: $app.settings.ui.hapticsEnabled)
@@ -1083,6 +1107,7 @@ private struct AppearanceSettings: View {
             theme = ui.colorTheme
             mode = ui.theme
             face = ui.typeface
+            geist = ui.geistStyle
             replyFace = ui.readingFace
             size = ReadingSize(scale: ui.fontScale)
             density = ui.density
@@ -1216,6 +1241,8 @@ private struct ThemePicker: View {
 /// the whole app changes with it.
 private struct TypefacePicker: View {
     let selection: Typeface
+    /// Geist's card shows its chosen cut.
+    let geist: GeistStyle
     let pick: (Typeface) -> Void
     @Namespace private var ring
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1230,6 +1257,7 @@ private struct TypefacePicker: View {
 
     private func card(_ face: Typeface, on: Bool) -> some View {
         let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        let cut = face.face(geist)
         return Button {
             guard !on else { return }
             Haptics.selection()
@@ -1237,16 +1265,18 @@ private struct TypefacePicker: View {
         } label: {
             VStack(spacing: 4) {
                 Text("Aa")
-                    .font(.system(size: 34, weight: .semibold, design: face.design))
+                    .font(.system(size: 34, weight: .semibold, design: cut))
                     .foregroundStyle(on ? Color.qAccent : Color.qInk)
                     .frame(height: 46)
                 Text(face.shortName)
-                    .font(.system(.footnote, design: face.design).weight(.semibold))
+                    .font(.system(.footnote, design: cut).weight(.semibold))
                     .foregroundStyle(Color.qInk)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 Text(face.character)
-                    .font(.system(.caption2, design: face.design))
+                    .font(.system(.caption2, design: cut))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                     .foregroundStyle(Color.qInk2)
             }
             .frame(maxWidth: .infinity)
@@ -1276,6 +1306,58 @@ private struct TypefacePicker: View {
         .accessibilityLabel(face.name)
         .accessibilityValue(face.character)
         .accessibilityAddTraits(on ? .isSelected : [])
+    }
+}
+
+/// Geist's four cuts, in a menu that drops down from a card showing the chosen one in itself.
+private struct GeistCutPicker: View {
+    let selection: GeistStyle
+    let pick: (GeistStyle) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Text("Cut")
+                    .foregroundStyle(Color.qInk)
+                Spacer(minLength: 8)
+                Menu {
+                    Picker("Cut", selection: Binding(get: { selection }, set: { s in
+                        guard s != selection else { return }
+                        Haptics.selection()
+                        pick(s)
+                    })) {
+                        ForEach(GeistStyle.allCases, id: \.self) { s in
+                            Text(s == .serif ? "\(s.name) (default)" : s.name).tag(s)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 7) {
+                        Text(selection.name)
+                            .font(.system(.subheadline, design: selection.face).weight(.medium))
+                            .foregroundStyle(Color.qInk)
+                            .contentTransition(.opacity)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color.qInk2)
+                    }
+                    .padding(.horizontal, 13)
+                    .frame(minHeight: 36)
+                    .background(Color.qSunken, in: .capsule)
+                    .contentShape(.capsule)
+                }
+                .accessibilityLabel("Geist cut")
+                .accessibilityValue(selection.name)
+            }
+            Text(selection.blurb)
+                .font(.footnote)
+                .foregroundStyle(Color.qInk2)
+                .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.opacity)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+        .card(radius: 20)
+        .animation(Motion.quick, value: selection)
     }
 }
 
@@ -1321,9 +1403,8 @@ private struct SizeStrip: View {
 /// A live sample: a title in the typeface over a reply in its face, at the chosen size and
 /// strength, and a message of yours beneath.
 private struct ReadingPreview: View {
-    let replyDesign: Font.Design
-    let replyFace: String
-    let typeface: Typeface
+    let replyDesign: Face
+    let titleName: String
     let size: ReadingSize
     let compact: Bool
     let ink: Double
@@ -1358,7 +1439,7 @@ private struct ReadingPreview: View {
         }
         .environment(\.dynamicTypeSize, size.apply(to: typeSize))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Preview: titles in \(typeface.name), replies in \(replyFace), \(size.label)")
+        .accessibilityLabel("Preview: titles in \(titleName), replies in \(replyDesign.name), \(size.label)")
     }
 }
 
@@ -1723,7 +1804,9 @@ private struct AboutView: View {
             fact("paperplane", "Straight to \(host)",
                  "Messages, titles and memory go from this iPhone to \(host) and nowhere else. There's no Quire server.")
             fact("eye.slash", "Nothing watching",
-                 "No account, no analytics, no tracking, no ads.")
+                 app.settings.ui.siteIcons
+                    ? "No account, no analytics, no tracking, no ads. Site icons for sources come from DuckDuckGo, told only the site's address."
+                    : "No account, no analytics, no tracking, no ads.")
         }
     }
 
@@ -1753,8 +1836,8 @@ private struct AboutView: View {
 
     private var setIn: String {
         let ui = app.settings.ui
-        let titles = ui.typeface.name
-        let replies = ui.readingFace == .serif ? "New York" : ui.typeface.sansName
+        let titles = ui.titleFace.name
+        let replies = ui.replyFaceName
         return titles == replies ? titles : "\(titles), replies in \(replies)"
     }
 
@@ -1780,6 +1863,7 @@ private struct AboutView: View {
             }
             line("Running on", "iOS \(UIDevice.current.systemVersion)")
             line("Made with", "SwiftUI, for iOS 26")
+            line("Geist", "By Vercel, under the SIL Open Font License")
         }
     }
 

@@ -556,6 +556,11 @@ final class ChatSession {
         // Images the model draws go on the reply as attachments the moment they arrive.
         let baseImages = continueMode ? (existing?.attachments ?? []) : []
         var drawn: [Attachment] = []
+        // Sources from web search, in the order they first came, each once.
+        var sources: [Citation] = continueMode ? (existing?.citations ?? []) : []
+        func cite(_ list: [Citation]) {
+            for c in list where !sources.contains(where: { $0.url == c.url }) { sources.append(c) }
+        }
         func attach(_ urls: [String]) {
             for u in urls { drawn.append(Self.drawnImage(u, number: baseImages.count + drawn.count + 1)) }
             let all = baseImages + drawn
@@ -627,6 +632,7 @@ final class ChatSession {
                         if let f = ev.finishReason { finish = f }
                         if let u = ev.usage { usage = u }
                         if let imgs = ev.images, !imgs.isEmpty { attach(imgs) }
+                        if let c = ev.citations { cite(c) }
                         if ev.content != nil || ev.reasoning != nil || ev.images != nil {
                             if streamFirstTokenAt == nil {
                                 streamFirstTokenAt = nowMs()
@@ -644,6 +650,7 @@ final class ChatSession {
                     finish = r.finishReason
                     usage = r.usage
                     if !r.images.isEmpty { attach(r.images) }
+                    cite(r.citations)
                     streamFirstTokenAt = nowMs()
                 }
                 break retryLoop
@@ -692,7 +699,9 @@ final class ChatSession {
         let finalContent = content
         let finalReasoning = reasoning
         let finalGenerationId = generationId
+        let finalSources = sources
         update(assistantId) {
+            $0.citations = finalSources.isEmpty ? nil : finalSources
             $0.content = finalContent
             $0.reasoning = finalReasoning.isEmpty ? nil : finalReasoning
             $0.generationId = finalGenerationId

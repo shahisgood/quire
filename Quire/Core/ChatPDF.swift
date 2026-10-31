@@ -111,6 +111,7 @@ enum ChatPDF {
                     if m.status == .interrupted { body += "<p class=\"note\">Stopped here.</p>" }
                 }
                 body += attachments(m.attachments)
+                body += sources(Source.of(m))
                 body += "</section>\n"
             }
         }
@@ -150,6 +151,18 @@ enum ChatPDF {
     }
 
     private static func f(_ v: Double) -> String { String(format: "%.2f", v) }
+
+    // MARK: Sources
+
+    /// A reply's sources under it, numbered, each with its site and the page's title.
+    private static func sources(_ list: [Source]) -> String {
+        guard !list.isEmpty else { return "" }
+        var out = "<div class=\"sources\"><div class=\"label\">Sources</div><ol>"
+        for s in list {
+            out += "<li><span class=\"site\">\(esc(s.host))</span> \(esc(s.title ?? s.url.absoluteString))</li>"
+        }
+        return out + "</ol></div>"
+    }
 
     // MARK: Attachments
 
@@ -240,7 +253,14 @@ enum ChatPDF {
             if intent.contains(.strikethrough) { piece = "<s>\(piece)</s>" }
             if intent.contains(.emphasized) { piece = "<em>\(piece)</em>" }
             if intent.contains(.stronglyEmphasized) { piece = "<strong>\(piece)</strong>" }
-            if let link = run.link { piece = "<a href=\"\(esc(link.absoluteString))\">\(piece)</a>" }
+            if let link = run.link {
+                // A citation reads as a small pill with the site's name, as in the app.
+                if let host = Site.host(link), Site.isCitation(String(a[run.range].characters), host: host) {
+                    piece = "<a class=\"pill\" href=\"\(esc(link.absoluteString))\">\(esc(Site.name(host)))</a>"
+                } else {
+                    piece = "<a href=\"\(esc(link.absoluteString))\">\(piece)</a>"
+                }
+            }
             out += piece
         }
         return out
@@ -298,14 +318,52 @@ enum ChatPDF {
         return String(format: "#%02X%02X%02X", byte(r), byte(g), byte(b))
     }
 
+    /// A face as a CSS font stack. Geist's cuts are embedded in the page (see `embedded`).
+    private static func family(_ face: Face) -> String {
+        switch face {
+        case .newYork: "ui-serif, 'New York', Georgia, serif"
+        case .sfPro: "-apple-system, system-ui, 'Helvetica Neue', sans-serif"
+        case .sfRounded: "ui-rounded, -apple-system, system-ui, sans-serif"
+        case .geistSans: "'Quire Geist Sans', -apple-system, system-ui, sans-serif"
+        case .geistSerif: "'Quire Geist Serif', ui-serif, Georgia, serif"
+        case .geistMono: "'Quire Geist Mono', ui-monospace, Menlo, monospace"
+        case .geistPixel: "'Quire Geist Pixel', ui-monospace, Menlo, monospace"
+        }
+    }
+
+    /// The bundled Geist files a page needs, as `@font-face` rules carrying the fonts themselves,
+    /// so WebKit sets the PDF in the same cuts as the app. Missing weights are left for WebKit to
+    /// make up from the nearest.
+    private static func embedded(_ faces: Set<Face>) -> String {
+        let files: [Face: [(file: String, weight: Int, italic: Bool)]] = [
+            .geistSans: [("Geist-Regular", 400, false), ("Geist-Italic", 400, true), ("Geist-SemiBold", 600, false), ("Geist-Bold", 700, false)],
+            .geistSerif: [("GeistSerif-Regular", 400, false)],
+            .geistMono: [("GeistMono-Regular", 400, false), ("GeistMono-SemiBold", 600, false), ("GeistMono-Bold", 700, false)],
+            .geistPixel: [("GeistPixel-Square", 400, false)],
+        ]
+        var out = ""
+        for face in [Face.geistSans, .geistSerif, .geistMono, .geistPixel] where faces.contains(face) {
+            for f in files[face] ?? [] {
+                guard let url = Bundle.main.url(forResource: f.file, withExtension: "ttf"),
+                      let data = try? Data(contentsOf: url) else { continue }
+                out += "@font-face { font-family: 'Quire \(face.name)'; src: url(data:font/ttf;base64,\(data.base64EncodedString())) format('truetype'); "
+                out += "font-weight: \(f.weight); font-style: \(f.italic ? "italic" : "normal"); }\n"
+            }
+        }
+        return out
+    }
+
     private static func css(_ ui: UISettings) -> String {
         let p = ThemeStore.shared.palette
-        let serif = "ui-serif, 'New York', Georgia, serif"
-        let sans = ui.typeface == .sfRounded ? "ui-rounded, -apple-system, system-ui, sans-serif" : "-apple-system, system-ui, 'Helvetica Neue', sans-serif"
-        let titles = ui.typeface == .newYork ? serif : sans
-        let replies = ui.readingFace == .serif ? serif : sans
-        let mono = "ui-monospace, 'SF Mono', Menlo, monospace"
-        return """
+        let geist = ui.typeface == .geist
+        let titles = family(ui.titleFace)
+        let replies = family(ui.replyFace)
+        // Labels and the small print: the typeface's own sans.
+        let sans = family(geist ? .geistSans : (ui.typeface == .sfRounded ? .sfRounded : .sfPro))
+        let mono = ui.codeFace == .geistMono ? family(.geistMono) : "ui-monospace, 'SF Mono', Menlo, monospace"
+        var faces: Set<Face> = [ui.titleFace, ui.replyFace]
+        if geist { faces.formUnion([.geistSans, .geistMono]) }
+        return embedded(faces) + """
         :root {
           --ink: \(hex(p.ink)); --body: \(hex(p.inkBody)); --strong: \(hex(p.inkStrong)); --ink2: \(hex(p.ink2));
           --rule: \(hex(p.rule)); --accent: \(hex(p.accent)); --soft: \(hex(p.accentSoft)); --sunken: \(hex(p.sunken));
@@ -375,6 +433,14 @@ enum ChatPDF {
         .thought .label { font-weight: 600; margin-bottom: 3pt; }
         .thought p, .thought li { margin-bottom: 3pt; }
         .thought strong, .thought code { color: var(--ink2); }
+        a.pill { font-family: \(sans); font-size: 7.6pt; font-weight: 500; color: var(--ink2); background: var(--sunken);
+                 border-radius: 999px; padding: 0.6pt 6pt 0.8pt; white-space: nowrap; vertical-align: 0.06em; }
+        .sources { font-family: \(sans); font-size: 8pt; line-height: 1.45; color: var(--ink2); margin: 9pt 0 0;
+                   break-inside: avoid; page-break-inside: avoid; }
+        .sources .label { font-weight: 600; color: var(--ink); margin-bottom: 3pt; }
+        .sources ol { margin: 0; padding-left: 14pt; }
+        .sources li { margin: 0 0 2pt; }
+        .sources .site { font-weight: 600; color: var(--accent); }
         .note { font-family: \(sans); font-size: 9pt; font-style: italic; color: var(--ink2); margin: 6pt 0 0; }
         .end { margin-top: 38pt; text-align: center; font-family: \(sans); font-size: 8pt; color: var(--ink2); break-inside: avoid; page-break-inside: avoid; }
         .end .mark { display: block; margin: 0 auto 9pt; opacity: 0.55; }

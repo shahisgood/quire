@@ -75,6 +75,8 @@ struct ChatView: View {
         .animation(reduceMotion ? nil : Motion.standard, value: session.path.isEmpty)
         // A swipe down over the chat (not the message box) puts the keyboard away.
         .gesture(KeyboardSwipe())
+        // Sources and links open in Safari inside Quire.
+        .opensLinksInApp()
         .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }

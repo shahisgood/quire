@@ -180,7 +180,7 @@ private struct AssistantMessageView: View {
     private var isStreaming: Bool { session.streamingId == message.id }
     private var content: String { isStreaming ? session.streamContent : message.content }
     private var reasoning: String { isStreaming ? session.streamReasoning : (message.reasoning ?? "") }
-    private var design: Font.Design { app.settings.ui.replyDesign }
+    private var design: Face { app.settings.ui.replyFace }
     private var modelId: String { message.modelId ?? session.chat.modelId }
     /// Images the model made for this reply.
     private var drawn: [Attachment] { message.attachments?.filter { $0.kind == .image } ?? [] }
@@ -212,6 +212,14 @@ private struct AssistantMessageView: View {
             }
 
             if !isStreaming { statusBlock }
+
+            if !isStreaming {
+                let sources = Source.of(message)
+                if !sources.isEmpty {
+                    SourcesButton(sources: sources)
+                        .transition(.opacity)
+                }
+            }
 
             footer
         }
@@ -402,7 +410,7 @@ private struct ReplyImages: View {
 /// text view grows taller than the GPU will draw.
 private struct ReplyBody: View {
     let blocks: [MDBlock]
-    let design: Font.Design
+    let design: Face
     let streaming: Bool
     let ink: Double
 

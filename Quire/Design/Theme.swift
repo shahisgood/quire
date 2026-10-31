@@ -140,6 +140,13 @@ final class ThemeStore {
         if theme != self.theme { self.theme = theme }
     }
 
+    /// The face code is set in (see `CodeFont`).
+    private(set) var code: Face = .sfPro
+
+    func useCode(_ face: Face) {
+        if face != code { code = face }
+    }
+
     var palette: Palette { theme.palette }
 }
 
@@ -214,21 +221,117 @@ extension ThemeChoice {
     }
 }
 
-extension Typeface {
-    /// For titles, names, headings and the big figures.
+// MARK: - Faces
+
+/// A face that titles or replies are set in: one of the system's designs, or a cut of Geist,
+/// which ships with the app (SIL Open Font License; see Resources/Fonts).
+nonisolated enum Face: String, Hashable, Sendable {
+    case newYork, sfPro, sfRounded, geistSans, geistSerif, geistMono, geistPixel
+
+    /// The system design: the face itself, or the nearest thing to a Geist cut.
     var design: Font.Design {
         switch self {
-        case .newYork: .serif
-        case .sfPro: .default
+        case .newYork, .geistSerif: .serif
+        case .sfPro, .geistSans: .default
         case .sfRounded: .rounded
+        case .geistMono, .geistPixel: .monospaced
         }
     }
 
-    var systemDesign: UIFontDescriptor.SystemDesign {
+    /// The bundled regular face, by PostScript name. Other weights and italics are found from it
+    /// within the family.
+    var postScript: String? {
         switch self {
-        case .newYork: .serif
-        case .sfPro: .default
-        case .sfRounded: .rounded
+        case .geistSans: "Geist-Regular"
+        case .geistSerif: "GeistSerif-Regular"
+        case .geistMono: "GeistMono-Regular"
+        case .geistPixel: "GeistPixel-Square"
+        default: nil
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .newYork: "New York"
+        case .sfPro: "SF Pro"
+        case .sfRounded: "SF Pro Rounded"
+        case .geistSans: "Geist Sans"
+        case .geistSerif: "Geist Serif"
+        case .geistMono: "Geist Mono"
+        case .geistPixel: "Geist Pixel"
+        }
+    }
+
+    /// Geist Serif and Geist Pixel come in one weight, with no italics: bold shows by its ink.
+    var hasWeights: Bool { self != .geistSerif && self != .geistPixel }
+
+    /// A text style's size at the default Dynamic Type size, for bundled faces that follow it.
+    static func size(of style: Font.TextStyle) -> CGFloat {
+        switch style {
+        case .largeTitle: 34
+        case .title: 28
+        case .title2: 22
+        case .title3: 20
+        case .headline, .body: 17
+        case .callout: 16
+        case .subheadline: 15
+        case .footnote: 13
+        case .caption: 12
+        case .caption2: 11
+        default: 17
+        }
+    }
+
+    /// For UIKit: the navigation bar's titles and measuring table columns. Follows Dynamic Type.
+    func uiFont(_ style: UIFont.TextStyle, weight: UIFont.Weight) -> UIFont {
+        let base = UIFont.preferredFont(forTextStyle: style)
+        let metrics = UIFontMetrics(forTextStyle: style)
+        let size = UIFont.preferredFont(forTextStyle: style, compatibleWith: UITraitCollection(preferredContentSizeCategory: .large)).pointSize
+        if let name = postScript, let custom = UIFont(name: name, size: size) {
+            var d = custom.fontDescriptor
+            if hasWeights {
+                d = d.addingAttributes([.traits: [UIFontDescriptor.TraitKey.weight: weight]])
+            }
+            return metrics.scaledFont(for: UIFont(descriptor: d, size: size))
+        }
+        let systemDesign: UIFontDescriptor.SystemDesign
+        switch design {
+        case .serif: systemDesign = .serif
+        case .rounded: systemDesign = .rounded
+        case .monospaced: systemDesign = .monospaced
+        default: systemDesign = .default
+        }
+        let shaped = base.fontDescriptor.withDesign(systemDesign) ?? base.fontDescriptor
+        let weighted = shaped.addingAttributes([.traits: [UIFontDescriptor.TraitKey.weight: weight]])
+        return metrics.scaledFont(for: UIFont(descriptor: weighted, size: base.pointSize))
+    }
+}
+
+extension Font {
+    /// `.system(_:design:)` for a `Face`: the system's own design, or the bundled cut at the
+    /// style's size, following Dynamic Type. Lets every `displayFont` call stay as it was.
+    static func system(_ style: Font.TextStyle, design face: Face) -> Font {
+        guard let name = face.postScript else { return .system(style, design: face.design) }
+        let font = Font.custom(name, size: Face.size(of: style), relativeTo: style)
+        return style == .headline && face.hasWeights ? font.weight(.semibold) : font
+    }
+
+    /// `.system(size:weight:design:)` for a `Face`, at a size already scaled by the caller.
+    static func system(size: CGFloat, weight: Font.Weight = .regular, design face: Face) -> Font {
+        guard let name = face.postScript else { return .system(size: size, weight: weight, design: face.design) }
+        let font = Font.custom(name, fixedSize: size)
+        return face.hasWeights ? font.weight(weight) : font
+    }
+}
+
+extension Typeface {
+    /// Titles, names, headings and the big figures. Geist takes its cut from `style`.
+    func face(_ style: GeistStyle) -> Face {
+        switch self {
+        case .newYork: .newYork
+        case .sfPro: .sfPro
+        case .sfRounded: .sfRounded
+        case .geist: style.face
         }
     }
 
@@ -241,13 +344,11 @@ extension Typeface {
         case .newYork: "New York"
         case .sfPro: "SF Pro"
         case .sfRounded: "SF Pro Rounded"
+        case .geist: "Geist"
         }
     }
 
     var shortName: String { self == .sfRounded ? "Rounded" : name }
-
-    /// The face replies use when they aren't in New York.
-    var sansName: String { self == .sfRounded ? "SF Pro Rounded" : "SF Pro" }
 
     /// One word for its character, on its card.
     var character: String {
@@ -255,6 +356,7 @@ extension Typeface {
         case .newYork: "Bookish"
         case .sfPro: "Crisp"
         case .sfRounded: "Friendly"
+        case .geist: "Engineered"
         }
     }
 
@@ -263,45 +365,94 @@ extension Typeface {
         case .newYork: "Apple's serif, cut for reading on screen. Titles read like a book's, and replies like its pages."
         case .sfPro: "The face iOS itself is set in: crisp, neutral and quietly precise, from titles to replies."
         case .sfRounded: "SF Pro with its ends softened, all through the app. Warmer, and still just as easy to read."
+        case .geist: "Vercel's family for developers and designers, in four cuts. Code is set in Geist Mono throughout."
+        }
+    }
+}
+
+extension GeistStyle {
+    var face: Face {
+        switch self {
+        case .serif: .geistSerif
+        case .sans: .geistSans
+        case .mono: .geistMono
+        case .pixel: .geistPixel
+        }
+    }
+
+    var name: String { face.name }
+
+    /// Replies follow the cut: Geist Serif's own, otherwise the sans (or, for Mono, Mono itself).
+    var readingFace: ReadingFace { self == .serif ? .serif : .sans }
+
+    var blurb: String {
+        switch self {
+        case .serif: "Geist's new serif: sharp, calm and modern. It comes in one weight for now, so bold shows by its ink."
+        case .sans: "The original: a geometric grotesque, clean at every size, with weights from light to black."
+        case .mono: "Built for code and the terminal. Every letter on the same width, titles and replies too, if you like."
+        case .pixel: "A bitmap face drawn on a square grid, for titles only. Replies are set in Geist Sans beside it."
         }
     }
 }
 
 extension UISettings {
-    /// Replies in New York, or in the typeface's own sans.
-    var replyDesign: Font.Design {
-        readingFace == .serif ? .serif : (typeface == .sfRounded ? .rounded : .default)
+    /// What titles, names, headings and figures are set in.
+    var titleFace: Face { typeface.face(geistStyle) }
+
+    /// Replies in the serif (New York, or Geist Serif under Geist), or in the typeface's own sans.
+    var replyFace: Face { Self.replyFace(typeface: typeface, style: geistStyle, reading: readingFace) }
+
+    static func replyFace(typeface: Typeface, style: GeistStyle, reading: ReadingFace) -> Face {
+        switch typeface {
+        case .geist: reading == .serif ? .geistSerif : (style == .mono ? .geistMono : .geistSans)
+        case .sfRounded: reading == .serif ? .newYork : .sfRounded
+        case .newYork, .sfPro: reading == .serif ? .newYork : .sfPro
+        }
     }
 
-    var replyFaceName: String { readingFace == .serif ? "New York" : typeface.sansName }
+    var replyFaceName: String { replyFace.name }
+
+    /// Code, in code blocks and inline: Geist Mono under Geist, otherwise SF Mono.
+    var codeFace: Face { typeface == .geist ? .geistMono : .sfPro }
 }
 
-nonisolated private struct DisplayDesignKey: EnvironmentKey {
-    static let defaultValue: Font.Design = .serif
+nonisolated private struct DisplayFaceKey: EnvironmentKey {
+    static let defaultValue: Face = .newYork
 }
 
 extension EnvironmentValues {
-    /// The design titles, names and headings are set in. Read through `displayFont`.
-    nonisolated var displayDesign: Font.Design {
-        get { self[DisplayDesignKey.self] }
-        set { self[DisplayDesignKey.self] = newValue }
+    /// The face titles, names and headings are set in. Read through `displayFont`.
+    nonisolated var displayFace: Face {
+        get { self[DisplayFaceKey.self] }
+        set { self[DisplayFaceKey.self] = newValue }
     }
 }
 
 /// Sets a title, name, heading or big figure in the chosen typeface; everything else stays in the
-/// interface face. `font` builds the font for a design: `.displayFont { .system(.title3, design: $0) }`.
+/// interface face. `font` builds the font for a face: `.displayFont { .system(.title3, design: $0) }`.
 private struct DisplayFont: ViewModifier {
-    let font: (Font.Design) -> Font
-    @Environment(\.displayDesign) private var design
+    let font: (Face) -> Font
+    @Environment(\.displayFace) private var face
 
     func body(content: Content) -> some View {
-        content.font(font(design))
+        content.font(font(face))
     }
 }
 
 extension View {
-    func displayFont(_ font: @escaping (Font.Design) -> Font) -> some View {
+    func displayFont(_ font: @escaping (Face) -> Font) -> some View {
         modifier(DisplayFont(font: font))
+    }
+}
+
+/// Code is set in SF Mono, or Geist Mono when the typeface is Geist. Kept in the theme store so
+/// the inline-code cache and the code blocks can read it without the settings.
+enum CodeFont {
+    static func font(_ style: Font.TextStyle) -> Font {
+        if ThemeStore.shared.code == .geistMono, let name = Face.geistMono.postScript {
+            return .custom(name, size: Face.size(of: style), relativeTo: style)
+        }
+        return .system(style, design: .monospaced)
     }
 }
 
@@ -350,9 +501,9 @@ nonisolated enum ReadingSize: Int, CaseIterable, Identifiable, Hashable, Sendabl
 /// Navigation bar titles in the chosen typeface, so every screen reads as part of the same book.
 /// Changing it restyles the bars already on screen too, so the switch shows at once.
 enum NavigationTypography {
-    static func apply(_ typeface: Typeface = .newYork) {
-        let large = font(.largeTitle, weight: .bold, design: typeface.systemDesign)
-        let inline = font(.headline, weight: .semibold, design: typeface.systemDesign)
+    static func apply(_ face: Face = .newYork) {
+        let large = face.uiFont(.largeTitle, weight: .bold)
+        let inline = face.uiFont(.headline, weight: .semibold)
         let appearance = UINavigationBar.appearance()
         appearance.largeTitleTextAttributes = [.font: large]
         appearance.titleTextAttributes = [.font: inline]
@@ -369,13 +520,6 @@ enum NavigationTypography {
             bar.titleTextAttributes = (bar.titleTextAttributes ?? [:]).merging([.font: inline]) { $1 }
         }
         for sub in view.subviews { restyle(sub, large: large, inline: inline) }
-    }
-
-    private static func font(_ style: UIFont.TextStyle, weight: UIFont.Weight, design: UIFontDescriptor.SystemDesign) -> UIFont {
-        let base = UIFont.preferredFont(forTextStyle: style)
-        let shaped = base.fontDescriptor.withDesign(design) ?? base.fontDescriptor
-        let weighted = shaped.addingAttributes([.traits: [UIFontDescriptor.TraitKey.weight: weight]])
-        return UIFontMetrics(forTextStyle: style).scaledFont(for: UIFont(descriptor: weighted, size: base.pointSize))
     }
 }
 

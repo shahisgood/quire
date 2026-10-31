@@ -6,7 +6,7 @@ import UIKit
 /// accent cursor at the end of the text, the same mark as the app icon.
 struct MarkdownView: View {
     let blocks: [MDBlock]
-    var design: Font.Design = .serif
+    var design: Face = .newYork
     var caret = false
     var compact = false
     /// For a whole reply: blocks are built as they scroll near, each on its own layer. A very long
@@ -53,7 +53,7 @@ extension MDBlock {
 /// reader's chosen strength, so bold (always full strength) stands apart from it.
 nonisolated struct MarkdownBlockView: View, Equatable {
     let block: MDBlock
-    let design: Font.Design
+    let design: Face
     let caret: Bool
     var ink: Double = UISettings.defaultTextStrength
 
@@ -80,7 +80,7 @@ private struct Caret: View {
 
 private struct BlockView: View {
     let block: MDBlock
-    let design: Font.Design
+    let design: Face
     var caret = false
 
     var body: some View {
@@ -146,7 +146,7 @@ private struct ListMarker: View {
     let ordered: Bool
     let number: Int
     let checked: Bool?
-    let design: Font.Design
+    let design: Face
 
     var body: some View {
         if let checked {
@@ -172,15 +172,19 @@ private struct ListMarker: View {
 /// the paragraph that is still growing.
 enum Inline {
     private static var cache: [String: AttributedString] = [:]
-    /// Parsed strings carry the theme's colours, so a new theme starts a new cache.
+    /// Parsed strings carry the theme's colours and the code face, so a change to either starts a
+    /// new cache.
     private static var cacheTheme: AppTheme = .quire
+    private static var cacheCode: Face = .sfPro
 
     static func attributed(_ source: String, caret: Bool = false) -> AttributedString {
         // Read through the store, so whoever shows this text redraws when the theme changes.
         let theme = ThemeStore.shared.theme
-        if theme != cacheTheme {
+        let code = ThemeStore.shared.code
+        if theme != cacheTheme || code != cacheCode {
             cache.removeAll(keepingCapacity: true)
             cacheTheme = theme
+            cacheCode = code
         }
         var a: AttributedString
         if let hit = cache[source] {
@@ -208,7 +212,7 @@ enum Inline {
                 a[run.range][AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self] = Color.qInkStrong
             }
             if let intent = run.inlinePresentationIntent, intent.contains(.code) {
-                a[run.range][AttributeScopes.SwiftUIAttributes.FontAttribute.self] = Font.system(.callout, design: .monospaced)
+                a[run.range][AttributeScopes.SwiftUIAttributes.FontAttribute.self] = CodeFont.font(.callout)
                 a[run.range][AttributeScopes.SwiftUIAttributes.BackgroundColorAttribute.self] = Color.qAccentSoft
             }
             if run.link != nil {
@@ -257,7 +261,7 @@ private struct CodeBlockView: View {
                             .fixedSize(horizontal: true, vertical: true)
                     }
                 }
-                .font(.system(.footnote, design: .monospaced))
+                .font(CodeFont.font(.footnote))
                 .lineSpacing(3)
                 .foregroundStyle(Color.qInk)
                 .frame(minWidth: TextMetrics.monospacedWidth(code, style: .footnote, size: typeSize), alignment: .leading)
@@ -292,7 +296,7 @@ private struct MathBlockView: View {
                 .foregroundStyle(Color.qInk2)
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(tex)
-                    .font(.system(.callout, design: .monospaced))
+                    .font(CodeFont.font(.callout))
                     .foregroundStyle(Color.qInk)
                     .fixedSize(horizontal: true, vertical: false)
             }
@@ -310,7 +314,7 @@ private struct TableBlockView: View {
     let header: [String]
     let alignments: [MDAlign]
     let rows: [[String]]
-    let design: Font.Design
+    let design: Face
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var available: CGFloat = 0
 
@@ -385,7 +389,7 @@ private struct TableBlockView: View {
 
 /// Text measurement for tables, with UIKit's metrics at the reading size in effect.
 private enum TableMetrics {
-    static func naturalWidths(header: [String], rows: [[String]], design: Font.Design, size: DynamicTypeSize) -> [CGFloat] {
+    static func naturalWidths(header: [String], rows: [[String]], design: Face, size: DynamicTypeSize) -> [CGFloat] {
         let traits = UITraitCollection(preferredContentSizeCategory: TextMetrics.category(size))
         let base = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits)
         let regular = font(base, design: design, bold: false)
@@ -422,10 +426,14 @@ private enum TableMetrics {
         return (plain as NSString).size(withAttributes: [.font: font]).width
     }
 
-    private static func font(_ base: UIFont, design: Font.Design, bold: Bool) -> UIFont {
+    private static func font(_ base: UIFont, design: Face, bold: Bool) -> UIFont {
+        if let name = design.postScript, let custom = UIFont(name: name, size: base.pointSize) {
+            guard bold, design.hasWeights, let b = custom.fontDescriptor.withSymbolicTraits(.traitBold) else { return custom }
+            return UIFont(descriptor: b, size: base.pointSize)
+        }
         var d = base.fontDescriptor
-        if design == .serif, let serif = d.withDesign(.serif) { d = serif }
-        if design == .rounded, let rounded = d.withDesign(.rounded) { d = rounded }
+        if design.design == .serif, let serif = d.withDesign(.serif) { d = serif }
+        if design.design == .rounded, let rounded = d.withDesign(.rounded) { d = rounded }
         if bold, let b = d.withSymbolicTraits(.traitBold) { d = b }
         return UIFont(descriptor: d, size: base.pointSize)
     }
@@ -437,7 +445,8 @@ enum TextMetrics {
     static func monospacedWidth(_ text: String, style: UIFont.TextStyle, size: DynamicTypeSize) -> CGFloat {
         let traits = UITraitCollection(preferredContentSizeCategory: category(size))
         let point = UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).pointSize
-        let font = UIFont.monospacedSystemFont(ofSize: point, weight: .regular)
+        let geist = ThemeStore.shared.code.postScript.flatMap { UIFont(name: $0, size: point) }
+        let font = geist ?? UIFont.monospacedSystemFont(ofSize: point, weight: .regular)
         let advance = ("M" as NSString).size(withAttributes: [.font: font]).width
         var longest = 0
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -541,14 +550,24 @@ private struct ParagraphText: View {
     var body: some View {
         let pieces = TextChunks.split(text, maxChars: 3000)
         if pieces.count == 1 {
-            Text(Inline.attributed(text, caret: caret))
+            line(Inline.attributed(text, caret: caret))
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(pieces.enumerated()), id: \.offset) { i, piece in
-                    Text(Inline.attributed(piece, caret: caret && i == pieces.count - 1))
+                    line(Inline.attributed(piece, caret: caret && i == pieces.count - 1))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+        }
+    }
+
+    /// Plain text, or text with its citations as pills.
+    @ViewBuilder
+    private func line(_ a: AttributedString) -> some View {
+        if let composed = LinkPills.compose(a, icons: Favicons.shared.enabled) {
+            PilledText(composed: composed)
+        } else {
+            Text(a)
         }
     }
 }

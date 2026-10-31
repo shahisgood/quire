@@ -16,12 +16,14 @@ struct QuireApp: App {
             RootView()
                 .environment(app)
                 // The chosen typeface: titles everywhere read it; Rounded carries into all the text.
-                .environment(\.displayDesign, app.settings.ui.typeface.design)
+                .environment(\.displayFace, app.settings.ui.titleFace)
                 .fontDesign(app.settings.ui.typeface.interfaceDesign)
                 .preferredColorScheme(app.settings.ui.theme.colorScheme)
                 .tint(Color.qAccent)
                 .onChange(of: app.settings) { app.persistSettings() }
-                .onChange(of: app.settings.ui.typeface, initial: true) { _, face in NavigationTypography.apply(face) }
+                .onChange(of: app.settings.ui.titleFace, initial: true) { _, face in NavigationTypography.apply(face) }
+                .onChange(of: app.settings.ui.codeFace, initial: true) { _, face in ThemeStore.shared.useCode(face) }
+                .onChange(of: app.settings.ui.siteIcons, initial: true) { _, on in Favicons.shared.enabled = on }
                 .onChange(of: app.settings.ui.colorTheme) { _, theme in ThemeStore.shared.use(theme) }
                 .onChange(of: phase) { _, newPhase in
                     if newPhase == .inactive { app.noteLeaving() }

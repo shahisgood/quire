@@ -10,6 +10,7 @@ Requires **iOS 26**. Built on GitHub's macOS runners, so you don't need a Mac.
 - Streaming replies with a live accent cursor, reasoning traces that open while the model thinks and fold away when it answers, and automatic retry with a countdown on 429/5xx.
 - Stop, continue, retry, regenerate (or regenerate with another model), and **edit and resend**. Every version is kept as a branch, with a ‹ 2/3 › switcher.
 - Branch any message into a new chat, duplicate a chat, share it as Markdown or JSON.
+- Web sources the way an answer engine shows them: a citation in a reply becomes a small pill with the site's icon and name, and a Sources button under the reply (its icons stacked) lists every page with its title and a line of what it said. Links open in Safari inside Quire. Icons come from DuckDuckGo's icon service and can be turned off (Settings → Appearance → Site icons).
 - **Export a chat as a PDF**: the conversation typeset on white A4 (or US Letter) pages in your typeface and theme colours, your messages on the right as in the app, replies in the reading face with their headings, lists, tables, quotes and coloured code, images inline, and the title and page number at the foot of each page. It opens as a page-by-page preview first, with times and reasoning to include or leave out, then shares to Files, Mail, AirDrop or Print. From a message's menu, Chat settings, or a chat's Export menu in the list.
 - Markdown rendered natively: headings, lists, task lists, tables, quotes, rules, and code blocks with syntax colouring and a copy button. Display math is shown as TeX.
 - Attachments from Photos, the camera, Files or the clipboard. Images are resized to 1600 px, as in the web app.
@@ -38,7 +39,7 @@ Requires **iOS 26**. Built on GitHub's macOS runners, so you don't need a Mac.
 - Swipes that work from anywhere, not just the edge: right on a chat, a project or Memory to go back; right on the chat list to pull settings in, following your finger; left on settings to put it away. Sliders, switches, code blocks that scroll sideways and text you're selecting keep their own swipes.
 - Projects: homes for related chats, each with its own symbol and colour. Give one instructions and every chat in it follows them (added after the system prompt), or leave it as a plain group. A project can also choose the model its new chats start with. Hold a project's card to start a chat in it, edit it, or delete it (keeping its chats or not, with Undo for the first); chats move in and out from their menu or in bulk. Stored as the web app's folders, so backups still round-trip.
 - Costs: a live estimate while streaming, replaced by OpenRouter's authoritative figure a few seconds later. Settings shows the last 30 days at a glance; the breakdown charts cost, tokens or replies over 7 days to all time, stacked by model (each model keeps its colour), with a model table, the token mix and the costliest chats.
-- Appearance: four themes (Quire's ink, paper and periwinkle; Velvet's obsidian, velvet and almond; Amethyst's noir, amethyst and steel; and Pitch, true black and white for OLED screens), each in light, dark or auto, and the whole app re-colours as you pick; a typeface for the whole app, picked from three specimens (New York, SF Pro or SF Pro Rounded), with replies following it or kept in New York; reply size on top of Dynamic Type; comfortable or compact; text strength; haptics.
+- Appearance: four themes (Quire's ink, paper and periwinkle; Velvet's obsidian, velvet and almond; Amethyst's noir, amethyst and steel; and Pitch, true black and white for OLED screens), each in light, dark or auto, and the whole app re-colours as you pick; a typeface for the whole app, picked from four specimens (New York, SF Pro, SF Pro Rounded or Geist), with replies following it or set apart; Geist, Vercel's family, comes in four cuts from a menu (Geist Serif by default, Geist Sans, Geist Mono, and Geist Pixel for titles), sets code in Geist Mono, and carries into exported PDFs; reply size on top of Dynamic Type; comfortable or compact; text strength; haptics.
 - About opens on a dictionary entry for the word, then what you've gathered (chats, messages, remembered facts, replies week by week, the room it takes), where everything is kept, and a colophon of how your copy is set.
 - Backups in the web app's format, so you can move between the two in either direction. A reminder appears after 200 messages or 30 days.
 
@@ -101,3 +102,7 @@ Quire/
   Design/     palette, type, motion tokens, shared components
   Views/      every screen and sheet
 ```
+
+## Fonts
+
+Geist Sans, Geist Mono, Geist Serif and Geist Pixel are by Vercel and ship under the SIL Open Font License 1.1 (`Quire/Resources/Fonts/Geist-OFL.txt`). Geist Serif and Geist Pixel were converted from the `geist` package's WOFF2 files to TrueType, unchanged otherwise.

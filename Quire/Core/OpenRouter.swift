@@ -28,6 +28,8 @@ nonisolated struct StreamEvent: Sendable {
     var usage: StreamUsage?
     /// Images the model made, as data URLs (image-output models only).
     var images: [String]?
+    /// Sources from web search.
+    var citations: [Citation]?
 }
 
 nonisolated struct CompletionResult: Sendable {
@@ -38,6 +40,7 @@ nonisolated struct CompletionResult: Sendable {
     var finishReason: String?
     var usage: StreamUsage?
     var images: [String] = []
+    var citations: [Citation] = []
 }
 
 nonisolated struct GenerationStats: Sendable {
@@ -84,6 +87,20 @@ nonisolated enum ORParse {
         (v["images"]?.arrayValue ?? []).compactMap { $0["image_url"]?["url"]?.stringValue ?? $0["url"]?.stringValue }
     }
 
+    /// `annotations: [{type: "url_citation", url_citation: {url, title, content, …}}]` on a message
+    /// or a stream delta, from web search.
+    static func citations(from v: JSONValue) -> [Citation] {
+        (v["annotations"]?.arrayValue ?? []).compactMap { a in
+            let c = a["url_citation"] ?? a
+            guard let url = c["url"]?.stringValue, url.hasPrefix("http") else { return nil }
+            let title = c["title"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let snippet = c["content"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return Citation(url: url,
+                            title: (title?.isEmpty ?? true) ? nil : title,
+                            snippet: (snippet?.isEmpty ?? true) ? nil : snippet.map { String($0.prefix(400)) })
+        }
+    }
+
     static func errorObject(_ e: JSONValue, fallback: String) -> ORError {
         ORError(status: e["code"]?.intValue ?? 500,
                 code: e["code"]?.scalarString ?? "500",
@@ -106,6 +123,8 @@ nonisolated enum ORParse {
             if !r.isEmpty { ev.reasoning = r }
             let imgs = images(from: delta)
             if !imgs.isEmpty { ev.images = imgs }
+            let cites = citations(from: delta)
+            if !cites.isEmpty { ev.citations = cites }
             ev.finishReason = ch0["finish_reason"]?.stringValue
         }
         ev.usage = usage(c["usage"])
@@ -308,6 +327,7 @@ struct OpenRouterClient {
                                       reasoning: ORParse.reasoning(from: msg), finishReason: ch0?["finish_reason"]?.stringValue,
                                       usage: ORParse.usage(j["usage"]))
         result.images = ORParse.images(from: msg)
+        result.citations = ORParse.citations(from: msg)
         return result
     }
 

@@ -10,7 +10,7 @@ options:
 
 settings:
   base:
-    MARKETING_VERSION: "1.3.3"
+    MARKETING_VERSION: "1.4.0"
     CURRENT_PROJECT_VERSION: "1"
     # Swift 5 language mode for the first builds: concurrency diagnostics are warnings rather than
     # errors while the port settles. Flip to "6.0" once the build log is clean (see DECISIONS.md).
@@ -45,6 +45,22 @@ targets:
         UIFileSharingEnabled: false
         NSCameraUsageDescription: Take a photo to attach to a message.
         UIStatusBarStyle: UIStatusBarStyleDefault
+        # Geist, by Vercel (SIL Open Font License 1.1, Quire/Resources/Fonts/Geist-OFL.txt).
+        UIAppFonts:
+          - Geist-Regular.ttf
+          - Geist-Italic.ttf
+          - Geist-Medium.ttf
+          - Geist-SemiBold.ttf
+          - Geist-SemiBoldItalic.ttf
+          - Geist-Bold.ttf
+          - Geist-BoldItalic.ttf
+          - GeistMono-Regular.ttf
+          - GeistMono-Italic.ttf
+          - GeistMono-Medium.ttf
+          - GeistMono-SemiBold.ttf
+          - GeistMono-Bold.ttf
+          - GeistSerif-Regular.ttf
+          - GeistPixel-Square.ttf
         # Press and hold the icon. Recent chats are added at runtime.
         UIApplicationShortcutItems:
           - UIApplicationShortcutItemType: app.quire.new

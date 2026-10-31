@@ -178,6 +178,8 @@ nonisolated struct Message: Codable, Identifiable, Hashable, Sendable {
     var error: MessageError?
     var editedFrom: String?
     var lc: String?
+    /// iOS only: the sources a reply drew on, from web search.
+    var citations: [Citation]?
 
     init(id: String = newID(), chatId: String, parentId: String?, role: Role, content: String,
          attachments: [Attachment]? = nil, modelId: String? = nil, createdAt: Double = nowMs(), status: MessageStatus) {
@@ -205,6 +207,26 @@ nonisolated struct Message: Codable, Identifiable, Hashable, Sendable {
         error = c.lenient(.error, nil)
         editedFrom = c.lenient(.editedFrom, nil)
         lc = c.lenient(.lc, nil)
+        citations = c.lenient(.citations, nil)
+    }
+}
+
+/// A source a reply drew on, from OpenRouter's `url_citation` annotations.
+nonisolated struct Citation: Codable, Hashable, Sendable {
+    var url: String
+    var title: String?
+    /// A little of what the page said, for the sources list.
+    var snippet: String?
+
+    init(url: String, title: String? = nil, snippet: String? = nil) {
+        self.url = url; self.title = title; self.snippet = snippet
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        url = c.lenient(.url, "")
+        title = c.lenient(.title, nil)
+        snippet = c.lenient(.snippet, nil)
     }
 }
 
@@ -357,7 +379,9 @@ nonisolated enum ThemeChoice: String, Codable, CaseIterable, Hashable, Sendable 
 nonisolated enum ReadingFace: String, Codable, CaseIterable, Hashable, Sendable { case serif, sans }
 /// The app's typeface for titles, names and headings (and, by default, replies). iOS only, so
 /// backups from the web app simply leave it at New York.
-nonisolated enum Typeface: String, Codable, CaseIterable, Hashable, Sendable { case newYork, sfPro, sfRounded }
+nonisolated enum Typeface: String, Codable, CaseIterable, Hashable, Sendable { case newYork, sfPro, sfRounded, geist }
+/// Which cut of Geist titles are set in, when the typeface is Geist. iOS only.
+nonisolated enum GeistStyle: String, Codable, CaseIterable, Hashable, Sendable { case serif, sans, mono, pixel }
 /// The app's colours. iOS only; backups from the web app leave it at Quire.
 nonisolated enum AppTheme: String, Codable, CaseIterable, Hashable, Sendable { case quire, velvet, amethyst, pitch }
 
@@ -395,6 +419,10 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
     var textStrength: Double
     /// iOS only: the context ring in the message box.
     var showContext: Bool
+    /// iOS only: the cut of Geist, when the typeface is Geist.
+    var geistStyle: GeistStyle
+    /// iOS only: each source's icon beside its name, in links and the sources list.
+    var siteIcons: Bool
 
     static let defaultTextStrength = 0.86
 
@@ -403,6 +431,8 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
         showReasoningByDefault = false; showCosts = true; sendOnEnter = true; hapticsEnabled = true
         textStrength = Self.defaultTextStrength
         showContext = true
+        geistStyle = .serif
+        siteIcons = true
     }
 
     init(from decoder: Decoder) throws {
@@ -419,6 +449,8 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
         hapticsEnabled = c.lenient(.hapticsEnabled, true)
         textStrength = min(1, max(0.6, c.lenient(.textStrength, Self.defaultTextStrength)))
         showContext = c.lenient(.showContext, true)
+        geistStyle = c.lenient(.geistStyle, .serif)
+        siteIcons = c.lenient(.siteIcons, true)
     }
 }
 
