@@ -430,7 +430,6 @@ enum InAppBrowser {
         let config = SFSafariViewController.Configuration()
         config.barCollapsingEnabled = true
         let safari = SFSafariViewController(url: url, configuration: config)
-        safari.preferredControlTintColor = UIColor(Color.qAccent)
         safari.dismissButtonStyle = .close
         top.present(safari, animated: true)
         return true
