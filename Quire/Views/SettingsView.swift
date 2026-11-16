@@ -976,7 +976,7 @@ private struct AppearanceSettings: View {
     // follows a beat later, under a cross-fade (see `AppearanceChange`).
     @State private var theme: AppTheme = .quire
     @State private var mode: ThemeChoice = .dark
-    @State private var face: Typeface = .newYork
+    @State private var face: Typeface = .geist
     @State private var geist: GeistStyle = .serif
     @State private var replyFace: ReadingFace = .serif
     @State private var size: ReadingSize = .standard
@@ -1619,7 +1619,8 @@ private struct AboutView: View {
             kept.entrance(shown, delay: 0.12)
             colophon.entrance(shown, delay: 0.18)
             elsewhere.entrance(shown, delay: 0.24)
-            closing.entrance(shown, delay: 0.3)
+            maker.entrance(shown, delay: 0.28)
+            closing.entrance(shown, delay: 0.32)
         }
         .onAppear { shown = true }
         .task { await measure() }
@@ -1664,7 +1665,7 @@ private struct AboutView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 14)
 
-            Text("Version \(version), build \(build)")
+            Text("Version \(version)")
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(Color.qInk2)
                 .padding(.top, 6)
@@ -1890,6 +1891,15 @@ private struct AboutView: View {
             web("Credits", "Your balance, and topping it up", "https://openrouter.ai/settings/credits")
             web("Models", "Everything you can talk to, with prices", "https://openrouter.ai/models")
             web("Privacy policy", "How OpenRouter handles what you send", "https://openrouter.ai/privacy")
+        }
+    }
+
+    // MARK: Made by
+
+    /// Who made it, as a single link to their site.
+    private var maker: some View {
+        SettingsGroup(label: "Made by") {
+            web("Hasan", "Design and code · byhasan.ink", "https://byhasan.ink")
         }
     }
 

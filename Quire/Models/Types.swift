@@ -379,7 +379,7 @@ nonisolated enum ThemeChoice: String, Codable, CaseIterable, Hashable, Sendable 
 nonisolated enum ReadingFace: String, Codable, CaseIterable, Hashable, Sendable { case serif, sans }
 /// The app's typeface for titles, names and headings (and, by default, replies). iOS only, so
 /// backups from the web app simply leave it at New York.
-nonisolated enum Typeface: String, Codable, CaseIterable, Hashable, Sendable { case newYork, sfPro, sfRounded, geist }
+nonisolated enum Typeface: String, Codable, CaseIterable, Hashable, Sendable { case geist, newYork, sfPro, sfRounded }
 /// Which cut of Geist titles are set in, when the typeface is Geist. iOS only.
 nonisolated enum GeistStyle: String, Codable, CaseIterable, Hashable, Sendable { case serif, sans, mono, pixel }
 /// The app's colours. iOS only; backups from the web app leave it at Quire.
@@ -427,7 +427,7 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
     static let defaultTextStrength = 0.86
 
     init() {
-        theme = .dark; fontScale = 1; density = "comfortable"; readingFace = .serif; typeface = .newYork; colorTheme = .quire
+        theme = .dark; fontScale = 1; density = "comfortable"; readingFace = .serif; typeface = .geist; colorTheme = .quire
         showReasoningByDefault = false; showCosts = true; sendOnEnter = true; hapticsEnabled = true
         textStrength = Self.defaultTextStrength
         showContext = true
@@ -441,7 +441,7 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
         fontScale = c.lenient(.fontScale, 1)
         density = c.lenient(.density, "comfortable")
         readingFace = c.lenient(.readingFace, .serif)
-        typeface = c.lenient(.typeface, .newYork)
+        typeface = c.lenient(.typeface, .geist)
         colorTheme = c.lenient(.colorTheme, .quire)
         showReasoningByDefault = c.lenient(.showReasoningByDefault, false)
         showCosts = c.lenient(.showCosts, true)

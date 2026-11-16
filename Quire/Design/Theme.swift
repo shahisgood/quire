@@ -417,7 +417,7 @@ extension UISettings {
 }
 
 nonisolated private struct DisplayFaceKey: EnvironmentKey {
-    static let defaultValue: Face = .newYork
+    static let defaultValue: Face = .geistSerif
 }
 
 extension EnvironmentValues {
