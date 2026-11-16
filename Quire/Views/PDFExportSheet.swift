@@ -51,6 +51,7 @@ struct PDFExportSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .primaryAction) { paperButton }
                 ToolbarItem(placement: .primaryAction) { optionsMenu }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -69,6 +70,20 @@ struct PDFExportSheet: View {
                 .foregroundStyle(Color.qInk2)
         }
         .accessibilityElement(children: .combine)
+    }
+
+    /// Light pages to print, or dark pages to read at night.
+    private var paperButton: some View {
+        Button {
+            Haptics.selection()
+            options.dark.toggle()
+        } label: {
+            Image(systemName: options.dark ? "moon.fill" : "sun.max")
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .accessibilityLabel("Dark pages")
+        .accessibilityValue(options.dark ? "On" : "Off")
+        .disabled(result == nil && failure == nil)
     }
 
     private var optionsMenu: some View {
