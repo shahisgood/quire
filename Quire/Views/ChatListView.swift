@@ -90,7 +90,7 @@ struct ChatListView: View {
         .listSheets(sheets)
         // Deleting a selection ends selecting in the same update, so the list changes once.
         .confirmationDialog(bulkDeleteTitle, isPresented: $confirmBulkDelete, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
+            Button("Delete", role: .danger) {
                 let ids = selection
                 withAnimation(Motion.standard) {
                     app.deleteChats(ids)
@@ -190,7 +190,7 @@ struct ChatListView: View {
                     Button { withAnimation(Motion.standard) { app.patchChats(selection) { $0.pinned = true } }; finishBulk() } label: { Label("Pin", systemImage: "pin") }
                     Button { withAnimation(Motion.standard) { app.patchChats(selection) { $0.pinned = false } }; finishBulk() } label: { Label("Unpin", systemImage: "pin.slash") }
                     Divider()
-                    Button(role: .destructive) { confirmBulkDelete = true } label: { Label("Delete", systemImage: "trash") }
+                    Button(role: .danger) { confirmBulkDelete = true } label: { Label("Delete", systemImage: "trash") }
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
                 }
@@ -640,7 +640,7 @@ private struct ProjectShelf: View {
                     Label(p.hasInstructions ? "Edit instructions" : "Add instructions", systemImage: "text.quote")
                 }
                 Divider()
-                Button(role: .destructive) { sheets.deletingProject = p } label: {
+                Button(role: .danger) { sheets.deletingProject = p } label: {
                     Label("Delete project…", systemImage: "trash")
                 }
             }

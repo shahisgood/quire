@@ -17,6 +17,7 @@ nonisolated enum ProjectTint: String, CaseIterable, Identifiable, Sendable {
 
 extension ProjectTint {
     var color: Color {
+        if ThemeStore.shared.mono { return grey }
         switch self {
         case .periwinkle: return .qTileBlue
         case .teal: return .qTileTeal
@@ -27,6 +28,15 @@ extension ProjectTint {
         case .clay: return Color(light: 0xA9573A, dark: 0xB86A4C)
         case .slate: return .qTileSlate
         }
+    }
+
+    /// Under Pitch: a grey of its own, so projects still tell apart, each dark enough for a white
+    /// symbol.
+    private var grey: Color {
+        let dark: [UInt32] = [0x5A5A5A, 0x3C3C3C, 0x6E6E6E, 0x484848, 0x7C7C7C, 0x343434, 0x626262, 0x505050]
+        let light: [UInt32] = [0x2A2A2A, 0x4A4A4A, 0x1E1E1E, 0x5E5E5E, 0x383838, 0x6A6A6A, 0x242424, 0x545454]
+        let i = Self.allCases.firstIndex(of: self) ?? 0
+        return Color(light: light[i], dark: dark[i])
     }
 
     var name: String { rawValue.capitalized }
@@ -327,7 +337,7 @@ struct ProjectEditor: View {
 
                 if !isNew, let onDelete {
                     Section {
-                        Button(role: .destructive) { onDelete(original) } label: {
+                        Button(role: .danger) { onDelete(original) } label: {
                             Label("Delete project…", systemImage: "trash")
                         }
                     }
@@ -727,7 +737,7 @@ struct ProjectView: View {
                     Label("Incognito chat", systemImage: "eye.slash")
                 }
                 Divider()
-                Button(role: .destructive) { sheets.deletingProject = p } label: {
+                Button(role: .danger) { sheets.deletingProject = p } label: {
                     Label("Delete project…", systemImage: "trash")
                 }
             } label: {
@@ -831,11 +841,11 @@ private struct ProjectDeletion: ViewModifier {
             let n = count(p)
             if n > 0 {
                 Button("Delete project, keep chats") { confirm(p, deletingChats: false) }
-                Button(n == 1 ? "Delete project and its chat" : "Delete project and \(n) chats", role: .destructive) {
+                Button(n == 1 ? "Delete project and its chat" : "Delete project and \(n) chats", role: .danger) {
                     confirm(p, deletingChats: true)
                 }
             } else {
-                Button("Delete project", role: .destructive) { confirm(p, deletingChats: false) }
+                Button("Delete project", role: .danger) { confirm(p, deletingChats: false) }
             }
             Button("Cancel", role: .cancel) {}
         } message: { p in

@@ -111,7 +111,20 @@ nonisolated enum SpendMetric: String, CaseIterable, Hashable, Sendable {
 /// surfaces, light and dark. A model keeps its colour whatever the range or measure, because
 /// colours go by all-time spend, not by rank in what's on screen.
 enum SpendPalette {
-    static let slots: [Color] = [
+    static var slots: [Color] { ThemeStore.shared.mono ? greys : hues }
+
+    /// Under Pitch: seven greys far enough apart to tell neighbours in the chart from each other.
+    private static let greys: [Color] = [
+        Color(light: 0x000000, dark: 0xFFFFFF),
+        Color(light: 0x5C5C5C, dark: 0x9A9A9A),
+        Color(light: 0x2E2E2E, dark: 0xD4D4D4),
+        Color(light: 0x8A8A8A, dark: 0x6A6A6A),
+        Color(light: 0x1A1A1A, dark: 0xE8E8E8),
+        Color(light: 0x737373, dark: 0x828282),
+        Color(light: 0x454545, dark: 0xB8B8B8),
+    ]
+
+    private static let hues: [Color] = [
         Color(light: 0x2A78D6, dark: 0x3987E5),   // blue
         Color(light: 0xEB6834, dark: 0xD95926),   // orange
         Color(light: 0x1BAF7A, dark: 0x199E70),   // aqua
@@ -120,8 +133,8 @@ enum SpendPalette {
         Color(light: 0x008300, dark: 0x008300),   // green
         Color(light: 0x6250D6, dark: 0x9085E9),   // violet
     ]
-    static let otherModels = Color(light: 0x9A9DA3, dark: 0x6B6F77)
-    static let outside = Color(light: 0xC9CBCE, dark: 0x3E424A)
+    static var otherModels: Color { Color.tone(Color(light: 0x9A9DA3, dark: 0x6B6F77), mono: Color(light: 0xA6A6A6, dark: 0x555555)) }
+    static var outside: Color { Color.tone(Color(light: 0xC9CBCE, dark: 0x3E424A), mono: Color(light: 0xCCCCCC, dark: 0x3A3A3A)) }
 }
 
 /// A coloured series in the chart: a model, all the smaller models together, or spending that

@@ -356,7 +356,7 @@ struct TypedConfirmSheet: View {
                     .focused($focused)
                     .submitLabel(.done)
                     .onSubmit { if matches { confirm() } }
-                Button(role: .destructive, action: confirm) {
+                Button(role: .danger, action: confirm) {
                     Text(actionLabel)
                         .font(.body.weight(.semibold))
                         .frame(maxWidth: .infinity)

@@ -92,7 +92,7 @@ struct UserMessageView: View {
         Button { actions.branch(message) } label: { Label("Branch into a new chat", systemImage: "arrow.triangle.branch") }
             .disabled(!session.persisted)
         Divider()
-        Button(role: .destructive) { actions.delete(message) } label: { Label("Delete from here", systemImage: "trash") }
+        Button(role: .danger) { actions.delete(message) } label: { Label("Delete from here", systemImage: "trash") }
             .disabled(session.generating)
     }
 
@@ -479,7 +479,7 @@ private struct ReplyMenuItems: View {
         }
         Section {
             Button { actions.info(message) } label: { Label("Tokens, cost & request", systemImage: "info.circle") }
-            Button(role: .destructive) { actions.delete(message) } label: { Label("Delete", systemImage: "trash") }
+            Button(role: .danger) { actions.delete(message) } label: { Label("Delete", systemImage: "trash") }
                 .disabled(session.generating)
         }
     }

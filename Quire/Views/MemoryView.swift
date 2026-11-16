@@ -70,7 +70,7 @@ struct MemoryView: View {
 
             if !app.memory.isEmpty {
                 Section {
-                    Button(role: .destructive) { confirmClear = true } label: {
+                    Button(role: .danger) { confirmClear = true } label: {
                         Label("Clear all memory", systemImage: "trash")
                     }
                 } footer: {
@@ -240,7 +240,8 @@ struct MemoryView: View {
             .listRowBackground(Color.qRaised)
             // All on the trailing side: left to right goes back from anywhere on this screen.
             .swipeActions(edge: .trailing) {
-                Button(role: .destructive) { app.deleteMemory(e.id) } label: { Label("Delete", systemImage: "trash") }
+                Button(role: .danger) { app.deleteMemory(e.id) } label: { Label("Delete", systemImage: "trash") }
+                    .tint(Color.qSwipeDelete)
                 Button { app.updateMemory(e.id) { $0.disabled.toggle() } } label: {
                     Label(e.disabled ? "Enable" : "Disable", systemImage: e.disabled ? "eye" : "eye.slash")
                 }
@@ -248,7 +249,7 @@ struct MemoryView: View {
                 Button { app.updateMemory(e.id) { $0.pinned.toggle() }; Haptics.selection() } label: {
                     Label(e.pinned ? "Unpin" : "Pin", systemImage: e.pinned ? "pin.slash" : "pin")
                 }
-                .tint(Color.qAccent)
+                .tint(Color.qSwipePin)
             }
             .contextMenu {
                 Button { app.updateMemory(e.id) { $0.pinned.toggle() } } label: {
@@ -270,7 +271,7 @@ struct MemoryView: View {
                     }
                 }
                 Divider()
-                Button(role: .destructive) { app.deleteMemory(e.id) } label: { Label("Delete", systemImage: "trash") }
+                Button(role: .danger) { app.deleteMemory(e.id) } label: { Label("Delete", systemImage: "trash") }
             }
             .accessibilityHint("Edit. Swipe for pin, disable or delete.")
         }

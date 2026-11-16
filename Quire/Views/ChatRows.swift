@@ -95,11 +95,11 @@ struct ChatListRow: View {
             Button { ChatOps.togglePin(app, chat) } label: {
                 Label(chat.pinned ? "Unpin" : "Pin", systemImage: chat.pinned ? "pin.slash" : "pin")
             }
-            .tint(Color.qAccent)
+            .tint(Color.qSwipePin)
             // Not role: .destructive. That role tells the list the row is already gone, but deleting
             // asks first; the list and the data then disagree, and the app crashes.
             Button { sheets.deletingChats = [chat.id] } label: { Label("Delete", systemImage: "trash") }
-                .tint(.red)
+                .tint(Color.qSwipeDelete)
         }
     }
 
@@ -156,7 +156,7 @@ struct ChatListRow: View {
             Label(chat.archived ? "Unarchive" : "Archive", systemImage: "archivebox")
         }
         Divider()
-        Button(role: .destructive) { sheets.deletingChats = [chat.id] } label: { Label("Delete", systemImage: "trash") }
+        Button(role: .danger) { sheets.deletingChats = [chat.id] } label: { Label("Delete", systemImage: "trash") }
     }
 }
 
@@ -269,7 +269,7 @@ private struct ListSheetsHost: ViewModifier {
             }
             .confirmationDialog(deleteTitle, isPresented: Binding(get: { sheets.deletingChats != nil }, set: { if !$0 { sheets.deletingChats = nil } }),
                                 titleVisibility: .visible) {
-                Button("Delete", role: .destructive) {
+                Button("Delete", role: .danger) {
                     if let ids = sheets.deletingChats {
                         withAnimation(Motion.standard) { app.deleteChats(ids) }
                         Haptics.warning()

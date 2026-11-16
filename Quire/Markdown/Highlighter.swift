@@ -40,7 +40,7 @@ enum Highlighter {
     private static var cache: [String: AttributedString] = [:]
 
     static func highlight(_ code: String, lang: String) -> AttributedString {
-        let key = lang + "\u{1}" + code
+        let key = ThemeStore.shared.theme.rawValue + "\u{1}" + lang + "\u{1}" + code
         if let hit = cache[key] { return hit }
         let result = compute(code, lang: lang.lowercased())
         if cache.count > 120 { cache.removeAll(keepingCapacity: true) }
@@ -54,7 +54,7 @@ enum Highlighter {
     /// largest layer the GPU will draw comes out blank, so long blocks are drawn as a column of these.
     /// Highlighting runs over the whole block first, so colours stay right across the joins.
     static func chunks(_ code: String, lang: String, lines: Int = 60) -> [AttributedString] {
-        let key = lang + "\u{1}" + code
+        let key = ThemeStore.shared.theme.rawValue + "\u{1}" + lang + "\u{1}" + code
         if let hit = chunkCache[key] { return hit }
         let whole = highlight(code, lang: lang)
         let chars = whole.characters

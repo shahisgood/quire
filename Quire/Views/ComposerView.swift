@@ -517,7 +517,7 @@ struct ComposerView: View {
         .buttonStyle(PressableStyle(scale: 0.9))
         .disabled(!session.generating && !canSend)
         .opacity(!session.generating && !canSend ? 0.5 : 1)
-        .shadow(color: Color.qAccent.opacity(0.35), radius: 8, y: 2)
+        .shadow(color: Color.qGlow.opacity(0.35), radius: 8, y: 2)
         .animation(Motion.quick, value: session.generating)
         .accessibilityLabel(session.generating ? "Stop" : "Send")
     }

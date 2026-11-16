@@ -19,7 +19,7 @@ struct QuireApp: App {
                 .environment(\.displayFace, app.settings.ui.titleFace)
                 .fontDesign(app.settings.ui.typeface.interfaceDesign)
                 .preferredColorScheme(app.settings.ui.theme.colorScheme)
-                .tint(Color.qAccent)
+                .tint(Color.qTint)
                 .onChange(of: app.settings) { app.persistSettings() }
                 .onChange(of: app.settings.ui.titleFace, initial: true) { _, face in NavigationTypography.apply(face) }
                 .onChange(of: app.settings.ui.codeFace, initial: true) { _, face in ThemeStore.shared.useCode(face) }

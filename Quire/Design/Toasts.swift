@@ -41,7 +41,7 @@ private struct ToastHost: View {
         ToastOverlay(center: app.toasts) { window.hitFrame = $0 }
             .environment(\.displayFace, app.settings.ui.titleFace)
             .fontDesign(app.settings.ui.typeface.interfaceDesign)
-            .tint(Color.qAccent)
+            .tint(Color.qTint)
             .preferredColorScheme(app.settings.ui.theme.colorScheme)
     }
 }

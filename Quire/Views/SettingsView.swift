@@ -206,7 +206,7 @@ private struct ConnectionSettings: View {
                         }
                     }
                     .buttonStyle(.borderless)
-                    Button("Remove key", role: .destructive) {
+                    Button("Remove key", role: .danger) {
                         app.setAPIKey(nil)
                         app.toasts.show("Key removed", symbol: "key")
                     }
@@ -572,7 +572,7 @@ struct PromptsSettingsView: View {
                             Button { app.startNewChat(persona: p) } label: { Label("New chat with \(p.name)", systemImage: "square.and.pencil") }
                             Button { app.duplicatePreset(p) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
                             Divider()
-                            Button(role: .destructive) { app.deletePreset(p.id) } label: { Label("Delete", systemImage: "trash") }
+                            Button(role: .danger) { app.deletePreset(p.id) } label: { Label("Delete", systemImage: "trash") }
                         }
                 }
                 Button { editing = Preset() } label: {
@@ -812,7 +812,7 @@ struct PersonaEditor: View {
                 ModelPickerView(title: "Persona model", selected: draft.modelId) { id in draft.modelId = id }
             }
             .confirmationDialog("Delete \(draft.name.isEmpty ? "this persona" : draft.name)?", isPresented: $confirmDelete, titleVisibility: .visible) {
-                Button("Delete", role: .destructive) {
+                Button("Delete", role: .danger) {
                     app.deletePreset(preset.id)
                     dismiss()
                 }
@@ -1505,7 +1505,7 @@ private struct DataSettings: View {
                         app.toasts.show("Model list refreshed", symbol: "arrow.clockwise")
                     }
                 } label: { Label("Refresh the model catalogue", systemImage: "arrow.clockwise") }
-                Button(role: .destructive) { confirmWipe = true } label: { Label("Erase everything", systemImage: "trash") }
+                Button(role: .danger) { confirmWipe = true } label: { Label("Erase everything", systemImage: "trash") }
             } header: {
                 SectionLabel(text: "Maintenance")
             } footer: {
@@ -1533,7 +1533,7 @@ private struct DataSettings: View {
         }
         .confirmationDialog("Import backup", isPresented: $showImportChoice, titleVisibility: .visible) {
             Button("Merge with what's here") { runImport(replace: false) }
-            Button("Replace everything", role: .destructive) {
+            Button("Replace everything", role: .danger) {
                 // Let the dialog finish dismissing before the confirmation sheet comes up.
                 Task {
                     try? await Task.sleep(for: .milliseconds(350))

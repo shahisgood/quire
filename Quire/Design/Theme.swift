@@ -94,7 +94,7 @@ extension AppTheme {
         rule: Color(light: 0xE3E3E3, dark: 0x222222),
         accent: Color(light: 0x000000, dark: 0xFFFFFF), accentSoft: Color(light: 0xEBEBEB, dark: 0x262626),
         onAccent: Color(light: 0xFFFFFF, dark: 0x000000),
-        danger: Color(light: 0xC4241D, dark: 0xFF6B60), warn: Color(light: 0x8A5A00, dark: 0xE8C27A),
+        danger: Color(light: 0x000000, dark: 0xFFFFFF), warn: Color(light: 0x5A5A5A, dark: 0xBDBDBD),
         swatch: [Color(hex: 0x000000), Color(hex: 0x474747), Color(hex: 0xFFFFFF)])
 }
 
@@ -146,6 +146,10 @@ final class ThemeStore {
     }
 
     var palette: Palette { theme.palette }
+
+    /// Pitch is black, white and greys, and nothing else: wherever another theme would use a hue
+    /// (icons, code, charts, projects, warnings), it uses a grey instead.
+    var mono: Bool { theme == .pitch }
 }
 
 extension Color {
@@ -166,18 +170,32 @@ extension Color {
     static var qWarn: Color { ThemeStore.shared.palette.warn }
 
     // Code highlighting
-    static let qCodeKeyword = Color(light: 0x3450C8, dark: 0x9AA8FF)
-    static let qCodeString = Color(light: 0x8A5A1C, dark: 0xD9BC8C)
-    static let qCodeNumber = Color(light: 0x2B7A6E, dark: 0x7FC6B8)
-    static let qCodeComment = Color(light: 0x7A7F87, dark: 0x6E737B)
+    static var qCodeKeyword: Color { tone(Color(light: 0x3450C8, dark: 0x9AA8FF), mono: Color(light: 0x000000, dark: 0xFFFFFF)) }
+    static var qCodeString: Color { tone(Color(light: 0x8A5A1C, dark: 0xD9BC8C), mono: Color(light: 0x555555, dark: 0xB4B4B4)) }
+    static var qCodeNumber: Color { tone(Color(light: 0x2B7A6E, dark: 0x7FC6B8), mono: Color(light: 0x2E2E2E, dark: 0xD8D8D8)) }
+    static var qCodeComment: Color { tone(Color(light: 0x7A7F87, dark: 0x6E737B), mono: Color(light: 0x8C8C8C, dark: 0x6E6E6E)) }
+
+    /// The colour, or under Pitch the grey that stands in for it.
+    static func tone(_ color: Color, mono grey: Color) -> Color { ThemeStore.shared.mono ? grey : color }
+
+    /// What controls (switches, plain buttons) take as their tint. Under Pitch a light grey, so a
+    /// switch's white knob still shows against its track.
+    static var qTint: Color { tone(qAccent, mono: Color(light: 0x3A3A3A, dark: 0xBDBDBD)) }
+    /// A soft glow under accented things. None under Pitch: glow blooms on true black.
+    static var qGlow: Color { tone(qAccent, mono: .clear) }
+    /// Swipe actions, filled behind a white icon: never white under Pitch, or the icon vanishes.
+    static var qSwipePin: Color { tone(qAccent, mono: Color(light: 0x5A5A5A, dark: 0x4A4A4A)) }
+    static var qSwipeDelete: Color { tone(.red, mono: Color(light: 0x2E2E2E, dark: 0x6E6E6E)) }
 
     // Settings tiles: muted, distinct, never louder than the accent.
-    static let qTileBlue = Color(light: 0x3450C8, dark: 0x5B6CC9)
-    static let qTileTeal = Color(light: 0x2B7A6E, dark: 0x3C8F82)
-    static let qTileViolet = Color(light: 0x6B4FB8, dark: 0x7D66C4)
-    static let qTileAmber = Color(light: 0xA86A12, dark: 0xB07A2A)
-    static let qTileSlate = Color(light: 0x5F646C, dark: 0x5C616A)
-    static let qTileRose = Color(light: 0xA8455E, dark: 0xB15A70)
+    static var qTileBlue: Color { tone(Color(light: 0x3450C8, dark: 0x5B6CC9), mono: qTileMono) }
+    static var qTileTeal: Color { tone(Color(light: 0x2B7A6E, dark: 0x3C8F82), mono: qTileMono) }
+    static var qTileViolet: Color { tone(Color(light: 0x6B4FB8, dark: 0x7D66C4), mono: qTileMono) }
+    static var qTileAmber: Color { tone(Color(light: 0xA86A12, dark: 0xB07A2A), mono: qTileMono) }
+    static var qTileSlate: Color { tone(Color(light: 0x5F646C, dark: 0x5C616A), mono: qTileMono) }
+    static var qTileRose: Color { tone(Color(light: 0xA8455E, dark: 0xB15A70), mono: qTileMono) }
+    /// Under Pitch every icon tile is the same quiet grey, its symbol white.
+    private static let qTileMono = Color(light: 0x3A3A3A, dark: 0x2C2C2C)
 
     init(hex: UInt32) {
         self.init(uiColor: UIColor(hex: hex))
@@ -546,6 +564,12 @@ enum Motion {
     static let morph = Animation.spring(duration: 0.38, bounce: 0.12)
     /// A selection sliding to its new place, with a touch of life at the end.
     static let select = Animation.spring(response: 0.34, dampingFraction: 0.86)
+}
+
+extension ButtonRole {
+    /// Destructive, except under Pitch: iOS draws destructive buttons in red, and Pitch has no red.
+    /// There the button keeps its words ("Delete", "Erase everything") and the grey of every control.
+    static var danger: ButtonRole? { ThemeStore.shared.mono ? nil : .destructive }
 }
 
 // MARK: - Measures

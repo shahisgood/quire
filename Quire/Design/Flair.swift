@@ -106,7 +106,7 @@ struct ToggleChip: View {
                 }
             }
             .overlay(Capsule().strokeBorder(isOn ? Color.clear : Color.qRule, lineWidth: 1))
-            .shadow(color: Color.qAccent.opacity(isOn ? 0.3 : 0), radius: 8, y: 3)
+            .shadow(color: Color.qGlow.opacity(isOn ? 0.3 : 0), radius: 8, y: 3)
             .contentShape(.capsule)
         }
         .buttonStyle(.pressable)
@@ -289,7 +289,7 @@ struct AsciiHeart: View {
 
     var body: some View {
         HeartType(drawn: drawn, bounces: !reduceMotion)
-            .shadow(color: Color.qAccent.opacity(glow ? 0.45 : 0), radius: 9)
+            .shadow(color: Color.qGlow.opacity(glow ? 0.45 : 0), radius: 9)
             .scaleEffect(beat)
             .opacity(gone ? 0 : 1)
             .offset(y: gone && !reduceMotion ? -16 : 0)

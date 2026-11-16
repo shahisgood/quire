@@ -96,7 +96,7 @@ struct ChatView: View {
             ImageGallery(images: galleryImages, startId: a.id)
         }
         .confirmationDialog("Delete this message?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
+            Button("Delete", role: .danger) {
                 if let m = deleting { withAnimation(Motion.standard) { session.delete(m.id) } }
                 deleting = nil
             }
