@@ -414,7 +414,7 @@ struct OpticalSymbol: View {
         let renderer = ImageRenderer(content: Image(systemName: name)
             .font(.system(size: 17))
             .imageScale(.large)
-            .padding(8))
+            .padding(Space.s))
         renderer.scale = scale
         guard let image = renderer.cgImage else { return nil }
         let w = image.width, h = image.height

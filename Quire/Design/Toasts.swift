@@ -85,7 +85,7 @@ private struct ToastCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Space.m) {
             badge
             Text(toast.text)
                 .font(.subheadline.weight(.medium))
@@ -101,7 +101,7 @@ private struct ToastCard: View {
                     Text(label)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Color.qOnAccent)
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Space.l)
                         .frame(minHeight: 36)
                         .background(Color.qAccent, in: .capsule)
                         .contentShape(.capsule)
@@ -110,15 +110,15 @@ private struct ToastCard: View {
                 .accessibilityHint(label == "Undo" ? "Reverses what just happened" : "")
             }
         }
-        .padding(.leading, 9)
+        .padding(.leading, Space.s)
         .padding(.trailing, toast.actionLabel == nil ? 18 : 9)
-        .padding(.vertical, 8)
+        .padding(.vertical, Space.s)
         .frame(minHeight: 54)
         .glassEffect(.regular, in: .capsule)
         .contentShape(.capsule)
         .frame(maxWidth: 460)
-        .padding(.horizontal, 14)
-        .padding(.top, 4)
+        .padding(.horizontal, Space.l)
+        .padding(.top, Space.xs)
         // Up moves freely; down gives a little and springs back.
         .offset(y: drag < 0 ? drag : drag / 5)
         .gesture(swipe)

@@ -42,14 +42,14 @@ struct MemoryView: View {
                         // accent colour, which disappears against this accent-filled button and left
                         // the title sitting off-centre next to an invisible plus.
                         Button(action: startAdding) {
-                            HStack(spacing: 6) {
+                            HStack(spacing: Space.s) {
                                 Image(systemName: "plus")
                                 Text("Add a fact")
                             }
                         }
                         .buttonStyle(.glassProminent)
                     }
-                    .padding(.vertical, 20)
+                    .padding(.vertical, Space.xl)
                 }
                 .listRowBackground(Color.clear)
             }
@@ -115,7 +115,7 @@ struct MemoryView: View {
     // MARK: Budget
 
     private var budgetCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.m) {
             HStack(alignment: .firstTextBaseline) {
                 Text("\(app.memory.count) \(app.memory.count == 1 ? "fact" : "facts")")
                     .displayFont { .system(.title3, design: $0).weight(.semibold) }
@@ -132,7 +132,7 @@ struct MemoryView: View {
                 .foregroundStyle(total > budget ? Color.qAccent : Color.qInk2)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, Space.s)
         .accessibilityElement(children: .combine)
     }
 
@@ -193,7 +193,7 @@ struct MemoryView: View {
     @ViewBuilder
     private func entryRow(_ e: MemoryEntry) -> some View {
         if editingId == e.id {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Space.s) {
                 TextField("Fact", text: $editText, axis: .vertical)
                     .lineLimit(1...6)
                     .focused($focus, equals: .edit)
@@ -217,14 +217,14 @@ struct MemoryView: View {
                     focus = .edit
                 }
             } label: {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                     if e.pinned {
                         Image(systemName: "pin.fill")
                             .font(.caption)
                             .foregroundStyle(Color.qAccent)
                             .accessibilityLabel("Pinned")
                     }
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: Space.xs) {
                         Text(e.text)
                             .foregroundStyle(e.disabled ? Color.qInk2 : Color.qInk)
                             .strikethrough(e.disabled, color: Color.qInk2)

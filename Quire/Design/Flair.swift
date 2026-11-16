@@ -36,12 +36,12 @@ struct SlidingSegments<Value: Hashable>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Space.xxs) {
             ForEach(options.indices, id: \.self) { i in
                 segment(options[i].value, options[i].label)
             }
         }
-        .padding(3)
+        .padding(Space.xs)
         .background(Color.qRaised, in: .capsule)
         .overlay(Capsule().strokeBorder(Color.qRule, lineWidth: 1))
     }
@@ -87,14 +87,14 @@ struct ToggleChip: View {
             Haptics.selection()
             withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy) { action() }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: Space.s) {
                 Image(systemName: symbol)
                     .symbolEffect(.bounce, value: isOn)
                 Text(title)
             }
             .font(.subheadline.weight(.medium))
             .foregroundStyle(isOn ? Color.qOnAccent : Color.qInk)
-            .padding(.horizontal, 14)
+            .padding(.horizontal, Space.l)
             .frame(height: 34)
             .background {
                 ZStack {

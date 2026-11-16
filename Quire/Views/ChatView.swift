@@ -116,8 +116,8 @@ struct ChatView: View {
                     Button(action: showEarlier) {
                         Label("Show earlier messages (\(hiddenCount))", systemImage: "arrow.up")
                             .font(.footnote.weight(.medium))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
+                            .padding(.horizontal, Space.l)
+                            .padding(.vertical, Space.s)
                     }
                     .buttonStyle(.glass)
                     .frame(maxWidth: .infinity)
@@ -130,9 +130,9 @@ struct ChatView: View {
                     }
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 14)
-            .padding(.bottom, 14)
+            .padding(.horizontal, Space.xl)
+            .padding(.top, Space.l)
+            .padding(.bottom, Space.l)
             .environment(\.dynamicTypeSize, ReadingSize(scale: app.settings.ui.fontScale).apply(to: typeSize))
             .animation(reduceMotion ? nil : Motion.standard, value: session.path)
 
@@ -248,16 +248,16 @@ struct ChatView: View {
                 withAnimation(reduceMotion ? nil : Motion.standard) { position.scrollTo(edge: .bottom) }
                 Haptics.tap()
             } label: {
-                HStack(spacing: 7) {
+                HStack(spacing: Space.s) {
                     if session.generating { LiveDot(size: 6) } else { Image(systemName: "arrow.down") }
                     Text(session.generating ? "Writing" : "Latest")
                 }
                 .font(.footnote.weight(.semibold))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
+                .padding(.horizontal, Space.l)
+                .padding(.vertical, Space.s)
             }
             .buttonStyle(.glass)
-            .padding(.bottom, 12)
+            .padding(.bottom, Space.m)
             .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
             .accessibilityLabel(session.generating ? "Jump to the reply being written" : "Jump to latest")
         }
@@ -407,7 +407,7 @@ private struct EmptyChatView: View {
                 content(compact: false)
                 content(compact: true)
             }
-            .padding(.horizontal, 28)
+            .padding(.horizontal, Space.xxxl)
             .animation(Motion.standard, value: session.chat.memoryEnabled)
             .onAppear { shown = true }
         }
@@ -425,7 +425,7 @@ private struct EmptyChatView: View {
                                 .offset(y: -(AsciiHeart.size.height + 26))
                         }
                     }
-                    .padding(.bottom, 22)
+                    .padding(.bottom, Space.xxl)
                     .entrance(shown)
             }
 
@@ -449,14 +449,14 @@ private struct EmptyChatView: View {
                     .font(.subheadline)
                     .foregroundStyle(Color.qInk2)
                     .multilineTextAlignment(.center)
-                    .padding(.top, 10)
+                    .padding(.top, Space.m)
                     .transition(.opacity)
                     .entrance(shown, delay: 0.1)
             }
 
             if !compact, session.project != nil || session.persona != nil {
                 contextChips
-                    .padding(.top, 18)
+                    .padding(.top, Space.xl)
                     .entrance(shown, delay: 0.14)
             }
 
@@ -492,10 +492,10 @@ private struct EmptyChatView: View {
 
     /// The project and persona this chat starts with. Either opens chat settings, where both change.
     private var contextChips: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Space.s) {
             if let p = session.project {
                 chip {
-                    HStack(spacing: 7) {
+                    HStack(spacing: Space.s) {
                         ProjectTile(project: p, size: 20)
                         Text(p.name)
                             .fontWeight(.semibold)
@@ -526,8 +526,8 @@ private struct EmptyChatView: View {
     private func chip<Content: View>(@ViewBuilder _ label: () -> Content) -> some View {
         Button(action: openSettings) {
             label()
-                .padding(.leading, 7)
-                .padding(.trailing, 12)
+                .padding(.leading, Space.s)
+                .padding(.trailing, Space.m)
                 .frame(minHeight: 32)
                 .background(Color.qRaised, in: .capsule)
                 .overlay(Capsule().strokeBorder(Color.qRule, lineWidth: 1))

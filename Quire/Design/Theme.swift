@@ -552,7 +552,7 @@ enum Motion {
 
 /// Spacing, on a 4-point grid. Use these rather than numbers, so spaces repeat across screens.
 /// A space between things of one group is smaller than the space between groups.
-enum Space {
+nonisolated enum Space {
     /// Hairline nudges: between a title and its caption.
     static let xxs: CGFloat = 2
     static let xs: CGFloat = 4
@@ -562,13 +562,11 @@ enum Space {
     static let xl: CGFloat = 20
     static let xxl: CGFloat = 24
     static let xxxl: CGFloat = 32
-    /// A screen's side margin.
-    static let page: CGFloat = 16
 }
 
 /// Corner radii, one per kind of surface. Something inside a rounded surface takes the outer radius
 /// less the inset between them, so corners run parallel instead of pinching.
-enum Radius {
+nonisolated enum Radius {
     /// Inline code, small tags.
     static let xs: CGFloat = 6
     /// Surfaces set into a card: code blocks, explanations, quotes.
@@ -582,7 +580,7 @@ enum Radius {
 }
 
 /// Sizes that recur: the round buttons in bars and the message box.
-enum Size {
+nonisolated enum Size {
     static let control: CGFloat = 36
 }
 
@@ -597,7 +595,7 @@ extension View {
 
 /// Hairline card used for the user's own messages, code and tables.
 struct CardBackground: ViewModifier {
-    var radius: CGFloat = 16
+    var radius: CGFloat = Radius.l
     var fill: Color = .qRaised
     func body(content: Content) -> some View {
         content
@@ -607,7 +605,7 @@ struct CardBackground: ViewModifier {
 }
 
 extension View {
-    func card(radius: CGFloat = 16, fill: Color = .qRaised) -> some View { modifier(CardBackground(radius: radius, fill: fill)) }
+    func card(radius: CGFloat = Radius.l, fill: Color = .qRaised) -> some View { modifier(CardBackground(radius: radius, fill: fill)) }
 }
 
 /// Press feedback for custom tappable surfaces: a quick scale and dim on touch-down, like a native control.

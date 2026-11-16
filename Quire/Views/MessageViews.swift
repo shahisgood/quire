@@ -21,7 +21,7 @@ struct MessageView: View {
         }
         .background {
             // A search result, washed in accent for a moment so the eye finds it.
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.m, style: .continuous)
                 .fill(Color.qAccentSoft)
                 .padding(-8)
                 .opacity(highlighted ? 1 : 0)
@@ -40,8 +40,8 @@ struct UserMessageView: View {
     var body: some View {
         HStack(alignment: .bottom) {
             Spacer(minLength: 44)
-            VStack(alignment: .trailing, spacing: 6) {
-                VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .trailing, spacing: Space.s) {
+                VStack(alignment: .leading, spacing: Space.m) {
                     if let atts = message.attachments, !atts.isEmpty {
                         AttachmentStrip(attachments: atts, onTap: actions.viewImage)
                     }
@@ -52,10 +52,10 @@ struct UserMessageView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(.horizontal, 15)
-                .padding(.vertical, 11)
-                .card(radius: 20)
-                .contentShape(.contextMenuPreview, .rect(cornerRadius: 20))
+                .padding(.horizontal, Space.l)
+                .padding(.vertical, Space.m)
+                .card(radius: Radius.l)
+                .contentShape(.contextMenuPreview, .rect(cornerRadius: Radius.l))
                 .contextMenu { menu }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(accessibilityText)
@@ -64,7 +64,7 @@ struct UserMessageView: View {
                     Button("Edit and resend") { actions.edit(message) }
                 }
 
-                HStack(spacing: 10) {
+                HStack(spacing: Space.m) {
                     if message.editedFrom != nil {
                         Text("edited")
                             .font(.caption2)
@@ -108,7 +108,7 @@ private struct AttachmentStrip: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.s) {
                 ForEach(attachments) { a in
                     if a.kind == .image {
                         Button { onTap(a) } label: { AttachmentThumb(attachment: a) }
@@ -116,7 +116,7 @@ private struct AttachmentStrip: View {
                             .accessibilityLabel("Image \(a.name)")
                             .accessibilityHint("Opens it full screen")
                     } else {
-                        HStack(spacing: 6) {
+                        HStack(spacing: Space.s) {
                             Image(systemName: "doc.text")
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(a.name).lineLimit(1)
@@ -125,9 +125,9 @@ private struct AttachmentStrip: View {
                         }
                         .font(.footnote)
                         .foregroundStyle(Color.qInk)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .card(radius: 10, fill: .qSunken)
+                        .padding(.horizontal, Space.m)
+                        .padding(.vertical, Space.s)
+                        .card(radius: Radius.s, fill: .qSunken)
                     }
                 }
             }
@@ -186,7 +186,7 @@ private struct AssistantMessageView: View {
     private var drawn: [Attachment] { message.attachments?.filter { $0.kind == .image } ?? [] }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Space.l) {
             folio
 
             if !reasoning.isEmpty || reasoningTokens > 0 {
@@ -243,7 +243,7 @@ private struct AssistantMessageView: View {
     // MARK: Folio line: MODEL NAME ———— 2m
 
     private var folio: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Space.m) {
             Text(app.modelName(modelId).uppercased())
                 .font(.caption2.weight(.semibold))
                 .tracking(1.2)
@@ -312,7 +312,7 @@ private struct AssistantMessageView: View {
                     .foregroundStyle(Color.qInk2)
             }
         } else if message.status != .error || !message.content.isEmpty {
-            HStack(spacing: 4) {
+            HStack(spacing: Space.xs) {
                 SiblingSwitcher(session: session, messageId: message.id)
                 if app.settings.ui.showCosts, let u = message.usage {
                     Button { actions.info(message) } label: {
@@ -350,7 +350,7 @@ private struct AssistantMessageView: View {
     }
 
     private var previewCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s) {
             Text(app.modelName(modelId).uppercased())
                 .font(.caption2.weight(.semibold))
                 .tracking(1.2)
@@ -359,7 +359,7 @@ private struct AssistantMessageView: View {
                 .font(.system(.callout, design: design))
                 .foregroundStyle(Color.qInk)
         }
-        .padding(16)
+        .padding(Space.l)
         .frame(width: 320, alignment: .leading)
         .background(Color.qBase)
     }
@@ -386,9 +386,9 @@ private struct ReplyImages: View {
         if images.count == 1, let a = images.first {
             tile(a, side: 260)
         } else {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Space.s) {
                 ForEach(Array(stride(from: 0, to: images.count, by: 2)), id: \.self) { i in
-                    HStack(spacing: 8) {
+                    HStack(spacing: Space.s) {
                         tile(images[i], side: 136)
                         if i + 1 < images.count { tile(images[i + 1], side: 136) }
                     }
@@ -416,7 +416,7 @@ private struct ReplyBody: View {
 
     var body: some View {
         let pieces = Self.pieces(blocks)
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Space.l) {
             ForEach(Array(pieces.enumerated()), id: \.offset) { i, block in
                 MarkdownBlockView(block: block, design: design,
                                   caret: streaming && i == pieces.count - 1 && block.takesCaret, ink: ink)
@@ -513,7 +513,7 @@ struct SiblingSwitcher: View {
     var body: some View {
         let info = session.siblingInfo(messageId)
         if info.count > 1 {
-            HStack(spacing: 2) {
+            HStack(spacing: Space.xxs) {
                 Button {
                     Haptics.selection()
                     withAnimation(Motion.quick) { session.switchBranch(messageId, by: -1) }
@@ -560,7 +560,7 @@ private struct ReasoningView: View {
         // Open while the model is thinking; once the answer starts it folds away unless the user
         // prefers traces open. A tap overrides both.
         let isOpen = userChoice ?? (thinking || expandedByDefault)
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s) {
             if text.isEmpty {
                 Label("Reasoned with \(Fmt.tokens(tokens)) tokens · the provider didn't return the trace", systemImage: "brain")
                     .font(.caption)
@@ -570,7 +570,7 @@ private struct ReasoningView: View {
                     withAnimation(reduceMotion ? nil : Motion.standard) { userChoice = !isOpen }
                     Haptics.selection()
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: Space.s) {
                         Image(systemName: "brain")
                             .symbolEffect(.pulse, options: .repeating, isActive: thinking && !reduceMotion)
                         Text(thinking ? "Thinking" : "Reasoning")
@@ -597,7 +597,7 @@ private struct ReasoningView: View {
                         .lineSpacing(2)
                         .foregroundStyle(Color.qInk2)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.leading, 12)
+                        .padding(.leading, Space.m)
                         .overlay(alignment: .leading) {
                             Rectangle().fill(thinking ? Color.qAccent.opacity(0.6) : Color.qRule).frame(width: 2)
                         }
@@ -664,11 +664,11 @@ private struct InlineNotice<Actions: View>: View {
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Space.m) {
             Text(text)
                 .font(.footnote)
                 .foregroundStyle(Color.qInk2)
-            HStack(spacing: 8) { actions() }
+            HStack(spacing: Space.s) { actions() }
                 .font(.footnote.weight(.semibold))
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -687,7 +687,7 @@ private struct ErrorCard: View {
     private var code: String { message.error?.code ?? "" }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.m) {
             Label {
                 Text(code.isEmpty || code == "unknown" ? "Request failed" : "Request failed (\(code))")
                     .fontWeight(.semibold)
@@ -702,7 +702,7 @@ private struct ErrorCard: View {
                 .foregroundStyle(Color.qInk)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: 8) {
+            HStack(spacing: Space.s) {
                 if code == "401" {
                     Button("Fix API key", action: onKey).buttonStyle(.borderedProminent)
                 }
@@ -723,8 +723,8 @@ private struct ErrorCard: View {
             .font(.footnote.weight(.semibold))
             .controlSize(.small)
         }
-        .padding(14)
+        .padding(Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .card(radius: 14)
+        .card(radius: Radius.m)
     }
 }

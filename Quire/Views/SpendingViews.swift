@@ -14,9 +14,9 @@ struct SpendingCard: View {
         let series = app.dailySeries(days: 30)
         let total = series.reduce(0) { $0 + $1.cost }
         let before = max(0, app.costSince(daysAgo: 59) - total)
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Space.l) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.m) {
+                VStack(alignment: .leading, spacing: Space.xxs) {
                     Text(Fmt.usd(total))
                         .displayFont { .system(.largeTitle, design: $0).weight(.semibold).monospacedDigit() }
                         .foregroundStyle(Color.qInk)
@@ -51,14 +51,14 @@ struct SpendingCard: View {
                 stat("Daily average", total / 30)
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Space.s)
         .onAppear {
             withAnimation(reduceMotion ? nil : Motion.entrance) { grown = true }
         }
     }
 
     private func stat(_ label: String, _ value: Double) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Space.xxs) {
             Text(Fmt.usd(value))
                 .displayFont { .system(.body, design: $0).weight(.semibold).monospacedDigit() }
                 .foregroundStyle(Color.qInk)
@@ -78,7 +78,7 @@ struct ChangeBadge: View {
 
     var body: some View {
         let up = change >= 0
-        HStack(spacing: 3) {
+        HStack(spacing: Space.xs) {
             Image(systemName: up ? "arrow.up.right" : "arrow.down.right")
                 .font(.caption2.weight(.bold))
             Text(abs(change) >= 10 ? "\(Int(abs(change)))×" : "\(Int((abs(change) * 100).rounded()))%")
@@ -87,8 +87,8 @@ struct ChangeBadge: View {
                 .contentTransition(.numericText())
         }
         .foregroundStyle(Color.qInk2)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, Space.s)
+        .padding(.vertical, Space.xs)
         .background(Color.qSunken, in: .capsule)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(up ? "Up" : "Down") \(Int((abs(change) * 100).rounded())) percent on \(against)")
@@ -121,7 +121,7 @@ struct SpendingView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
+            VStack(alignment: .leading, spacing: Space.xxl) {
                 controls
                 if let report {
                     if report.total == 0 && report.replies == 0 {
@@ -140,9 +140,9 @@ struct SpendingView: View {
                     loading
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 8)
-            .padding(.bottom, 28)
+            .padding(.horizontal, Space.xl)
+            .padding(.top, Space.s)
+            .padding(.bottom, Space.xxxl)
         }
         .background(Color.qBase)
         .navigationTitle("Spending")
@@ -169,7 +169,7 @@ struct SpendingView: View {
     // MARK: Controls
 
     private var controls: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: Space.m) {
             SlidingSegments(options: SpendRange.allCases.map { (value: $0, label: $0.label) }, selection: $range)
                 .accessibilityLabel("Range")
             SlidingSegments(options: SpendMetric.allCases.map { (value: $0, label: $0.label) }, selection: $metric)
@@ -178,7 +178,7 @@ struct SpendingView: View {
     }
 
     private var loading: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Space.m) {
             ProgressView()
             Text("Reading your chats…")
                 .font(.footnote)
@@ -191,8 +191,8 @@ struct SpendingView: View {
     // MARK: Headline
 
     private func hero(_ r: SpendReport) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Space.l) {
+            VStack(alignment: .leading, spacing: Space.xs) {
                 Text(metric.format(r.total))
                     .displayFont { .system(size: 46, weight: .semibold, design: $0).monospacedDigit() }
                     .tracking(-0.8)
@@ -200,7 +200,7 @@ struct SpendingView: View {
                     .contentTransition(.numericText(value: r.total))
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
-                HStack(spacing: 8) {
+                HStack(spacing: Space.s) {
                     Text("\(metric.label) over \(r.range.phrase)")
                         .font(.subheadline)
                         .foregroundStyle(Color.qInk2)
@@ -222,7 +222,7 @@ struct SpendingView: View {
     }
 
     private func figure(_ value: String, _ caption: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Space.xxs) {
             Text(value)
                 .displayFont { .system(.body, design: $0).weight(.semibold).monospacedDigit() }
                 .foregroundStyle(Color.qInk)
@@ -237,7 +237,7 @@ struct SpendingView: View {
     // MARK: Chart
 
     private func chartCard(_ r: SpendReport) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Space.l) {
             readout(r)
                 .frame(minHeight: 54, alignment: .topLeading)
 
@@ -286,8 +286,8 @@ struct SpendingView: View {
 
             legend(r)
         }
-        .padding(16)
-        .card(radius: 20)
+        .padding(Space.l)
+        .card(radius: Radius.l)
     }
 
     /// Above the chart: the day (or week, or month) under your finger, with what it was made of;
@@ -297,7 +297,7 @@ struct SpendingView: View {
         if let s = selectedBucket(r) {
             let parts = r.bars.filter { $0.date == s }.sorted { $0.value > $1.value }
             let sum = parts.reduce(0) { $0 + $1.value }
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Space.s) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(label(for: s, unit: r.unit, long: true))
                         .font(.subheadline.weight(.semibold))
@@ -308,9 +308,9 @@ struct SpendingView: View {
                         .foregroundStyle(Color.qInk)
                 }
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: Space.m) {
                         ForEach(parts.prefix(4)) { p in
-                            HStack(spacing: 5) {
+                            HStack(spacing: Space.xs) {
                                 Circle().fill(p.series.color).frame(width: 7, height: 7)
                                 Text("\(p.series.name) \(metric.format(p.value))")
                                     .font(.caption.monospacedDigit())
@@ -329,7 +329,7 @@ struct SpendingView: View {
             .transition(.opacity)
             .accessibilityElement(children: .combine)
         } else {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Space.xs) {
                 Text("By \(unitWord(r.unit))")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color.qInk)
@@ -343,22 +343,22 @@ struct SpendingView: View {
 
     private func legend(_ r: SpendReport) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.s) {
                 ForEach(r.series) { s in
                     let on = focus == s.id
                     Button {
                         Haptics.selection()
                         withAnimation(Motion.quick) { focus = on ? nil : s.id }
                     } label: {
-                        HStack(spacing: 6) {
+                        HStack(spacing: Space.s) {
                             Circle().fill(s.color).frame(width: 8, height: 8)
                             Text(s.name)
                                 .font(.caption.weight(.medium))
                                 .foregroundStyle(Color.qInk)
                                 .lineLimit(1)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, Space.m)
+                        .padding(.vertical, Space.s)
                         .background(on ? Color.qAccentSoft : Color.qSunken, in: .capsule)
                         .overlay(Capsule().strokeBorder(on ? Color.qAccent.opacity(0.5) : Color.clear, lineWidth: 1))
                         .opacity(focus == nil || on ? 1 : 0.55)
@@ -376,7 +376,7 @@ struct SpendingView: View {
     // MARK: By model
 
     private func breakdown(_ r: SpendReport) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.m) {
             SectionLabel(text: "By model")
             VStack(spacing: 0) {
                 ForEach(Array(r.rows.enumerated()), id: \.element.id) { i, row in
@@ -384,9 +384,9 @@ struct SpendingView: View {
                     modelRow(row, r)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 4)
-            .card(radius: 18)
+            .padding(.horizontal, Space.l)
+            .padding(.vertical, Space.xs)
+            .card(radius: Radius.l)
         }
     }
 
@@ -397,13 +397,13 @@ struct SpendingView: View {
             Haptics.selection()
             withAnimation(Motion.quick) { focus = on ? nil : id }
         } label: {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: Space.m) {
                 Circle()
                     .fill(row.series.color)
                     .frame(width: 10, height: 10)
-                    .padding(.top, 5)
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    .padding(.top, Space.xs)
+                VStack(alignment: .leading, spacing: Space.s) {
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                         Text(row.series.name)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(Color.qInk)
@@ -428,7 +428,7 @@ struct SpendingView: View {
                         .lineLimit(2)
                 }
             }
-            .padding(.vertical, 11)
+            .padding(.vertical, Space.m)
             .opacity(focus == nil || on ? 1 : 0.5)
             .contentShape(.rect)
         }
@@ -465,11 +465,11 @@ struct SpendingView: View {
             TokenPart(name: "Written", count: r.completion, color: Color.qAccent),
             TokenPart(name: "Thinking", count: r.reasoning, color: Color.qAccent.opacity(0.7)),
         ].filter { $0.count > 0 }
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: Space.m) {
             SectionLabel(text: "Tokens")
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: Space.l) {
                 GeometryReader { geo in
-                    HStack(spacing: 2) {
+                    HStack(spacing: Space.xxs) {
                         ForEach(parts) { p in
                             RoundedRectangle(cornerRadius: 3, style: .continuous)
                                 .fill(p.color)
@@ -482,8 +482,8 @@ struct SpendingView: View {
                 HStack(alignment: .top, spacing: 0) {
                     ForEach(Array(parts.enumerated()), id: \.element.id) { i, p in
                         if i > 0 { Spacer(minLength: 8) }
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 5) {
+                        VStack(alignment: .leading, spacing: Space.xxs) {
+                            HStack(spacing: Space.xs) {
                                 RoundedRectangle(cornerRadius: 2).fill(p.color).frame(width: 8, height: 8)
                                 Text(p.name)
                                     .font(.caption)
@@ -504,15 +504,15 @@ struct SpendingView: View {
                     .foregroundStyle(Color.qInk2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(16)
-            .card(radius: 18)
+            .padding(Space.l)
+            .card(radius: Radius.l)
         }
     }
 
     // MARK: Chats
 
     private func topChats(_ r: SpendReport) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.m) {
             SectionLabel(text: "Costliest chats")
             VStack(spacing: 0) {
                 ForEach(Array(r.chats.enumerated()), id: \.element.id) { i, c in
@@ -523,12 +523,12 @@ struct SpendingView: View {
                         Haptics.tap()
                         app.openChat(c.chatId)
                     } label: {
-                        HStack(spacing: 12) {
+                        HStack(spacing: Space.m) {
                             Text("\(i + 1)")
                                 .displayFont { .system(.subheadline, design: $0).weight(.semibold).monospacedDigit() }
                                 .foregroundStyle(Color.qInk2)
                                 .frame(width: 18)
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: Space.xxs) {
                                 Text(chat?.title ?? "Deleted chat")
                                     .font(.subheadline.weight(.medium))
                                     .foregroundStyle(chat == nil ? Color.qInk2 : Color.qInk)
@@ -548,7 +548,7 @@ struct SpendingView: View {
                                     .foregroundStyle(Color.qInk2.opacity(0.6))
                             }
                         }
-                        .padding(.vertical, 11)
+                        .padding(.vertical, Space.m)
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
@@ -556,9 +556,9 @@ struct SpendingView: View {
                     .accessibilityHint(chat == nil ? "" : "Opens the chat")
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 2)
-            .card(radius: 18)
+            .padding(.horizontal, Space.l)
+            .padding(.vertical, Space.xxs)
+            .card(radius: Radius.l)
         }
     }
 

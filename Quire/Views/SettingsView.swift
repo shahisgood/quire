@@ -88,9 +88,9 @@ private struct AccountCard: View {
     var body: some View {
         if app.apiKey == nil {
             NavigationLink(value: Route.section(.connection)) {
-                HStack(spacing: 14) {
+                HStack(spacing: Space.l) {
                     QuireMark(width: 34, breathing: true)
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: Space.xs) {
                         Text("Connect OpenRouter")
                             .displayFont { .system(.headline, design: $0) }
                             .foregroundStyle(Color.qInk)
@@ -99,12 +99,12 @@ private struct AccountCard: View {
                             .foregroundStyle(Color.qInk2)
                     }
                 }
-                .padding(.vertical, 6)
+                .padding(.vertical, Space.s)
             }
         } else {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Space.m) {
                 HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Space.xxs) {
                         Text(app.settings.keyMeta?.label ?? "OpenRouter key")
                             .displayFont { .system(.headline, design: $0) }
                             .foregroundStyle(Color.qInk)
@@ -140,7 +140,7 @@ private struct AccountCard: View {
                     }
                 }
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, Space.s)
             .task {
                 if let meta = app.settings.keyMeta, nowMs() - meta.fetchedAt < 60_000 { return }
                 await refresh()
@@ -415,13 +415,13 @@ private struct GenerationSettingsView: View {
     private func shortName(_ id: String) -> String { app.model(id)?.shortName ?? app.modelName(id) }
 
     private func traitRow(_ traits: [String]) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Space.s) {
             ForEach(traits, id: \.self) { t in
                 Text(t)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Color.qInk2)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, Space.s)
+                    .padding(.vertical, Space.xs)
                     .background(Color.qSunken, in: .capsule)
                     .fixedSize()
             }
@@ -444,14 +444,14 @@ private struct GenerationSettingsView: View {
     private func hero(_ model: ORModel?) -> some View {
         let id = app.settings.defaultModelId
         return Button { pickDefault = true } label: {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: Space.l) {
+                VStack(alignment: .leading, spacing: Space.xs) {
                     Text("Default model")
                         .font(.caption.weight(.semibold))
                         .tracking(1.1)
                         .textCase(.uppercase)
                         .foregroundStyle(Color.qAccent)
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                         Text(shortName(id))
                             .displayFont { .system(.title, design: $0).weight(.semibold) }
                             .foregroundStyle(Color.qInk)
@@ -492,17 +492,17 @@ private struct GenerationSettingsView: View {
                         .multilineTextAlignment(.leading)
                 }
             }
-            .padding(18)
+            .padding(Space.xl)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .card(radius: 22)
-            .contentShape(.rect(cornerRadius: 22))
+            .card(radius: Radius.l)
+            .contentShape(.rect(cornerRadius: Radius.l))
         }
         .buttonStyle(PressableStyle(scale: 0.98))
         .accessibilityHint("Chooses the model new chats start with")
     }
 
     private func figure(_ value: String, _ caption: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Space.xxs) {
             Text(value)
                 .displayFont { .system(.body, design: $0).weight(.semibold).monospacedDigit() }
                 .foregroundStyle(Color.qInk)
@@ -563,7 +563,7 @@ struct PromptsSettingsView: View {
                         .displayFont { .system(.subheadline, design: $0).italic() }
                         .foregroundStyle(Color.qInk2)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.vertical, 14)
+                        .padding(.vertical, Space.l)
                 }
                 ForEach(app.presets) { p in
                     Button { editing = p } label: { PersonaRow(preset: p) }
@@ -576,18 +576,18 @@ struct PromptsSettingsView: View {
                         }
                 }
                 Button { editing = Preset() } label: {
-                    HStack(spacing: 12) {
+                    HStack(spacing: Space.m) {
                         Image(systemName: "plus")
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Color.qAccent)
                             .frame(width: 42, height: 42)
-                            .background(Color.qAccentSoft, in: .rect(cornerRadius: 13, style: .continuous))
+                            .background(Color.qAccentSoft, in: .rect(cornerRadius: Radius.m, style: .continuous))
                         Text("New persona")
                             .font(.body.weight(.medium))
                             .foregroundStyle(Color.qAccent)
                         Spacer(minLength: 0)
                     }
-                    .padding(.vertical, 12)
+                    .padding(.vertical, Space.m)
                     .contentShape(.rect)
                 }
                 .buttonStyle(.row)
@@ -625,11 +625,11 @@ struct PromptsSettingsView: View {
     /// The prompt itself, a few lines of it, beside a rule in the accent like a pull quote.
     private var globalPrompt: some View {
         let prompt = app.settings.globalSystemPrompt
-        return HStack(alignment: .top, spacing: 12) {
+        return HStack(alignment: .top, spacing: Space.m) {
             RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                 .fill(Color.qAccent.opacity(prompt.isEmpty ? 0.25 : 0.6))
                 .frame(width: 3)
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Space.s) {
                 Text(prompt.isEmpty ? "No global prompt yet" : prompt)
                     .displayFont { .system(.subheadline, design: $0) }
                     .foregroundStyle(prompt.isEmpty ? Color.qInk2 : Color.qInk)
@@ -643,9 +643,9 @@ struct PromptsSettingsView: View {
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.qInk2)
-                .padding(.top, 2)
+                .padding(.top, Space.xxs)
         }
-        .padding(.vertical, 14)
+        .padding(.vertical, Space.l)
         .contentShape(.rect)
     }
 }
@@ -661,13 +661,13 @@ private struct PersonaRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Space.m) {
             Text(preset.icon?.isEmpty == false ? preset.icon! : "◦")
                 .font(.title3)
                 .frame(width: 42, height: 42)
-                .background(Color.qAccentSoft, in: .rect(cornerRadius: 13, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
+                .background(Color.qAccentSoft, in: .rect(cornerRadius: Radius.m, style: .continuous))
+            VStack(alignment: .leading, spacing: Space.xs) {
+                HStack(spacing: Space.s) {
                     Text(preset.name.isEmpty ? "Untitled" : preset.name)
                         .displayFont { .system(.body, design: $0).weight(.semibold) }
                         .foregroundStyle(Color.qInk)
@@ -677,8 +677,8 @@ private struct PersonaRow: View {
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(Color.qInk2)
                             .lineLimit(1)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
+                            .padding(.horizontal, Space.s)
+                            .padding(.vertical, Space.xs)
                             .background(Color.qInk2.opacity(0.12), in: .capsule)
                     }
                 }
@@ -697,7 +697,7 @@ private struct PersonaRow: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.qInk2)
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, Space.m)
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
     }
@@ -718,19 +718,19 @@ struct PersonaEditor: View {
     var body: some View {
         NavigationStack {
             SettingsPage(title: isNew ? "New persona" : "Edit persona", inlineTitle: true) {
-                HStack(spacing: 14) {
+                HStack(spacing: Space.l) {
                     TextField("◦", text: Binding(get: { draft.icon ?? "" }, set: { draft.icon = String($0.prefix(2)) }))
                         .font(.title)
                         .multilineTextAlignment(.center)
                         .frame(width: 60, height: 60)
-                        .background(Color.qAccentSoft, in: .rect(cornerRadius: 18, style: .continuous))
+                        .background(Color.qAccentSoft, in: .rect(cornerRadius: Radius.l, style: .continuous))
                         .accessibilityLabel("Icon, one emoji")
                     TextField("Name", text: $draft.name)
                         .displayFont { .system(.title2, design: $0).weight(.semibold) }
                         .foregroundStyle(Color.qInk)
                 }
-                .padding(16)
-                .card(radius: 22)
+                .padding(Space.l)
+                .card(radius: Radius.l)
 
                 SettingsGroup(label: "System prompt",
                               footer: Text("\(draft.systemPrompt.count.formatted()) characters · about \(Tokens.estimate(draft.systemPrompt).formatted()) tokens")
@@ -739,15 +739,15 @@ struct PersonaEditor: View {
                         if draft.systemPrompt.isEmpty {
                             Text("You are…")
                                 .foregroundStyle(Color.qInk2.opacity(0.7))
-                                .padding(.top, 8)
-                                .padding(.leading, 5)
+                                .padding(.top, Space.s)
+                                .padding(.leading, Space.xs)
                                 .allowsHitTesting(false)
                         }
                         TextEditor(text: $draft.systemPrompt)
                             .frame(minHeight: 180)
                             .scrollContentBackground(.hidden)
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Space.s)
                 }
 
                 SettingsGroup(label: "Model") {
@@ -763,7 +763,7 @@ struct PersonaEditor: View {
                         } label: {
                             Text("Don't pin a model")
                                 .foregroundStyle(Color.qAccent)
-                                .padding(.vertical, 13)
+                                .padding(.vertical, Space.m)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(.rect)
                         }
@@ -827,7 +827,7 @@ struct PersonaEditor: View {
         Button(action: action) {
             Label(title, systemImage: symbol)
                 .foregroundStyle(destructive ? Color.qDanger : Color.qAccent)
-                .padding(.vertical, 13)
+                .padding(.vertical, Space.m)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(.rect)
         }
@@ -847,14 +847,14 @@ private struct MemorySettingsView: View {
         let total = MemoryLogic.totalChars(app.memory)
         let budget = app.settings.memory.maxInjectedChars
         SettingsPage(title: "Memory") {
-            VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Space.l) {
+                VStack(alignment: .leading, spacing: Space.xs) {
                     Text(app.settings.memory.enabled ? "Remembered" : "Memory is off")
                         .font(.caption.weight(.semibold))
                         .tracking(1.1)
                         .textCase(.uppercase)
                         .foregroundStyle(app.settings.memory.enabled ? Color.qAccent : Color.qInk2)
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                         Text(app.memory.count.formatted())
                             .displayFont { .system(size: 46, weight: .semibold, design: $0).monospacedDigit() }
                             .tracking(-0.8)
@@ -865,7 +865,7 @@ private struct MemorySettingsView: View {
                             .foregroundStyle(Color.qInk2)
                     }
                 }
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Space.s) {
                     MeterBar(fraction: Double(total) / Double(max(1, budget)), warn: total > budget, height: 6)
                     Text(total > budget
                          ? "\(total.formatted()) characters, more than the \(budget.formatted()) a chat takes: the most relevant go in"
@@ -881,11 +881,11 @@ private struct MemorySettingsView: View {
                 }
                 if let latest = app.memory.filter({ !$0.disabled }).max(by: { $0.updatedAt < $1.updatedAt }) {
                     // The newest thing it knows, set like a pull quote.
-                    HStack(alignment: .top, spacing: 11) {
+                    HStack(alignment: .top, spacing: Space.m) {
                         RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                             .fill(Color.qAccent.opacity(0.5))
                             .frame(width: 3)
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: Space.xs) {
                             Text(latest.text)
                                 .displayFont { .system(.subheadline, design: $0).italic() }
                                 .foregroundStyle(Color.qInk)
@@ -902,16 +902,16 @@ private struct MemorySettingsView: View {
                     Label("Open memory", systemImage: "brain")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Color.qOnAccent)
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Space.l)
                         .frame(minHeight: 38)
                         .background(Color.qAccent, in: .capsule)
                         .contentShape(.capsule)
                 }
                 .buttonStyle(.pressable)
             }
-            .padding(18)
+            .padding(Space.xl)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .card(radius: 22)
+            .card(radius: Radius.l)
 
             SettingsGroup(label: "Behaviour", footer: footer) {
                 SettingRow("Use memory", help: "Put remembered facts into chats, inside a <user_memory> block in the system message, with an instruction not to announce it.") {
@@ -1001,14 +1001,14 @@ private struct AppearanceSettings: View {
                 ReadingPreview(replyDesign: replyDesign, titleName: face.face(geist).name,
                                size: size, compact: density == "compact", ink: strength)
                     .environment(\.displayFace, face.face(geist))
-                    .padding(18)
-                    .card(radius: 22)
+                    .padding(Space.xl)
+                    .card(radius: Radius.l)
                     .animation(reduceMotion ? nil : Motion.standard, value: size)
                     .animation(reduceMotion ? nil : Motion.standard, value: density)
             }
 
             labelled("Theme") {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: Space.m) {
                     ThemePicker(selection: theme) { picked in
                         AppearanceChange.apply {
                             theme = picked
@@ -1021,8 +1021,8 @@ private struct AppearanceSettings: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 9) {
-                SectionLabel(text: "Typeface").padding(.horizontal, 4)
+            VStack(alignment: .leading, spacing: Space.s) {
+                SectionLabel(text: "Typeface").padding(.horizontal, Space.xs)
                 TypefacePicker(selection: face, geist: geist) { picked in
                     // Replies follow the typeface; they can be set apart again below.
                     let reading: ReadingFace = picked == .geist ? geist.readingFace : (picked == .newYork ? .serif : .sans)
@@ -1048,7 +1048,7 @@ private struct AppearanceSettings: View {
                     .font(.footnote)
                     .foregroundStyle(Color.qInk2)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, Space.xs)
                     .contentTransition(.opacity)
                     .animation(Motion.quick, value: face)
             }
@@ -1134,8 +1134,8 @@ private struct AppearanceSettings: View {
     }
 
     private func labelled<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            SectionLabel(text: label).padding(.horizontal, 4)
+        VStack(alignment: .leading, spacing: Space.s) {
+            SectionLabel(text: label).padding(.horizontal, Space.xs)
             content()
         }
     }
@@ -1155,7 +1155,7 @@ private struct ThemePicker: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+        Grid(horizontalSpacing: Space.m, verticalSpacing: Space.m) {
             GridRow {
                 card(.quire)
                 card(.velvet)
@@ -1170,13 +1170,13 @@ private struct ThemePicker: View {
     private func card(_ theme: AppTheme) -> some View {
         let on = theme == selection
         let swatch = theme.palette.swatch
-        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Radius.l, style: .continuous)
         return Button {
             guard !on else { return }
             Haptics.selection()
             pick(theme)
         } label: {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Space.m) {
                 LinearGradient(stops: [.init(color: swatch[0], location: 0.05),
                                        .init(color: swatch[1], location: 0.55),
                                        .init(color: swatch[2], location: 1)],
@@ -1191,10 +1191,10 @@ private struct ThemePicker: View {
                                     .overlay(Circle().strokeBorder(.white.opacity(0.7), lineWidth: 1.5))
                             }
                         }
-                        .padding(8)
+                        .padding(Space.s)
                     }
-                    .clipShape(.rect(cornerRadius: 13, style: .continuous))
-                HStack(alignment: .center, spacing: 6) {
+                    .clipShape(.rect(cornerRadius: Radius.l - Space.s, style: .continuous))
+                HStack(alignment: .center, spacing: Space.s) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(theme.name)
                             .font(.subheadline.weight(.semibold))
@@ -1213,16 +1213,16 @@ private struct ThemePicker: View {
                             .transition(.scale(scale: 0.8).combined(with: .opacity))
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Space.xs)
             }
-            .padding(8)
+            .padding(Space.s)
             .background {
                 if on {
                     shape.fill(Color.qAccentSoft)
                         .overlay { shape.strokeBorder(Color.qAccent, lineWidth: 1.5) }
                         .matchedGeometryEffect(id: "ring", in: ring)
                 } else {
-                    CardSurface(radius: 20)
+                    CardSurface(radius: Radius.l)
                 }
             }
             .contentShape(shape)
@@ -1247,7 +1247,7 @@ private struct TypefacePicker: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Space.m) {
             ForEach(Typeface.allCases, id: \.self) { face in
                 card(face, on: face == selection)
             }
@@ -1255,14 +1255,14 @@ private struct TypefacePicker: View {
     }
 
     private func card(_ face: Typeface, on: Bool) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Radius.l, style: .continuous)
         let cut = face.face(geist)
         return Button {
             guard !on else { return }
             Haptics.selection()
             withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : Motion.bouncy) { pick(face) }
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: Space.xs) {
                 Text("Aa")
                     .font(.system(size: 34, weight: .semibold, design: cut))
                     .foregroundStyle(on ? Color.qAccent : Color.qInk)
@@ -1279,15 +1279,15 @@ private struct TypefacePicker: View {
                     .foregroundStyle(Color.qInk2)
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 12)
-            .padding(.bottom, 14)
+            .padding(.top, Space.m)
+            .padding(.bottom, Space.l)
             .background {
                 if on {
                     shape.fill(Color.qAccentSoft)
                         .overlay { shape.strokeBorder(Color.qAccent, lineWidth: 1.5) }
                         .matchedGeometryEffect(id: "ring", in: ring)
                 } else {
-                    CardSurface(radius: 20)
+                    CardSurface(radius: Radius.l)
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -1295,7 +1295,7 @@ private struct TypefacePicker: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.footnote)
                         .foregroundStyle(Color.qAccent)
-                        .padding(9)
+                        .padding(Space.s)
                         .transition(.scale(scale: 0.8).combined(with: .opacity))
                 }
             }
@@ -1314,8 +1314,8 @@ private struct GeistCutPicker: View {
     let pick: (GeistStyle) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.m) {
+            HStack(spacing: Space.m) {
                 Text("Cut")
                     .foregroundStyle(Color.qInk)
                 Spacer(minLength: 8)
@@ -1330,7 +1330,7 @@ private struct GeistCutPicker: View {
                         }
                     }
                 } label: {
-                    HStack(spacing: 7) {
+                    HStack(spacing: Space.s) {
                         Text(selection.name)
                             .font(.system(.subheadline, design: selection.face).weight(.medium))
                             .foregroundStyle(Color.qInk)
@@ -1339,7 +1339,7 @@ private struct GeistCutPicker: View {
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(Color.qInk2)
                     }
-                    .padding(.horizontal, 13)
+                    .padding(.horizontal, Space.m)
                     .frame(minHeight: 36)
                     .background(Color.qSunken, in: .capsule)
                     .contentShape(.capsule)
@@ -1353,9 +1353,9 @@ private struct GeistCutPicker: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .contentTransition(.opacity)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
-        .card(radius: 20)
+        .padding(.horizontal, Space.l)
+        .padding(.vertical, Space.m)
+        .card(radius: Radius.l)
         .animation(Motion.quick, value: selection)
     }
 }
@@ -1367,7 +1367,7 @@ private struct SizeStrip: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Space.xxs) {
             ForEach(ReadingSize.allCases) { s in
                 let on = s == size
                 Button {
@@ -1394,7 +1394,7 @@ private struct SizeStrip: View {
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
-        .padding(3)
+        .padding(Space.xs)
         .background(Color.qSunken, in: .capsule)
     }
 }
@@ -1411,7 +1411,7 @@ private struct ReadingPreview: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 8 : 12) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Space.xxs) {
                 Text("Quire")
                     .font(.caption2.weight(.semibold))
                     .tracking(1.2)
@@ -1431,9 +1431,9 @@ private struct ReadingPreview: View {
                 Text("Which typeface reads best?")
                     .font(.body)
                     .foregroundStyle(Color.qInk)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .card(radius: 18, fill: .qBase)
+                    .padding(.horizontal, Space.l)
+                    .padding(.vertical, Space.s)
+                    .card(radius: Radius.l, fill: .qBase)
             }
         }
         .environment(\.dynamicTypeSize, size.apply(to: typeSize))
@@ -1632,7 +1632,7 @@ private struct AboutView: View {
     /// headword, the way a printer's device sits in the margin.
     private var entry: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: Space.m) {
                 Text("Quire")
                     .displayFont { .system(size: nameSize, weight: .bold, design: $0) }
                     .tracking(-0.9)
@@ -1642,7 +1642,7 @@ private struct AboutView: View {
                 // It still writes itself out on three taps, here as on a new chat.
                 QuireMark(width: 34, breathing: true, playful: true)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.m) {
                 Text("/ˈkwaɪər/")
                     .displayFont { .system(.subheadline, design: $0) }
                     .foregroundStyle(Color.qInk2)
@@ -1652,31 +1652,31 @@ private struct AboutView: View {
                     .foregroundStyle(Color.qAccent)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Space.s) {
                 sense(1, "A set of sheets folded one inside another and sewn together: a book, gathered before it's bound.")
                 sense(2, "This app. Your conversations, gathered and kept on this iPhone.")
             }
-            .padding(.top, 16)
+            .padding(.top, Space.l)
 
             Text("**Origin**  Middle English, from Old French *quaier*, from Latin *quaterni*, ‘four each’.")
                 .displayFont { .system(.footnote, design: $0) }
                 .foregroundStyle(Color.qInk2)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 14)
+                .padding(.top, Space.l)
 
             Text("Version \(version)")
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(Color.qInk2)
-                .padding(.top, 6)
+                .padding(.top, Space.s)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 4)
-        .padding(.top, 10)
+        .padding(.horizontal, Space.xs)
+        .padding(.top, Space.m)
     }
 
     /// One sense of the word: its number in the accent, hung in the margin, and the definition.
     private func sense(_ n: Int, _ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: Space.m) {
             Text("\(n)")
                 .font(.subheadline.weight(.semibold).monospacedDigit())
                 .foregroundStyle(Color.qAccent)
@@ -1692,9 +1692,9 @@ private struct AboutView: View {
 
     private var gathered: some View {
         let live = shown || reduceMotion
-        return VStack(alignment: .leading, spacing: 9) {
-            SectionLabel(text: "Your quire").padding(.horizontal, 4)
-            VStack(alignment: .leading, spacing: 16) {
+        return VStack(alignment: .leading, spacing: Space.s) {
+            SectionLabel(text: "Your quire").padding(.horizontal, Space.xs)
+            VStack(alignment: .leading, spacing: Space.l) {
                 HStack(alignment: .top, spacing: 0) {
                     figure(live ? app.chats.count : 0, app.chats.count == 1 ? "Chat" : "Chats")
                     Spacer(minLength: 8)
@@ -1711,9 +1711,9 @@ private struct AboutView: View {
                         .contentTransition(.opacity)
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 16)
-            .card(radius: 20)
+            .padding(.horizontal, Space.xl)
+            .padding(.vertical, Space.l)
+            .card(radius: Radius.l)
         }
     }
 
@@ -1722,8 +1722,8 @@ private struct AboutView: View {
     private func weekStrip(_ live: Bool) -> some View {
         let w = weeks
         let top = max(1, w.max() ?? 1)
-        return VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .bottom, spacing: 4) {
+        return VStack(alignment: .leading, spacing: Space.s) {
+            HStack(alignment: .bottom, spacing: Space.xs) {
                 ForEach(w.indices, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(i == w.count - 1 ? Color.qAccent : Color.qAccent.opacity(0.35))
@@ -1763,7 +1763,7 @@ private struct AboutView: View {
     }
 
     private func figure(_ value: Int, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Space.xxs) {
             Text(value.formatted())
                 .displayFont { .system(.title, design: $0).weight(.semibold).monospacedDigit() }
                 .foregroundStyle(Color.qInk)
@@ -1811,13 +1811,13 @@ private struct AboutView: View {
     }
 
     private func fact(_ symbol: String, _ title: String, _ detail: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .firstTextBaseline, spacing: Space.m) {
             Image(systemName: symbol)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(Color.qAccent)
                 .frame(width: 22)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: Space.xs) {
                 Text(title)
                     .font(.body.weight(.medium))
                     .foregroundStyle(Color.qInk)
@@ -1828,7 +1828,7 @@ private struct AboutView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 13)
+        .padding(.vertical, Space.m)
         .accessibilityElement(children: .combine)
     }
 
@@ -1868,7 +1868,7 @@ private struct AboutView: View {
     }
 
     private func line(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .firstTextBaseline, spacing: Space.m) {
             Text(label)
                 .foregroundStyle(Color.qInk2)
             Spacer(minLength: 8)
@@ -1878,7 +1878,7 @@ private struct AboutView: View {
                 .multilineTextAlignment(.trailing)
                 .contentTransition(.opacity)
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, Space.m)
         .accessibilityElement(children: .combine)
     }
 
@@ -1908,8 +1908,8 @@ private struct AboutView: View {
             Haptics.tap()
             openURL(url)
         } label: {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: Space.m) {
+                VStack(alignment: .leading, spacing: Space.xxs) {
                     Text(title)
                         .foregroundStyle(Color.qInk)
                     Text(detail)
@@ -1921,7 +1921,7 @@ private struct AboutView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.qInk2)
             }
-            .padding(.vertical, 13)
+            .padding(.vertical, Space.m)
             .contentShape(.rect)
         }
         .buttonStyle(.row)
@@ -1931,7 +1931,7 @@ private struct AboutView: View {
     // MARK: Close
 
     private var closing: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: Space.m) {
             QuireMark(width: 22)
                 .opacity(0.55)
             Text("Every chat a leaf; together, a quire.")
@@ -1939,7 +1939,7 @@ private struct AboutView: View {
                 .foregroundStyle(Color.qInk2)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 8)
+        .padding(.top, Space.s)
         .accessibilityElement(children: .combine)
     }
 

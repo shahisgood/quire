@@ -17,8 +17,8 @@ struct SettingsPage<Content: View>: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) { content }
-                .padding(.horizontal, 18)
+            VStack(alignment: .leading, spacing: Space.xxxl) { content }
+                .padding(.horizontal, Space.xl)
                 .padding(.top, inlineTitle ? 12 : 6)
                 .padding(.bottom, 40)
         }
@@ -41,9 +41,9 @@ struct SettingsGroup<Content: View>: View {
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: Space.s) {
             if let label {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                     SectionLabel(text: label)
                     Spacer(minLength: 8)
                     if let detail {
@@ -54,7 +54,7 @@ struct SettingsGroup<Content: View>: View {
                             .contentTransition(.opacity)
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Space.xs)
             }
             Group(subviews: content) { rows in
                 VStack(spacing: 0) {
@@ -68,14 +68,14 @@ struct SettingsGroup<Content: View>: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .card(radius: 20)
+            .padding(.horizontal, Space.l)
+            .card(radius: Radius.l)
             if let footer {
                 footer
                     .font(.footnote)
                     .foregroundStyle(Color.qInk2)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, Space.xs)
                     .contentTransition(.opacity)
             }
         }
@@ -111,10 +111,10 @@ struct SettingRow<Control: View, Below: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack(alignment: .center, spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: Space.m) {
+            HStack(alignment: .center, spacing: Space.m) {
+                VStack(alignment: .leading, spacing: Space.xxs) {
+                    HStack(spacing: Space.s) {
                         if overridden {
                             Circle()
                                 .fill(Color.qAccent)
@@ -147,17 +147,17 @@ struct SettingRow<Control: View, Below: View>: View {
                     .font(.footnote)
                     .foregroundStyle(Color.qInk2)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, Space.m)
+                    .padding(.vertical, Space.m)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.qSunken, in: .rect(cornerRadius: 12, style: .continuous))
+                    .background(Color.qSunken, in: .rect(cornerRadius: Radius.s, style: .continuous))
                     // Fades in a beat behind the space opening for it, and out ahead of it closing.
                     .transition(.asymmetric(
                         insertion: .opacity.combined(with: .offset(y: -3)).animation(reduceMotion ? .easeOut(duration: 0.2) : .smooth(duration: 0.26).delay(0.06)),
                         removal: .opacity.animation(.easeOut(duration: 0.12))))
             }
         }
-        .padding(.vertical, 13)
+        .padding(.vertical, Space.m)
         .animation(Motion.quick, value: overridden)
     }
 
@@ -202,8 +202,8 @@ struct InheritButton: View {
             Label("Inherit", systemImage: "arrow.uturn.backward")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.qAccent)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
+                .padding(.horizontal, Space.s)
+                .padding(.vertical, Space.xs)
                 .background(Color.qAccentSoft, in: .capsule)
                 .contentShape(.capsule)
         }
@@ -219,8 +219,8 @@ struct LinkRow: View {
     var value: String? = nil
 
     var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: Space.m) {
+            VStack(alignment: .leading, spacing: Space.xxs) {
                 Text(title)
                     .foregroundStyle(Color.qInk)
                 if let detail {
@@ -241,7 +241,7 @@ struct LinkRow: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.qInk2)
         }
-        .padding(.vertical, 13)
+        .padding(.vertical, Space.m)
         .contentShape(.rect)
     }
 }
@@ -282,7 +282,7 @@ struct ParamSlider: View {
     private let thumb: CGFloat = 26
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: Space.s) {
             track
             if let ends {
                 HStack {
@@ -444,7 +444,7 @@ struct ChoiceStrip<Value: Hashable>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Space.xxs) {
             ForEach(options.indices, id: \.self) { i in
                 let option = options[i]
                 let on = option.value == selection
@@ -473,7 +473,7 @@ struct ChoiceStrip<Value: Hashable>: View {
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
-        .padding(3)
+        .padding(Space.xs)
         .background(Color.qSunken, in: .capsule)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(label)

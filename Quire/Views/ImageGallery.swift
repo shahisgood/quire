@@ -92,7 +92,7 @@ struct ImageGallery: View {
                     .font(.subheadline.weight(.semibold).monospacedDigit())
                     .foregroundStyle(Color.white)
                     .contentTransition(.numericText())
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, Space.l)
                     .frame(height: 36)
                     .glassEffect(.regular, in: .capsule)
                     .animation(Motion.quick, value: index)
@@ -113,14 +113,14 @@ struct ImageGallery: View {
             .buttonBorderShape(.circle)
             .accessibilityLabel("Share or save")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.horizontal, Space.l)
+        .padding(.top, Space.s)
     }
 
     private var filmstrip: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+                HStack(spacing: Space.s) {
                     ForEach(images) { a in
                         let on = a.id == currentId
                         Button {
@@ -128,8 +128,8 @@ struct ImageGallery: View {
                         } label: {
                             GalleryThumb(attachment: a)
                                 .frame(width: on ? 46 : 38, height: 52)
-                                .clipShape(.rect(cornerRadius: 6, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .clipShape(.rect(cornerRadius: Radius.xs, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: Radius.xs, style: .continuous)
                                     .strokeBorder(Color.white.opacity(on ? 0.9 : 0), lineWidth: 1.5))
                                 .opacity(on ? 1 : 0.55)
                         }
@@ -139,14 +139,14 @@ struct ImageGallery: View {
                         .accessibilityAddTraits(on ? .isSelected : [])
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Space.xl)
+                .padding(.vertical, Space.s)
                 .animation(reduceMotion ? nil : Motion.quick, value: currentId)
             }
             .glassEffect(.regular, in: .capsule)
             .frame(maxWidth: CGFloat(images.count) * 44 + 60)
-            .padding(.horizontal, 24)
-            .padding(.bottom, 10)
+            .padding(.horizontal, Space.xxl)
+            .padding(.bottom, Space.m)
             .onAppear { proxy.scrollTo(currentId, anchor: .center) }
             .onChange(of: currentId) { _, id in
                 withAnimation(reduceMotion ? nil : Motion.standard) { proxy.scrollTo(id, anchor: .center) }

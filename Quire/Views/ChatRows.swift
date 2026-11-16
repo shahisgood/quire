@@ -109,15 +109,15 @@ struct ChatListRow: View {
             app.path.append(.chat(chat.id))
         } label: {
             ChatRow(chat: chat, showsProject: showsProject, dayShown: dayShown, showsPin: showsPin)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 13)
+                .padding(.horizontal, Space.l)
+                .padding(.vertical, Space.m)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(CardSurface(radius: 20))
-                .contentShape(.rect(cornerRadius: 20, style: .continuous))
+                .background(CardSurface(radius: Radius.l))
+                .contentShape(.rect(cornerRadius: Radius.l, style: .continuous))
         }
         .buttonStyle(PressableStyle(scale: 0.98))
         .allowsHitTesting(editMode?.wrappedValue.isEditing != true)
-        .contentShape(.contextMenuPreview, .rect(cornerRadius: 20, style: .continuous))
+        .contentShape(.contextMenuPreview, .rect(cornerRadius: Radius.l, style: .continuous))
         .contextMenu { menu }
         .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
         .listRowBackground(Color.qBase)
@@ -130,7 +130,7 @@ struct ChatListRow: View {
             NavigationLink(value: Route.chat(chat.id)) { EmptyView() }
                 .opacity(0)
             ChatRow(chat: chat, showsProject: showsProject, dayShown: dayShown, showsPin: showsPin)
-                .padding(.vertical, 3)
+                .padding(.vertical, Space.xs)
         }
         .listRowBackground(Color.qRaised)
         .contextMenu { menu }
@@ -178,7 +178,7 @@ struct ListHeading: View {
     var action: () -> Void = {}
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s) {
             Text(text)
                 .displayFont { .system(.title3, design: $0).weight(.semibold) }
                 .foregroundStyle(Color.qInk)
@@ -194,9 +194,9 @@ struct ListHeading: View {
                     .contentTransition(.opacity)
             }
         }
-        .padding(.horizontal, 17)
-        .padding(.top, 18)
-        .padding(.bottom, 6)
+        .padding(.horizontal, Space.l)
+        .padding(.top, Space.xl)
+        .padding(.bottom, Space.s)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.qBase)
         .listRowInsets(EdgeInsets())

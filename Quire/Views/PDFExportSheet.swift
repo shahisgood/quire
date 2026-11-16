@@ -63,7 +63,7 @@ struct PDFExportSheet: View {
 
     /// While the first pages are being set.
     private var setting: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Space.l) {
             QuireMark(width: 40, breathing: true)
             Text("Setting the type…")
                 .displayFont { .system(.subheadline, design: $0).italic() }
@@ -100,8 +100,8 @@ struct PDFExportSheet: View {
     }
 
     private func bar(_ r: ChatPDF.Result) -> some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: Space.l) {
+            VStack(alignment: .leading, spacing: Space.xxs) {
                 Text("\(r.pages) page\(r.pages == 1 ? "" : "s")")
                     .displayFont { .system(.headline, design: $0).monospacedDigit() }
                     .foregroundStyle(Color.qInk)
@@ -120,17 +120,17 @@ struct PDFExportSheet: View {
             ShareLink(item: r.url) {
                 Label("Share", systemImage: "square.and.arrow.up")
                     .font(.body.weight(.semibold))
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, Space.s)
                     .frame(minHeight: 36)
             }
             .buttonStyle(.glassProminent)
         }
-        .padding(.leading, 22)
-        .padding(.trailing, 14)
-        .padding(.vertical, 10)
+        .padding(.leading, Space.xxl)
+        .padding(.trailing, Space.l)
+        .padding(.vertical, Space.m)
         .glassEffect(.regular, in: .capsule)
-        .padding(.horizontal, 14)
-        .padding(.bottom, 8)
+        .padding(.horizontal, Space.l)
+        .padding(.bottom, Space.s)
         .animation(Motion.quick, value: working)
     }
 

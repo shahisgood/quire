@@ -49,13 +49,13 @@ struct ComposerView: View {
         VStack(alignment: .leading, spacing: 0) {
             if !attachments.isEmpty || loadingAttachments > 0 {
                 attachmentStrip
-                    .padding(.bottom, 10)
+                    .padding(.bottom, Space.m)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
             if let note = noteText {
                 noteRow(note)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, Space.s)
                     .transition(.opacity)
             }
 
@@ -211,16 +211,16 @@ struct ComposerView: View {
 
     private var attachmentStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+            HStack(spacing: Space.m) {
                 ForEach(attachments) { a in pendingChip(a) }
                 if loadingAttachments > 0 {
                     ProgressView()
                         .frame(width: 60, height: 60)
-                        .card(radius: 12, fill: .qSunken)
+                        .card(radius: Radius.s, fill: .qSunken)
                 }
             }
-            .padding(.top, 6)
-            .padding(.horizontal, 6)
+            .padding(.top, Space.s)
+            .padding(.horizontal, Space.s)
         }
     }
 
@@ -267,7 +267,7 @@ struct ComposerView: View {
     }
 
     private var modelPill: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: Space.xs) {
             Text(app.modelName(session.chat.modelId))
                 .foregroundStyle(Color.qInk)
                 .lineLimit(1)
@@ -285,7 +285,7 @@ struct ComposerView: View {
                 .foregroundStyle(Color.qInk2)
         }
         .font(.subheadline.weight(.medium))
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Space.m)
         .frame(height: Size.control)
         .background(Color.qInk.opacity(0.08), in: .capsule)
         .contentShape(.capsule)
@@ -315,7 +315,7 @@ struct ComposerView: View {
 
     private var contextButton: some View {
         Button { showContext = true } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: Space.s) {
                 ContextRing(fraction: fraction, warn: fraction > 0.85)
                     .frame(width: 15, height: 15)
                 Text(contextText)
@@ -323,7 +323,7 @@ struct ComposerView: View {
                     .foregroundStyle(Color.qInk2)
                     .contentTransition(.numericText())
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, Space.xs)
             .frame(height: Size.control)
             .contentShape(.rect)
         }
@@ -338,7 +338,7 @@ struct ComposerView: View {
     }
 
     private var contextDetails: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.m) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Context")
                     .displayFont { .system(.headline, design: $0) }
@@ -376,7 +376,7 @@ struct ComposerView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(16)
+        .padding(Space.l)
         .frame(width: 270)
     }
 
@@ -399,7 +399,7 @@ struct ComposerView: View {
     private func noteRow(_ note: String) -> some View {
         let isError = attachNote != nil
         let isCapability = !isError && capabilityNote != nil
-        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+        return HStack(alignment: .firstTextBaseline, spacing: Space.s) {
             Image(systemName: isError ? "exclamationmark.triangle.fill" : (isCapability ? "info.circle.fill" : "wifi.slash"))
             Text(note)
                 .fixedSize(horizontal: false, vertical: true)
@@ -413,7 +413,7 @@ struct ComposerView: View {
         }
         .font(.caption)
         .foregroundStyle(isError ? Color.qDanger : Color.qWarn)
-        .padding(.horizontal, 6)
+        .padding(.horizontal, Space.s)
     }
 
     private var allowedFileTypes: [UTType] {
@@ -429,20 +429,20 @@ struct ComposerView: View {
                 if a.kind == .image, let img = ThumbnailCache.image(for: a) {
                     Image(uiImage: img).resizable().scaledToFill()
                 } else {
-                    VStack(spacing: 4) {
+                    VStack(spacing: Space.xs) {
                         Image(systemName: "doc.text")
                         Text(a.name)
                             .font(.caption2)
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
                     }
-                    .padding(6)
+                    .padding(Space.s)
                     .foregroundStyle(Color.qInk2)
                 }
             }
             .frame(width: 60, height: 60)
             .background(Color.qSunken)
-            .clipShape(.rect(cornerRadius: 12, style: .continuous))
+            .clipShape(.rect(cornerRadius: Radius.s, style: .continuous))
 
             Button {
                 attachments.removeAll { $0.id == a.id }

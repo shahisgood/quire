@@ -144,7 +144,7 @@ struct ProjectCard: View {
                             .foregroundStyle(project.tintColor)
                     }
                 }
-                .padding(.top, 4)
+                .padding(.top, Space.xs)
                 .transition(.pop)
             }
             Spacer(minLength: 14)
@@ -156,11 +156,11 @@ struct ProjectCard: View {
                 .font(.caption)
                 .foregroundStyle(writing ? Color.qAccent : Color.qInk2)
                 .lineLimit(1)
-                .padding(.top, 2)
+                .padding(.top, Space.xxs)
         }
-        .padding(12)
+        .padding(Space.m)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(CardSurface(radius: 18, tint: project.tintColor))
+        .background(CardSurface(radius: Radius.l, tint: project.tintColor))
         .animation(Motion.bouncy, value: unread)
         .animation(Motion.quick, value: writing)
         .accessibilityElement(children: .combine)
@@ -181,7 +181,7 @@ struct ProjectCard: View {
 /// The surface a card in the chat list sits on: one step lighter than the page, with a hairline
 /// edge so it holds its shape in light mode, and an optional wash of colour.
 struct CardSurface: View {
-    var radius: CGFloat = 20
+    var radius: CGFloat = Radius.l
     var tint: Color? = nil
 
     var body: some View {
@@ -279,9 +279,9 @@ struct ProjectEditor: View {
                                          placeholder: ProjectInstructions.placeholder,
                                          footer: ProjectInstructions.footer(draft.name))
                     } label: {
-                        HStack(spacing: 14) {
+                        HStack(spacing: Space.l) {
                             IconTile(symbol: "text.quote", color: draft.tintColor)
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: Space.xxs) {
                                 Text("Instructions")
                                     .foregroundStyle(Color.qInk)
                                 Text(trimmedInstructions.isEmpty ? "None" : trimmedInstructions)
@@ -297,9 +297,9 @@ struct ProjectEditor: View {
 
                 Section {
                     Button { showModels = true } label: {
-                        HStack(spacing: 14) {
+                        HStack(spacing: Space.l) {
                             IconTile(symbol: "cpu", color: draft.tintColor)
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: Space.xxs) {
                                 Text(draft.modelId.map { app.modelName($0) } ?? "App default")
                                     .foregroundStyle(Color.qInk)
                                 Text(draft.modelId == nil ? app.modelName(app.settings.defaultModelId) : "Chosen for this project")
@@ -374,14 +374,14 @@ struct ProjectEditor: View {
             .shadow(color: draft.tintColor.opacity(0.3), radius: 10, y: 5)
             .animation(choiceAnimation, value: draft.tint)
             .frame(maxWidth: .infinity)
-            .padding(.top, 6)
-            .padding(.bottom, 16)
+            .padding(.top, Space.s)
+            .padding(.bottom, Space.l)
             .textCase(nil)
             .accessibilityHidden(true)
     }
 
     private var symbolGrid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 6), spacing: 8) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.xs), count: 6), spacing: Space.s) {
             ForEach(ProjectSymbols.all) { item in
                 let on = item.symbol == draft.symbolName
                 Button {
@@ -410,7 +410,7 @@ struct ProjectEditor: View {
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, Space.s)
     }
 
     private var swatches: some View {
@@ -448,7 +448,7 @@ struct ProjectEditor: View {
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Space.xs)
     }
 
     private func save() {
@@ -567,7 +567,7 @@ struct ProjectView: View {
                         Haptics.selection()
                         withAnimation(Motion.standard) { showArchived.toggle() }
                     } label: {
-                        HStack(spacing: 10) {
+                        HStack(spacing: Space.m) {
                             Image(systemName: "archivebox")
                                 .foregroundStyle(Color.qInk2)
                             Text("Archived")
@@ -609,10 +609,10 @@ struct ProjectView: View {
 
     /// Sits in the first section's header, outside any cell, so nothing about it gets clipped.
     private func hero(_ p: Project, count: Int) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Space.s) {
             ProjectTile(project: p, size: 64)
                 .shadow(color: p.tintColor.opacity(0.3), radius: 10, y: 5)
-                .padding(.bottom, 4)
+                .padding(.bottom, Space.xs)
             Text(p.name)
                 .displayFont { .system(.title2, design: $0).weight(.bold) }
                 .foregroundStyle(Color.qInk)
@@ -627,15 +627,15 @@ struct ProjectView: View {
             } label: {
                 Label("New chat", systemImage: "square.and.pencil")
                     .font(.body.weight(.semibold))
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, Space.s)
             }
             .buttonStyle(.glassProminent)
             .tint(p.tintColor)
-            .padding(.top, 6)
+            .padding(.top, Space.s)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 4)
-        .padding(.bottom, 14)
+        .padding(.top, Space.xs)
+        .padding(.bottom, Space.l)
         .textCase(nil)
     }
 
@@ -652,8 +652,8 @@ struct ProjectView: View {
             sheets.instructionsFor = p
         } label: {
             if p.hasInstructions {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: Space.s) {
+                    HStack(spacing: Space.s) {
                         Image(systemName: "text.quote")
                             .foregroundStyle(p.tintColor)
                         Text("Instructions")
@@ -671,14 +671,14 @@ struct ProjectView: View {
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, Space.xs)
             } else {
-                HStack(spacing: 12) {
+                HStack(spacing: Space.m) {
                     Image(systemName: "text.badge.plus")
                         .font(.body.weight(.semibold))
                         .foregroundStyle(p.tintColor)
                         .frame(width: 28)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Space.xxs) {
                         Text("Add instructions")
                             .foregroundStyle(Color.qInk)
                         Text("Optional. Every chat here would follow them.")
@@ -697,7 +697,7 @@ struct ProjectView: View {
     }
 
     private func emptyRow(_ p: Project) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: Space.xs) {
             Text("No chats yet")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color.qInk)
@@ -709,7 +709,7 @@ struct ProjectView: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.vertical, Space.m)
         .listRowBackground(Color.qRaised)
     }
 
@@ -783,7 +783,7 @@ struct ProjectPickerList: View {
             Haptics.selection()
             dismiss()
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: Space.m) {
                 if let p {
                     ProjectTile(project: p, size: 32)
                 } else {
@@ -791,9 +791,9 @@ struct ProjectPickerList: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Color.qInk2)
                         .frame(width: 32, height: 32)
-                        .background(Color.qSunken, in: .rect(cornerRadius: 10, style: .continuous))
+                        .background(Color.qSunken, in: .rect(cornerRadius: Radius.s, style: .continuous))
                 }
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Space.xxs) {
                     Text(p?.name ?? "None")
                         .foregroundStyle(Color.qInk)
                     Text(detail(p))

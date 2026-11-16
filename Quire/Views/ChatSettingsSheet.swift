@@ -74,7 +74,7 @@ struct ChatSettingsSheet: View {
                         } label: {
                             Label("Reset \(overrideCount) chat setting\(overrideCount == 1 ? "" : "s")", systemImage: "arrow.uturn.backward")
                                 .foregroundStyle(Color.qDanger)
-                                .padding(.vertical, 13)
+                                .padding(.vertical, Space.m)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(.rect)
                         }
@@ -97,8 +97,8 @@ struct ChatSettingsSheet: View {
 
     /// The chat's model, in the display face, with its id underneath.
     private var modelRow: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(spacing: Space.m) {
+            VStack(alignment: .leading, spacing: Space.xs) {
                 Text("Model")
                     .font(.footnote)
                     .foregroundStyle(Color.qInk2)
@@ -116,7 +116,7 @@ struct ChatSettingsSheet: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.qInk2)
         }
-        .padding(.vertical, 13)
+        .padding(.vertical, Space.m)
         .contentShape(.rect)
     }
 
@@ -150,24 +150,24 @@ struct PromptEditorView: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.m) {
             ZStack(alignment: .topLeading) {
                 if draft.isEmpty {
                     Text(placeholder)
                         .font(.body)
                         .foregroundStyle(Color.qInk2.opacity(0.7))
-                        .padding(.horizontal, 15)
-                        .padding(.vertical, 18)
+                        .padding(.horizontal, Space.l)
+                        .padding(.vertical, Space.xl)
                         .lineLimit(8)
                         .allowsHitTesting(false)
                 }
                 TextEditor(text: $draft)
                     .font(.body)
                     .scrollContentBackground(.hidden)
-                    .padding(10)
+                    .padding(Space.m)
                     .focused($focused)
             }
-            .card(radius: 14)
+            .card(radius: Radius.m)
             if let footer {
                 Text(footer)
                     .font(.footnote)
@@ -184,7 +184,7 @@ struct PromptEditorView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Space.l)
         .background(Color.qBase)
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
@@ -235,12 +235,12 @@ struct PersonaPickerList: View {
             Haptics.selection()
             dismiss()
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: Space.m) {
                 Text(icon)
                     .font(.title3)
                     .frame(width: 36, height: 36)
                     .background(Color.qAccentSoft, in: .circle)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Space.xxs) {
                     Text(title).foregroundStyle(Color.qInk)
                     Text(detail).font(.footnote).foregroundStyle(Color.qInk2).lineLimit(2)
                 }

@@ -14,12 +14,12 @@ struct EditMessageSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Space.m) {
                 TextEditor(text: $text)
                     .font(.body)
                     .scrollContentBackground(.hidden)
-                    .padding(10)
-                    .card(radius: 14)
+                    .padding(Space.m)
+                    .card(radius: Radius.m)
                     .focused($focused)
                 if let n = message.attachments?.count, n > 0 {
                     Label("\(n) attachment\(n == 1 ? "" : "s") will be sent again", systemImage: "paperclip")
@@ -30,7 +30,7 @@ struct EditMessageSheet: View {
                     .font(.footnote)
                     .foregroundStyle(Color.qInk2)
             }
-            .padding(16)
+            .padding(Space.l)
             .background(Color.qBase)
             .navigationTitle("Edit and resend")
             .navigationBarTitleDisplayMode(.inline)
@@ -75,8 +75,8 @@ struct MessageInfoSheet: View {
                     ForEach(availableTabs) { t in Text(t.rawValue).tag(t) }
                 }
                 .pickerStyle(.segmented)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.horizontal, Space.l)
+                .padding(.vertical, Space.m)
 
                 switch tab {
                 case .details: details

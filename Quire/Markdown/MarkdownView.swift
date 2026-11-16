@@ -106,7 +106,7 @@ private struct BlockView: View {
             MathBlockView(tex: tex)
 
         case .quote(let inner):
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: Space.m) {
                 RoundedRectangle(cornerRadius: 1.5).fill(Color.qAccent.opacity(0.5)).frame(width: 3)
                 MarkdownView(blocks: inner, design: design)
                     .foregroundStyle(Color.qInk2)
@@ -114,9 +114,9 @@ private struct BlockView: View {
             .fixedSize(horizontal: false, vertical: true)
 
         case .list(let ordered, let start, let items):
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Space.s) {
                 ForEach(Array(items.enumerated()), id: \.offset) { n, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                         ListMarker(ordered: ordered, number: start + n, checked: item.checked, design: design)
                         MarkdownView(blocks: item.blocks, design: design, compact: true)
                     }
@@ -127,7 +127,7 @@ private struct BlockView: View {
             TableBlockView(header: header, alignments: alignments, rows: rows, design: design)
 
         case .rule:
-            Rectangle().fill(Color.qRule).frame(height: 1).padding(.vertical, 6)
+            Rectangle().fill(Color.qRule).frame(height: 1).padding(.vertical, Space.s)
                 .accessibilityHidden(true)
         }
     }
@@ -246,8 +246,8 @@ private struct CodeBlockView: View {
                 .foregroundStyle(copied ? Color.qAccent : Color.qInk2)
                 .accessibilityLabel(copied ? "Copied" : "Copy code")
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Space.m)
+            .padding(.vertical, Space.s)
 
             Rectangle().fill(Color.qRule).frame(height: 1)
 
@@ -255,7 +255,7 @@ private struct CodeBlockView: View {
             // draw, and the whole block came out blank. The column is as wide as the longest line,
             // measured up front, so sideways scrolling doesn't shift as pieces load.
             ScrollView(.horizontal, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: Space.xs) {
                     ForEach(Array(Highlighter.chunks(code, lang: lang).enumerated()), id: \.offset) { _, piece in
                         Text(piece)
                             .fixedSize(horizontal: true, vertical: true)
@@ -265,10 +265,10 @@ private struct CodeBlockView: View {
                 .lineSpacing(3)
                 .foregroundStyle(Color.qInk)
                 .frame(minWidth: TextMetrics.monospacedWidth(code, style: .footnote, size: typeSize), alignment: .leading)
-                .padding(12)
+                .padding(Space.m)
             }
         }
-        .card(radius: 12, fill: .qSunken)
+        .card(radius: Radius.s, fill: .qSunken)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Code block, \(lang.isEmpty ? "plain text" : lang)")
     }
@@ -289,7 +289,7 @@ private struct MathBlockView: View {
     let tex: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Space.s) {
             Text("TeX")
                 .font(.caption2.weight(.semibold))
                 .tracking(1)
@@ -301,9 +301,9 @@ private struct MathBlockView: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
         }
-        .padding(12)
+        .padding(Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .card(radius: 12, fill: .qSunken)
+        .card(radius: Radius.s, fill: .qSunken)
         .contextMenu {
             Button { UIPasteboard.general.string = tex } label: { Label("Copy TeX", systemImage: "square.on.square") }
         }
@@ -327,7 +327,7 @@ private struct TableBlockView: View {
         // which is how rows ended up on top of each other.)
         let widths = columnWidths
         ScrollView(.horizontal, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Space.m) {
                 row(header, widths: widths, bold: true)
                 Rectangle().fill(Color.qRule).frame(height: 1)
                 ForEach(Array(rows.enumerated()), id: \.offset) { n, cells in
@@ -339,7 +339,7 @@ private struct TableBlockView: View {
             }
             .padding(inset)
         }
-        .card(radius: 12)
+        .card(radius: Radius.s)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { available = $0 }
     }
 

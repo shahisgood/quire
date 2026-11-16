@@ -314,13 +314,13 @@ struct SourcesButton: View {
             Haptics.tap()
             open = true
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.s) {
                 if Favicons.shared.enabled {
                     HStack(spacing: -5) {
                         ForEach(Array(sources.prefix(3).enumerated()), id: \.element.id) { i, s in
                             SiteIcon(host: s.host, size: 16)
                                 .padding(1.5)
-                                .background(Color.qBase, in: .rect(cornerRadius: 5.5, style: .continuous))
+                                .background(Color.qBase, in: .rect(cornerRadius: Radius.xs, style: .continuous))
                                 .zIndex(Double(3 - i))
                         }
                     }
@@ -333,7 +333,7 @@ struct SourcesButton: View {
                     .foregroundStyle(Color.qInk2)
             }
             .padding(.leading, Favicons.shared.enabled ? 6 : 12)
-            .padding(.trailing, 12)
+            .padding(.trailing, Space.m)
             .frame(minHeight: 32)
             .background(Color.qInk.opacity(0.06), in: .capsule)
             .contentShape(.capsule)
@@ -362,10 +362,10 @@ struct SourcesSheet: View {
                         row(s)
                     }
                 }
-                .padding(.horizontal, 16)
-                .card(radius: 22)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, Space.l)
+                .card(radius: Radius.l)
+                .padding(.horizontal, Space.l)
+                .padding(.vertical, Space.m)
             }
             .background(Color.qBase)
             .navigationTitle("Sources")
@@ -383,10 +383,10 @@ struct SourcesSheet: View {
             Haptics.tap()
             InAppBrowser.open(s.url)
         } label: {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: Space.m) {
                 SiteIcon(host: s.host, size: 22)
                     .padding(.top, 1)
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: Space.xs) {
                     Text(s.host)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Color.qInk2)
@@ -408,9 +408,9 @@ struct SourcesSheet: View {
                 Image(systemName: "arrow.up.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.qInk2)
-                    .padding(.top, 3)
+                    .padding(.top, Space.xs)
             }
-            .padding(.vertical, 13)
+            .padding(.vertical, Space.m)
             .contentShape(.rect)
         }
         .buttonStyle(.row)

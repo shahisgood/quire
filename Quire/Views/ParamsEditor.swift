@@ -23,7 +23,7 @@ struct ParamsEditor: View {
     private var overrideMode: Bool { base != nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 28) {
+        VStack(alignment: .leading, spacing: Space.xxxl) {
             samplingGroup
             if Self.repetition.contains(where: { supports($0.api) }) { repetitionGroup }
             outputGroup
@@ -123,7 +123,7 @@ struct ParamsEditor: View {
 
     /// The three presets in a well, the matching one lifted out; none when the mix is your own.
     private var presetStrip: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Space.xxs) {
             ForEach(SamplingPreset.all) { p in
                 let on = p.matches(display)
                 Button {
@@ -148,7 +148,7 @@ struct ParamsEditor: View {
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
-        .padding(3)
+        .padding(Space.xs)
         .background(Color.qSunken, in: .capsule)
     }
 
@@ -190,7 +190,7 @@ struct ParamsEditor: View {
                            overridden: isSet(\.seed), onInherit: overrideMode ? { target.seed = nil } : nil) {
                     OptionalIntField(placeholder: "Random", value: binding(\.seed), range: 0...2_147_483_647)
                 } below: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Space.s) {
                         smallButton("Roll", symbol: "dice") {
                             target.seed = Int.random(in: 0...2_147_483_647)
                         }
@@ -217,8 +217,8 @@ struct ParamsEditor: View {
             Label(title, systemImage: symbol)
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(Color.qAccent)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 6)
+                .padding(.horizontal, Space.m)
+                .padding(.vertical, Space.s)
                 .background(Color.qAccentSoft, in: .capsule)
                 .contentShape(.capsule)
         }
@@ -246,7 +246,7 @@ struct ParamsEditor: View {
                        overridden: isSet(\.reasoning), onInherit: overrideMode ? { target.reasoning = nil } : nil) {
                 EmptyView()
             } below: {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: Space.m) {
                     ChoiceStrip(options: modes, selection: Binding(get: { reasoning.mode }, set: { m in
                         setReasoning { r in
                             r.mode = m
@@ -327,8 +327,8 @@ struct ParamsEditor: View {
                 Haptics.selection()
                 withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.reveal) { showRouting.toggle() }
             } label: {
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: Space.m) {
+                    VStack(alignment: .leading, spacing: Space.xxs) {
                         Text("Providers, web search & fallbacks")
                             .foregroundStyle(Color.qInk)
                         Text(routingSummary)
@@ -342,7 +342,7 @@ struct ParamsEditor: View {
                         .foregroundStyle(Color.qInk2)
                         .rotationEffect(.degrees(showRouting ? 180 : 0))
                 }
-                .padding(.vertical, 13)
+                .padding(.vertical, Space.m)
                 .contentShape(.rect)
             }
             .buttonStyle(.row)
@@ -373,7 +373,7 @@ struct ParamsEditor: View {
                            overridden: isSet(\.fallbackModels), onInherit: overrideMode ? { target.fallbackModels = nil } : nil) {
                     EmptyView()
                 } below: {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Space.s) {
                         ForEach(display.fallbackModels ?? [], id: \.self) { id in
                             HStack {
                                 Text(app.modelName(id))
@@ -397,7 +397,7 @@ struct ParamsEditor: View {
                 }
                 SettingRow("Web search", detail: display.webSearch?.enabled == true ? "\(display.webSearch?.maxResults ?? 5) results per request" : nil,
                            help: webHelp, overridden: isSet(\.webSearch), onInherit: overrideMode ? { target.webSearch = nil } : nil) {
-                    HStack(spacing: 10) {
+                    HStack(spacing: Space.m) {
                         if display.webSearch?.enabled == true {
                             Stepper("Results per request", value: Binding(get: { display.webSearch?.maxResults ?? 5 }, set: { v in
                                 target.webSearch = WebSearchSettings(enabled: true, maxResults: v)
@@ -474,7 +474,7 @@ struct ParamsEditor: View {
                         .font(.subheadline.monospacedDigit())
                         .foregroundStyle(Color.qInk2)
                 }
-                .padding(.vertical, 13)
+                .padding(.vertical, Space.m)
                 if !unsupported.isEmpty {
                     SettingRow("\(unsupported.count) not supported",
                                help: "\(unsupported.joined(separator: ", ")). Stored values are kept but not sent.") {
@@ -485,7 +485,7 @@ struct ParamsEditor: View {
                     Text("\(model.shortName) doesn't list reasoning support, so its controls are hidden.")
                         .font(.footnote)
                         .foregroundStyle(Color.qInk2)
-                        .padding(.vertical, 13)
+                        .padding(.vertical, Space.m)
                 }
             }
         }
@@ -550,8 +550,8 @@ private struct NextWordOdds: View {
         // Words with a real chance, at least one in a hundred once the cuts are made.
         let likely = zip(chances, kept).filter { $0.1 && $0.0 / max(pool, 1e-9) >= 0.01 }.count
         let summary = likely <= 1 ? "Always the likeliest word" : "\(likely) likely words · top \(Int((share * 100).rounded()))%"
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.m) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                 Text("The next word")
                     .foregroundStyle(Color.qInk)
                 Spacer(minLength: 8)
@@ -560,7 +560,7 @@ private struct NextWordOdds: View {
                     .foregroundStyle(Color.qInk2)
                     .contentTransition(.numericText())
             }
-            HStack(alignment: .bottom, spacing: 3) {
+            HStack(alignment: .bottom, spacing: Space.xs) {
                 ForEach(chances.indices, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(kept[i] ? Color.qAccent.opacity(i == 0 ? 1 : 0.62) : Color.qInk2.opacity(0.16))
@@ -577,7 +577,7 @@ private struct NextWordOdds: View {
             .font(.caption2)
             .foregroundStyle(Color.qInk2.opacity(0.8))
         }
-        .padding(.vertical, 13)
+        .padding(.vertical, Space.m)
         .animation(reduceMotion ? nil : .smooth(duration: 0.22), value: [temperature, topP, topK, minP])
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("The next word")

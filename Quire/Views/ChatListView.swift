@@ -204,8 +204,8 @@ struct ChatListView: View {
     /// A glass field with the keyboard up and Cancel beside it. Results replace the list as you type
     /// (titles first, then matches inside messages); with nothing typed, your chats stay in view.
     private var searchBar: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
+        HStack(spacing: Space.m) {
+            HStack(spacing: Space.s) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Color.qInk2)
                 TextField("Search every message", text: $query)
@@ -225,7 +225,7 @@ struct ChatListView: View {
                     .accessibilityLabel("Clear search")
                 }
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, Space.l)
             .frame(height: 44)
             .glassEffect(.regular, in: .capsule)
 
@@ -234,9 +234,9 @@ struct ChatListView: View {
                 .foregroundStyle(Color.qAccent)
                 .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 6)
-        .padding(.bottom, 10)
+        .padding(.horizontal, Space.l)
+        .padding(.top, Space.s)
+        .padding(.bottom, Space.m)
         .background {
             // The list fades out under the field instead of running into it.
             LinearGradient(stops: [.init(color: Color.qBase, location: 0), .init(color: Color.qBase, location: 0.7),
@@ -284,7 +284,7 @@ struct ChatListView: View {
 
     private var mastheadSection: some View {
         Section {
-            HStack(alignment: .lastTextBaseline, spacing: 12) {
+            HStack(alignment: .lastTextBaseline, spacing: Space.m) {
                 Masthead(title: showArchived ? "Archived" : "Quire", eyebrow: eyebrow, writing: writingCount > 0)
                 if showArchived {
                     Button("Done") {
@@ -298,7 +298,7 @@ struct ChatListView: View {
                 } else if app.settings.ui.showCosts && app.todayCost > 0 {
                     // Today's spend mirrors the left side: a small-capital label over a figure that
                     // sits on the name's baseline.
-                    VStack(alignment: .trailing, spacing: 3) {
+                    VStack(alignment: .trailing, spacing: Space.xs) {
                         Text("Today")
                             .font(.caption.weight(.semibold))
                             .tracking(1.1)
@@ -314,7 +314,7 @@ struct ChatListView: View {
                 }
             }
             .dynamicTypeSize(...DynamicTypeSize.accessibility2)
-            .padding(.top, 2)
+            .padding(.top, Space.xxs)
             .listRowInsets(EdgeInsets(top: 4, leading: 17, bottom: 2, trailing: 17))
             .listRowBackground(Color.qBase)
             .listRowSeparator(.hidden)
@@ -327,12 +327,12 @@ struct ChatListView: View {
 
     private var backupNudge: some View {
         Section {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: Space.m) {
+                HStack(alignment: .top, spacing: Space.m) {
                     Image(systemName: "externaldrive.badge.timemachine")
                         .font(.title3)
                         .foregroundStyle(Color.qAccent)
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: Space.xs) {
                         Text("Time for a backup").font(.subheadline.weight(.semibold)).foregroundStyle(Color.qInk)
                         Text("Your chats live only on this iPhone. Export a copy to Files or iCloud Drive.")
                             .font(.footnote)
@@ -349,9 +349,9 @@ struct ChatListView: View {
                         .controlSize(.small)
                 }
             }
-            .padding(16)
+            .padding(Space.l)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.qAccentSoft, in: .rect(cornerRadius: 20, style: .continuous))
+            .background(Color.qAccentSoft, in: .rect(cornerRadius: Radius.l, style: .continuous))
             .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 4, trailing: 16))
             .listRowBackground(Color.qBase)
             .listRowSeparator(.hidden)
@@ -431,7 +431,7 @@ struct ChatListView: View {
         }
         Section {
             if hits.isEmpty {
-                HStack(spacing: 8) {
+                HStack(spacing: Space.s) {
                     if searching { ProgressView().controlSize(.small) }
                     Text(searching ? "Searching…" : (q.count < 2 ? "Type at least two characters" : "Nothing in any message matches “\(q)”"))
                         .font(.subheadline)
@@ -443,8 +443,8 @@ struct ChatListView: View {
             }
             ForEach(hits) { hit in
                 Button { app.openChat(hit.chatId, highlight: hit.messageId) } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Space.xs) {
+                        HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                             Text(app.chat(hit.chatId)?.title ?? "Chat")
                                 .displayFont { .system(.body, design: $0).weight(.semibold) }
                                 .foregroundStyle(Color.qInk)
@@ -459,11 +459,11 @@ struct ChatListView: View {
                             .foregroundStyle(Color.qInk2)
                             .lineLimit(3)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 13)
+                    .padding(.horizontal, Space.l)
+                    .padding(.vertical, Space.m)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(CardSurface(radius: 20))
-                    .contentShape(.rect(cornerRadius: 20, style: .continuous))
+                    .background(CardSurface(radius: Radius.l))
+                    .contentShape(.rect(cornerRadius: Radius.l, style: .continuous))
                 }
                 .buttonStyle(PressableStyle(scale: 0.98))
                 .plainListRow(vertical: 5)
@@ -482,7 +482,7 @@ struct ChatListView: View {
                    message: showArchived ? "Swipe a chat to archive it. It stays searchable." : "Everything you write stays on this iPhone until you export it.",
                    showMark: false) {
             if !showArchived {
-                HStack(spacing: 10) {
+                HStack(spacing: Space.m) {
                     Button { app.startNewChat() } label: { Label("New chat", systemImage: "square.and.pencil") }
                         .buttonStyle(.glassProminent)
                     Button { sheets.editor = ProjectEditorRequest(openAfterCreate: true) } label: {
@@ -553,7 +553,7 @@ private struct Masthead: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: 6) {
+            HStack(spacing: Space.s) {
                 if writing {
                     LiveDot(size: 6)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
@@ -608,7 +608,7 @@ private struct ProjectShelf: View {
         let rows = stride(from: 0, to: slots.count, by: 2).map { Array(slots[$0..<min($0 + 2, slots.count)]) }
         // Alone (no projects yet), the new card spans the shelf and says what projects are for.
         let invite = projects.isEmpty
-        Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+        Grid(horizontalSpacing: Space.m, verticalSpacing: Space.m) {
             ForEach(rows, id: \.first?.id) { row in
                 GridRow {
                     ForEach(row) { slot in
@@ -629,10 +629,10 @@ private struct ProjectShelf: View {
                 app.path.append(.project(p.id))
             } label: {
                 ProjectCard(project: p)
-                    .contentShape(.rect(cornerRadius: 18, style: .continuous))
+                    .contentShape(.rect(cornerRadius: Radius.l, style: .continuous))
             }
             .buttonStyle(.pressable)
-            .contentShape(.contextMenuPreview, .rect(cornerRadius: 18, style: .continuous))
+            .contentShape(.contextMenuPreview, .rect(cornerRadius: Radius.l, style: .continuous))
             .contextMenu {
                 Button { app.startNewChat(projectId: p.id) } label: { Label("New chat", systemImage: "square.and.pencil") }
                 Button { sheets.editor = ProjectEditorRequest(project: p) } label: { Label("Edit project", systemImage: "pencil") }
@@ -657,8 +657,8 @@ private struct ProjectShelf: View {
     }
 
     private func newCard(invite: Bool) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-        let layout = invite ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
+        let shape = RoundedRectangle(cornerRadius: Radius.l, style: .continuous)
+        let layout = invite ? AnyLayout(HStackLayout(spacing: Space.m)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
         return layout {
             Image(systemName: "plus")
                 .font(.system(size: 15, weight: .semibold))
@@ -666,7 +666,7 @@ private struct ProjectShelf: View {
                 .frame(width: 34, height: 34)
                 .background(Color.qAccentSoft, in: .rect(cornerRadius: 34 * 0.3, style: .continuous))
             if !invite { Spacer(minLength: 14) }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Space.xxs) {
                 Text("New project")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color.qAccent)
@@ -678,7 +678,7 @@ private struct ProjectShelf: View {
             }
             if invite { Spacer(minLength: 0) }
         }
-        .padding(12)
+        .padding(Space.m)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background {
             shape.strokeBorder(Color.qInk2.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
@@ -704,8 +704,8 @@ struct ChatRow: View {
 
     var body: some View {
         let unread = chat.unread == true
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                 Text(chat.title)
                     .displayFont { .system(.body, design: $0).weight(.semibold) }
                     .foregroundStyle(Color.qInk)
@@ -716,7 +716,7 @@ struct ChatRow: View {
             }
             // A reply still coming in (you can leave a chat mid-reply) shows as a live line.
             if isWriting {
-                HStack(spacing: 7) {
+                HStack(spacing: Space.s) {
                     LiveDot()
                     Text("Writing…")
                         .foregroundStyle(Color.qAccent)
@@ -734,7 +734,7 @@ struct ChatRow: View {
             let tags = self.tags
             let cost = app.settings.ui.showCosts && chat.totalCostUsd > 0 ? Fmt.usd(chat.totalCostUsd) : nil
             if !tags.isEmpty || cost != nil {
-                HStack(spacing: 6) {
+                HStack(spacing: Space.s) {
                     ForEach(tags) { TagChip(tag: $0) }
                     Spacer(minLength: 0)
                     if let cost {
@@ -743,7 +743,7 @@ struct ChatRow: View {
                             .foregroundStyle(Color.qInk2)
                     }
                 }
-                .padding(.top, 5)
+                .padding(.top, Space.xs)
             }
         }
         .animation(Motion.standard, value: chat.title)
@@ -754,7 +754,7 @@ struct ChatRow: View {
     }
 
     private func stamp(unread: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
+        HStack(alignment: .firstTextBaseline, spacing: Space.xs) {
             if unread {
                 Circle()
                     .fill(Color.qAccent)
@@ -821,15 +821,15 @@ private struct TagChip: View {
 
     var body: some View {
         let color = tag.tint ?? Color.qInk2
-        HStack(spacing: 4) {
+        HStack(spacing: Space.xs) {
             if let symbol = tag.symbol { Image(systemName: symbol).imageScale(.small) }
             if let lead = tag.lead { Text(lead) }
             Text(tag.label).lineLimit(1)
         }
         .font(.caption2.weight(.semibold))
         .foregroundStyle(color)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
+        .padding(.horizontal, Space.s)
+        .padding(.vertical, Space.xs)
         .background(color.opacity(0.12), in: .capsule)
     }
 }

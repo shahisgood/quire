@@ -190,9 +190,9 @@ struct TileLabel: View {
     var detail: String? = nil
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: Space.l) {
             IconTile(symbol: symbol, color: color)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Space.xxs) {
                 Text(title).foregroundStyle(Color.qInk)
                 if let detail, !detail.isEmpty {
                     Text(detail)
@@ -202,7 +202,7 @@ struct TileLabel: View {
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Space.xxs)
     }
 }
 
@@ -239,13 +239,13 @@ struct FilterChip: View {
             Haptics.selection()
             action()
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: Space.xs) {
                 if let symbol { Image(systemName: symbol).imageScale(.small) }
                 Text(title)
             }
             .font(.subheadline.weight(.medium))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
+            .padding(.horizontal, Space.m)
+            .padding(.vertical, Space.s)
             .foregroundStyle(isOn ? Color.qOnAccent : Color.qInk)
             .background(isOn ? Color.qAccent : Color.qRaised, in: .capsule)
             .overlay(Capsule().strokeBorder(isOn ? Color.clear : Color.qRule, lineWidth: 1))
@@ -266,11 +266,11 @@ struct HelpLabel: View {
     @State private var open = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Space.xs) {
             Button {
                 withAnimation(Motion.quick) { open.toggle() }
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: Space.s) {
                     if overridden {
                         Circle().fill(Color.qAccent).frame(width: 6, height: 6)
                             .accessibilityLabel("Set here")
@@ -303,8 +303,8 @@ struct EmptyState<Actions: View>: View {
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
-        VStack(spacing: 14) {
-            if showMark { QuireMark(width: 56, breathing: true).padding(.bottom, 8) }
+        VStack(spacing: Space.l) {
+            if showMark { QuireMark(width: 56, breathing: true).padding(.bottom, Space.s) }
             Text(title)
                 .displayFont { .system(.title3, design: $0).weight(.semibold) }
                 .foregroundStyle(Color.qInk)
@@ -315,10 +315,10 @@ struct EmptyState<Actions: View>: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             actions()
-                .padding(.top, 6)
+                .padding(.top, Space.s)
         }
         .frame(maxWidth: 340)
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Space.xxl)
         .frame(maxWidth: .infinity)
     }
 }
@@ -340,7 +340,7 @@ struct TypedConfirmSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: Space.l) {
                 Text(message)
                     .foregroundStyle(Color.qInk2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -351,8 +351,8 @@ struct TypedConfirmSheet: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.body.monospaced())
-                    .padding(12)
-                    .card(radius: 12)
+                    .padding(Space.m)
+                    .card(radius: Radius.s)
                     .focused($focused)
                     .submitLabel(.done)
                     .onSubmit { if matches { confirm() } }
@@ -360,14 +360,14 @@ struct TypedConfirmSheet: View {
                     Text(actionLabel)
                         .font(.body.weight(.semibold))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, Space.s)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Color.qDanger)
                 .disabled(!matches)
                 Spacer(minLength: 0)
             }
-            .padding(20)
+            .padding(Space.xl)
             .background(Color.qBase)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
@@ -515,8 +515,8 @@ private struct ValuePill: ViewModifier {
             .foregroundStyle(Color.qInk)
             .multilineTextAlignment(.center)
             .frame(width: width)
-            .padding(.vertical, 7)
-            .padding(.horizontal, 10)
+            .padding(.vertical, Space.s)
+            .padding(.horizontal, Space.m)
             .background(Color.qSunken, in: .capsule)
     }
 }
@@ -532,12 +532,12 @@ struct TagField: View {
     private var canAdd: Bool { limit.map { tags.count < $0 } ?? true }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s) {
             if !tags.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: Space.s) {
                         ForEach(Array(tags.enumerated()), id: \.offset) { i, tag in
-                            HStack(spacing: 4) {
+                            HStack(spacing: Space.xs) {
                                 Text(visible(tag))
                                     .font(monospaced ? .footnote.monospaced() : .footnote)
                                     .foregroundStyle(Color.qInk)
@@ -550,8 +550,8 @@ struct TagField: View {
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("Remove \(tag)")
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
+                            .padding(.horizontal, Space.m)
+                            .padding(.vertical, Space.s)
                             .background(Color.qSunken, in: .capsule)
                         }
                     }

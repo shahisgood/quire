@@ -191,9 +191,9 @@ struct ModelPickerView: View {
     // MARK: Filters
 
     private var filterPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.m) {
             abilityRow
-            VStack(spacing: 8) {
+            VStack(spacing: Space.s) {
                 filterLine("Provider") { providerTrack }
                 filterLine("Price") {
                     SlidingSegments(options: PriceFilter.allCases.map { (value: $0, label: $0.label) }, selection: $price)
@@ -202,14 +202,14 @@ struct ModelPickerView: View {
                     SlidingSegments(options: ContextFilter.allCases.map { (value: $0, label: $0.label) }, selection: $context)
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, Space.xl)
         }
-        .padding(.top, 4)
-        .padding(.bottom, 8)
+        .padding(.top, Space.xs)
+        .padding(.bottom, Space.s)
     }
 
     private func filterLine<Control: View>(_ title: String, @ViewBuilder control: () -> Control) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Space.m) {
             Text(title.uppercased())
                 .font(.caption2.weight(.semibold))
                 .tracking(1.1)
@@ -223,11 +223,11 @@ struct ModelPickerView: View {
     /// sideways. The highlight slides to the one you tap; tap it again (or All) to clear it.
     private var providerTrack: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 2) {
+            HStack(spacing: Space.xxs) {
                 providerSegment(nil, count: app.models.count)
                 ForEach(providers) { p in providerSegment(p.id, count: p.count) }
             }
-            .padding(3)
+            .padding(Space.xs)
             .background(Color.qRaised, in: .capsule)
             .overlay(Capsule().strokeBorder(Color.qRule, lineWidth: 1))
         }
@@ -250,7 +250,7 @@ struct ModelPickerView: View {
                 provider = (p == nil || on) ? nil : p
             }
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: Space.xs) {
                 Text(name)
                     .font(.footnote.weight(on ? .semibold : .medium))
                 Text("\(count)")
@@ -259,7 +259,7 @@ struct ModelPickerView: View {
             }
             .foregroundStyle(on ? Color.qOnAccent : Color.qInk2)
             .lineLimit(1)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Space.m)
             .frame(height: 30)
             .background {
                 if on {
@@ -277,17 +277,17 @@ struct ModelPickerView: View {
 
     private var abilityRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.s) {
                 if activeFilterCount > 0 {
                     Button(action: clearFilters) {
-                        HStack(spacing: 5) {
+                        HStack(spacing: Space.xs) {
                             Image(systemName: "xmark")
                             Text("Clear · \(activeFilterCount)")
                                 .contentTransition(.numericText())
                         }
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Color.qAccent)
-                        .padding(.horizontal, 14)
+                        .padding(.horizontal, Space.l)
                         .frame(height: 34)
                         .background(Color.qAccentSoft, in: .capsule)
                         .contentShape(.capsule)
@@ -305,8 +305,8 @@ struct ModelPickerView: View {
                     }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 8)   // room for the chips' glow
+            .padding(.horizontal, Space.xl)
+            .padding(.vertical, Space.s)   // room for the chips' glow
         }
     }
 
@@ -326,12 +326,12 @@ struct ModelPickerView: View {
     @ViewBuilder
     private var loadingState: some View {
         if app.loadingModels {
-            HStack(spacing: 10) {
+            HStack(spacing: Space.m) {
                 ProgressView()
                 Text("Loading OpenRouter's models…").foregroundStyle(Color.qInk2)
             }
         } else {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Space.s) {
                 Text(app.modelsError ?? "No models loaded yet.").foregroundStyle(Color.qInk2)
                 Button("Try again") { Task { await app.refreshModels(force: true) } }
             }
@@ -339,7 +339,7 @@ struct ModelPickerView: View {
     }
 
     private var noMatches: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: Space.m) {
             Image(systemName: "line.3.horizontal.decrease.circle")
                 .font(.system(size: 34, weight: .light))
                 .foregroundStyle(Color.qInk2)
@@ -352,11 +352,11 @@ struct ModelPickerView: View {
             if activeFilterCount > 0 {
                 Button("Clear filters", action: clearFilters)
                     .buttonStyle(.glass)
-                    .padding(.top, 4)
+                    .padding(.top, Space.xs)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
+        .padding(.vertical, Space.xxxl)
     }
 
     // MARK: Rows
@@ -365,9 +365,9 @@ struct ModelPickerView: View {
         let isSelected = m.id == selected
         let isFav = app.settings.favouriteModelIds.contains(m.id)
         return Button { pick(m.id) } label: {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
+            HStack(alignment: .center, spacing: Space.m) {
+                VStack(alignment: .leading, spacing: Space.xs) {
+                    HStack(spacing: Space.s) {
                         Text(m.shortName)
                             .font(.body.weight(isSelected ? .semibold : .medium))
                             .foregroundStyle(Color.qInk)
@@ -376,12 +376,12 @@ struct ModelPickerView: View {
                             Text("NEW")
                                 .font(.caption2.weight(.bold))
                                 .foregroundStyle(Color.qOnAccent)
-                                .padding(.horizontal, 5)
+                                .padding(.horizontal, Space.xs)
                                 .padding(.vertical, 1)
                                 .background(Color.qAccent.gradient, in: .capsule)
                         }
                     }
-                    HStack(spacing: 6) {
+                    HStack(spacing: Space.s) {
                         Text(ProviderStyle.displayName(m.provider))
                         Text("·")
                         Text(Fmt.context(m.contextLength))
@@ -391,13 +391,13 @@ struct ModelPickerView: View {
                         } else {
                             Text("\(Pricing.perMillion(m.pricing.prompt)) / \(Pricing.perMillion(m.pricing.completion))")
                         }
-                        HStack(spacing: 4) {
+                        HStack(spacing: Space.xs) {
                             if m.acceptsImages { Image(systemName: "eye").accessibilityLabel("Vision") }
                             if m.supportsReasoning { Image(systemName: "brain").accessibilityLabel("Reasoning") }
                             if m.supportsTools { Image(systemName: "wrench.and.screwdriver").accessibilityLabel("Tools") }
                         }
                         .imageScale(.small)
-                        .padding(.leading, 2)
+                        .padding(.leading, Space.xxs)
                     }
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(Color.qInk2)
@@ -423,7 +423,7 @@ struct ModelPickerView: View {
                 .buttonStyle(.borderless)
                 .accessibilityLabel(isFav ? "Remove from favourites" : "Add to favourites")
             }
-            .padding(.vertical, 2)
+            .padding(.vertical, Space.xxs)
         }
         .listRowBackground(isSelected ? Color.qAccentSoft : Color.qRaised)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -461,7 +461,7 @@ struct ModelCardView: View {
             List {
                 Group {
                 Section {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: Space.m) {
                         Text(model.id)
                             .font(.footnote.monospaced())
                             .foregroundStyle(Color.qInk2)
@@ -471,7 +471,7 @@ struct ModelCardView: View {
                             .foregroundStyle(Color.qInk)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Space.xs)
                     HStack {
                         Button {
                             dismiss()
