@@ -541,8 +541,49 @@ enum Motion {
     /// Something opening in place (an explanation, a group of settings): no bounce, so the rows
     /// around it glide rather than wobble.
     static let reveal = Animation.smooth(duration: 0.34)
+    /// A surface changing shape, like the message box opening out: a little faster than the
+    /// keyboard, so it leads it rather than trailing behind.
+    static let morph = Animation.spring(duration: 0.38, bounce: 0.12)
     /// A selection sliding to its new place, with a touch of life at the end.
     static let select = Animation.spring(response: 0.34, dampingFraction: 0.86)
+}
+
+// MARK: - Measures
+
+/// Spacing, on a 4-point grid. Use these rather than numbers, so spaces repeat across screens.
+/// A space between things of one group is smaller than the space between groups.
+enum Space {
+    /// Hairline nudges: between a title and its caption.
+    static let xxs: CGFloat = 2
+    static let xs: CGFloat = 4
+    static let s: CGFloat = 8
+    static let m: CGFloat = 12
+    static let l: CGFloat = 16
+    static let xl: CGFloat = 20
+    static let xxl: CGFloat = 24
+    static let xxxl: CGFloat = 32
+    /// A screen's side margin.
+    static let page: CGFloat = 16
+}
+
+/// Corner radii, one per kind of surface. Something inside a rounded surface takes the outer radius
+/// less the inset between them, so corners run parallel instead of pinching.
+enum Radius {
+    /// Inline code, small tags.
+    static let xs: CGFloat = 6
+    /// Surfaces set into a card: code blocks, explanations, quotes.
+    static let s: CGFloat = 10
+    /// Tiles and small cards: icons in a square, swatches, your message.
+    static let m: CGFloat = 14
+    /// Cards on the page.
+    static let l: CGFloat = 20
+    /// The message box.
+    static let composer: CGFloat = 28
+}
+
+/// Sizes that recur: the round buttons in bars and the message box.
+enum Size {
+    static let control: CGFloat = 36
 }
 
 extension View {

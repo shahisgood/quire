@@ -3,8 +3,11 @@ import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// The message box, after Claude's: the text on top; underneath, attach, the model with its thinking
-/// level, how full the context is, and a send button that only arrives once there's something to send.
+/// The message box, after Claude's. At rest it folds down to one line, attach, the prompt, and
+/// (while a reply is coming) stop. Tap it and it opens out: the text on top; underneath, attach, the
+/// model with its thinking level, how full the context is, and a send button that only arrives once
+/// there's something to send. The same text view serves both, so the tap that opens it is the tap
+/// that brings up the keyboard.
 struct ComposerView: View {
     let session: ChatSession
     let openModels: () -> Void
@@ -24,14 +27,25 @@ struct ComposerView: View {
     @State private var attachNote: String? = nil
     @State private var loadingAttachments = 0
     @State private var focused = false
+    @Namespace private var bar
 
     private var trimmedEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var canSend: Bool { !session.generating && loadingAttachments == 0 && (!trimmedEmpty || !attachments.isEmpty) }
     private var model: ORModel? { session.model }
     /// The round button exists only while it has a job: sending what's typed, or stopping a reply.
     private var showsAction: Bool { session.generating || !trimmedEmpty || !attachments.isEmpty }
+    /// The open box's inner margin: its corner radius less a round button's.
+    private static let inset = Radius.composer - Size.control / 2
+
+    /// Folded to one line: nothing typed, nothing attached, nothing to say, and the keyboard away.
+    private var collapsed: Bool {
+        !focused && text.isEmpty && attachments.isEmpty && loadingAttachments == 0 && noteText == nil
+    }
 
     var body: some View {
+        let layout = collapsed
+            ? AnyLayout(HStackLayout(alignment: .center, spacing: Space.s))
+            : AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
         VStack(alignment: .leading, spacing: 0) {
             if !attachments.isEmpty || loadingAttachments > 0 {
                 attachmentStrip
@@ -45,49 +59,45 @@ struct ComposerView: View {
                     .transition(.opacity)
             }
 
-            ZStack(alignment: .topLeading) {
-                if text.isEmpty {
-                    Text(placeholder)
-                        .font(.body)
-                        .foregroundStyle(Color.qInk2.opacity(0.85))
-                        .lineLimit(1)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+            layout {
+                if collapsed {
+                    attachMenu
+                        .matchedGeometryEffect(id: "attach", in: bar)
                 }
-                // A hardware keyboard's Return sends (Shift+Return for a new line), like the PWA's
-                // "send on Enter". The on-screen keyboard always inserts a line.
-                ComposerTextView(text: $text, focused: $focused,
-                                 sendOnHardwareReturn: app.settings.ui.sendOnEnter,
-                                 hint: placeholder,
-                                 rounded: app.settings.ui.typeface == .sfRounded,
-                                 theme: app.settings.ui.colorTheme,
-                                 onSend: send,
-                                 onPasteImage: { img in
-                                     Task { await add { try await AttachmentMaker.image(img, name: "pasted.jpg") } }
-                                 })
+                textArea
+                if collapsed {
+                    if showsAction {
+                        actionButton
+                            .matchedGeometryEffect(id: "action", in: bar)
+                            .transition(reduceMotion ? .opacity : .pop)
+                    }
+                } else {
+                    controls
+                        .transition(.opacity.combined(with: .offset(y: 6)))
+                }
             }
-            .padding(.horizontal, 6)
-            .padding(.bottom, 12)
-            .onChange(of: text) { _, new in session.saveDraft(new) }
-
-            controls
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 14)
-        .padding(.bottom, 10)
-        .glassEffect(.regular, in: .rect(cornerRadius: 28, style: .continuous))
+        // Concentric with the box: open, the round buttons sit the box's radius less their own in
+        // from its edge; folded, the box is a capsule around them.
+        .padding(.horizontal, collapsed ? Space.s : Self.inset)
+        .padding(.top, collapsed ? Space.s : Self.inset + Space.xs)
+        .padding(.bottom, collapsed ? Space.s : Self.inset)
+        .glassEffect(.regular, in: .rect(cornerRadius: Radius.composer, style: .continuous))
         .overlay {
             // A hairline that firms up while you're typing.
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.composer, style: .continuous)
                 .strokeBorder(Color.qInk.opacity(focused ? 0.16 : 0.07), lineWidth: 1)
                 .allowsHitTesting(false)
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, 6)
+        // Folded, the whole bar is the place to tap, not just the line of text in it.
+        .contentShape(.rect(cornerRadius: Radius.composer, style: .continuous))
+        .gesture(TapGesture().onEnded { focused = true }, including: collapsed ? .all : .subviews)
+        .padding(.horizontal, Self.inset)
+        .padding(.bottom, Space.s)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : Motion.morph, value: collapsed)
         .animation(reduceMotion ? nil : Motion.quick, value: attachments)
         .animation(reduceMotion ? nil : Motion.quick, value: noteText)
         .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy, value: showsAction)
-        .animation(Motion.quick, value: focused)
         .onChange(of: focused) { _, isFocused in
             if isFocused { onFocus() }
             onFocusChange(isFocused)
@@ -113,6 +123,36 @@ struct ComposerView: View {
         }
     }
 
+    /// The prompt and the text you type, one line folded, growing to eight open.
+    private var textArea: some View {
+        ZStack(alignment: .topLeading) {
+            if text.isEmpty {
+                Text(placeholder)
+                    .font(.body)
+                    .foregroundStyle(Color.qInk2.opacity(0.85))
+                    .lineLimit(1)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            // A hardware keyboard's Return sends (Shift+Return for a new line), like the PWA's
+            // "send on Enter". The on-screen keyboard always inserts a line.
+            ComposerTextView(text: $text, focused: $focused,
+                             sendOnHardwareReturn: app.settings.ui.sendOnEnter,
+                             hint: placeholder,
+                             rounded: app.settings.ui.typeface == .sfRounded,
+                             theme: app.settings.ui.colorTheme,
+                             onSend: send,
+                             onPasteImage: { img in
+                                 Task { await add { try await AttachmentMaker.image(img, name: "pasted.jpg") } }
+                             })
+        }
+        // Open, the text starts a standard space in from the box's edge.
+        .padding(.horizontal, collapsed ? Space.xxs : Space.l - Self.inset)
+        .padding(.bottom, collapsed ? 0 : Space.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: text) { _, new in session.saveDraft(new) }
+    }
+
     private var placeholder: String {
         if !session.chat.memoryEnabled { return "Incognito message" }
         return session.path.isEmpty ? "Ask anything" : "Reply…"
@@ -121,8 +161,9 @@ struct ComposerView: View {
     // MARK: Bottom row
 
     private var controls: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Space.s) {
             attachMenu
+                .matchedGeometryEffect(id: "attach", in: bar)
             modelMenu
             Spacer(minLength: 4)
             if app.settings.ui.showContext {
@@ -131,6 +172,7 @@ struct ComposerView: View {
             }
             if showsAction {
                 actionButton
+                    .matchedGeometryEffect(id: "action", in: bar)
                     .transition(reduceMotion ? .opacity : .pop)
             }
         }
@@ -160,7 +202,7 @@ struct ComposerView: View {
             Image(systemName: "plus")
                 .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(Color.qInk)
-                .frame(width: 34, height: 34)
+                .frame(width: Size.control, height: Size.control)
                 .background(Color.qInk.opacity(0.08), in: .circle)
                 .contentShape(.circle)
         }
@@ -244,7 +286,7 @@ struct ComposerView: View {
         }
         .font(.subheadline.weight(.medium))
         .padding(.horizontal, 12)
-        .frame(height: 34)
+        .frame(height: Size.control)
         .background(Color.qInk.opacity(0.08), in: .capsule)
         .contentShape(.capsule)
         .animation(Motion.quick, value: session.chat.modelId)
@@ -282,7 +324,7 @@ struct ComposerView: View {
                     .contentTransition(.numericText())
             }
             .padding(.horizontal, 4)
-            .frame(height: 34)
+            .frame(height: Size.control)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -468,7 +510,7 @@ struct ComposerView: View {
                 .font(.system(size: session.generating ? 13 : 16, weight: .bold))
                 .foregroundStyle(Color.qOnAccent)
                 .contentTransition(.symbolEffect(.replace))
-                .frame(width: 34, height: 34)
+                .frame(width: Size.control, height: Size.control)
                 .background(Color.qAccent.gradient, in: .circle)
                 .contentShape(.circle)
         }
