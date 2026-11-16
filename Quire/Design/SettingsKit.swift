@@ -19,7 +19,7 @@ struct SettingsPage<Content: View>: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.xxxl) { content }
                 .padding(.horizontal, Space.xl)
-                .padding(.top, inlineTitle ? 12 : 6)
+                .padding(.top, inlineTitle ? Space.m : Space.s)
                 .padding(.bottom, 40)
         }
         .scrollDismissesKeyboard(.interactively)

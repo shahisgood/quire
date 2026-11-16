@@ -350,6 +350,9 @@ enum ChatPDF {
         if geist { faces.formUnion([.geistSans, .geistMono]) }
         // On a dark page your messages sit on a lifted panel; on paper, a sunken one.
         let panel = dark ? c(p.raised) : c(p.sunken)
+        // The page's own colour, the same one the pages are filled with, so whichever of the two
+        // WebKit shows there is no seam.
+        let paper = dark ? c(p.base) : "#FFFFFF"
         return embedded(faces) + """
         :root {
           --ink: \(c(p.ink)); --body: \(c(p.inkBody)); --strong: \(c(p.inkStrong)); --ink2: \(c(p.ink2));
@@ -357,7 +360,7 @@ enum ChatPDF {
           --kw: \(c(Color.qCodeKeyword)); --str: \(c(Color.qCodeString)); --num: \(c(Color.qCodeNumber)); --com: \(c(Color.qCodeComment));
         }
         * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        html, body { margin: 0; padding: 0; background: transparent; }
+        html, body { margin: 0; padding: 0; background: \(paper); }
         body { font-family: \(replies); font-size: 11.5pt; line-height: 1.6; color: var(--body);
                -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; font-kerning: normal;
                overflow-wrap: break-word; }
@@ -458,6 +461,9 @@ private final class Typesetter: NSObject, WKNavigationDelegate {
         config.defaultWebpagePreferences.allowsContentJavaScript = false
         let web = WKWebView(frame: CGRect(x: 0, y: 0, width: paper.width - m.left - m.right, height: paper.height), configuration: config)
         web.navigationDelegate = self
+        web.isOpaque = false
+        web.backgroundColor = .clear
+        web.scrollView.backgroundColor = .clear
         web.isUserInteractionEnabled = false
         web.accessibilityElementsHidden = true
         // WebKit lays out and decodes images reliably only in a window: put it in one, off to the side.

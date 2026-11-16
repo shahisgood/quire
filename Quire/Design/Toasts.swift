@@ -111,7 +111,7 @@ private struct ToastCard: View {
             }
         }
         .padding(.leading, Space.s)
-        .padding(.trailing, toast.actionLabel == nil ? 18 : 9)
+        .padding(.trailing, toast.actionLabel == nil ? Space.l : Space.s)
         .padding(.vertical, Space.s)
         .frame(minHeight: 54)
         .glassEffect(.regular, in: .capsule)

@@ -1410,7 +1410,7 @@ private struct ReadingPreview: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 8 : 12) {
+        VStack(alignment: .leading, spacing: compact ? Space.s : Space.m) {
             VStack(alignment: .leading, spacing: Space.xxs) {
                 Text("Quire")
                     .font(.caption2.weight(.semibold))
@@ -1895,10 +1895,34 @@ private struct AboutView: View {
 
     // MARK: Made by
 
-    /// Who made it, as a single link to their site.
+    /// Who made it, as a single link to their site, the address in the accent like a link.
     private var maker: some View {
         SettingsGroup(label: "Made by") {
-            web("Hasan", "Design and code · byhasan.ink", "https://byhasan.ink")
+            Button {
+                guard let url = URL(string: "https://byhasan.ink") else { return }
+                Haptics.tap()
+                openURL(url)
+            } label: {
+                HStack(spacing: Space.s) {
+                    VStack(alignment: .leading, spacing: Space.xxs) {
+                        Text("Hasan")
+                            .displayFont { .system(.body, design: $0).weight(.semibold) }
+                            .foregroundStyle(Color.qInk)
+                        Text("byhasan.ink")
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(Color.qAccent)
+                    }
+                    Spacer(minLength: Space.s)
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.qAccent)
+                }
+                .padding(.vertical, Space.m)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.row)
+            .accessibilityLabel("Made by Hasan, byhasan.ink")
+            .accessibilityHint("Opens in Safari")
         }
     }
 

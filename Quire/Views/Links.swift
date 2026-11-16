@@ -332,7 +332,7 @@ struct SourcesButton: View {
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(Color.qInk2)
             }
-            .padding(.leading, Favicons.shared.enabled ? 6 : 12)
+            .padding(.leading, Favicons.shared.enabled ? Space.s : Space.m)
             .padding(.trailing, Space.m)
             .frame(minHeight: 32)
             .background(Color.qInk.opacity(0.06), in: .capsule)

@@ -56,7 +56,7 @@ struct ChatView: View {
 
     private var visiblePath: ArraySlice<String> { session.path[windowStart...] }
     private var hiddenCount: Int { windowStart }
-    private var density: CGFloat { app.settings.ui.density == "compact" ? 18 : 30 }
+    private var density: CGFloat { app.settings.ui.density == "compact" ? Space.xl : Space.xxxl }
 
     var body: some View {
         Group {
@@ -407,7 +407,7 @@ private struct EmptyChatView: View {
                 content(compact: false)
                 content(compact: true)
             }
-            .padding(.horizontal, Space.xxxl)
+            .padding(.horizontal, Space.xxl)
             .animation(Motion.standard, value: session.chat.memoryEnabled)
             .onAppear { shown = true }
         }
