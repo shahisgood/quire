@@ -119,7 +119,7 @@ struct SettingRow<Control: View, Below: View>: View {
                             Circle()
                                 .fill(Color.qAccent)
                                 .frame(width: 6, height: 6)
-                                .transition(.scale.combined(with: .opacity))
+                                .transition(.scale(scale: 0.6).combined(with: .opacity))
                                 .accessibilityLabel("Set here")
                         }
                         Text(title)

@@ -556,7 +556,7 @@ private struct Masthead: View {
             HStack(spacing: 6) {
                 if writing {
                     LiveDot(size: 6)
-                        .transition(.scale.combined(with: .opacity))
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
                 eyebrow
                     .font(.caption.weight(.semibold))

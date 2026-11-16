@@ -100,23 +100,21 @@ extension AppTheme {
 
 /// How an app-wide look change (theme, light or dark, typeface, reply size) lands without a hitch.
 /// Re-colouring or re-setting every screen at once is too much work for one frame, and animating
-/// it in SwiftUI redraws all of it many times over. So the control that asked first finishes its
-/// own little motion, then the window cross-fades from a snapshot of the old look to the new one.
-/// That fade runs on the render server at the display's full rate, however heavy the change.
+/// it in SwiftUI redraws all of it many times over. So the window cross-fades from a snapshot of
+/// the old look to the new one, starting the moment you choose. Everything that changes, the
+/// control you touched included, changes inside that one fade with no animation of its own, so
+/// nothing competes with it: the fade runs on the render server at the display's full rate.
 enum AppearanceChange {
-    static func apply(after delay: Double = 0.26, _ change: @escaping () -> Void) {
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(delay))
-            guard let window = appWindow else {
-                change()
-                return
-            }
-            UIView.transition(with: window, duration: 0.34,
-                              options: [.transitionCrossDissolve, .allowUserInteraction, .beginFromCurrentState]) {
-                var still = Transaction()
-                still.disablesAnimations = true
-                withTransaction(still) { change() }
-            }
+    static func apply(_ change: () -> Void) {
+        guard let window = appWindow else {
+            change()
+            return
+        }
+        UIView.transition(with: window, duration: 0.3,
+                          options: [.transitionCrossDissolve, .allowUserInteraction, .beginFromCurrentState]) {
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) { change() }
         }
     }
 
@@ -531,14 +529,15 @@ enum Motion {
     static let press = Animation.snappy(duration: 0.16)
     static let quick = Animation.smooth(duration: 0.2)
     static let standard = Animation.smooth(duration: 0.3)
-    static let bouncy = Animation.spring(response: 0.38, dampingFraction: 0.78)
+    /// A small spring for things you toggle. A touch of overshoot, never a wobble.
+    static let bouncy = Animation.spring(duration: 0.34, bounce: 0.15)
     static let sheet = Animation.spring(response: 0.42, dampingFraction: 0.86)
     /// Full-screen layers sliding across, like a navigation push. No bounce, so it reads as a
     /// screen moving rather than a toy; leaving is a touch quicker than arriving.
     static let drawerIn = Animation.smooth(duration: 0.38)
     static let drawerOut = Animation.smooth(duration: 0.3)
     /// First arrival of a screen's content (the empty chat). Rare, so it can take its time.
-    static let entrance = Animation.smooth(duration: 0.55)
+    static let entrance = Animation.smooth(duration: 0.42)
     /// Something opening in place (an explanation, a group of settings): no bounce, so the rows
     /// around it glide rather than wobble.
     static let reveal = Animation.smooth(duration: 0.34)

@@ -139,14 +139,14 @@ private struct PopEffect: ViewModifier {
     var visible: Bool
     func body(content: Content) -> some View {
         content
-            .scaleEffect(visible ? 1 : 0.6)
+            .scaleEffect(visible ? 1 : 0.85)
             .opacity(visible ? 1 : 0)
-            .blur(radius: visible ? 0 : 3)
+            .blur(radius: visible ? 0 : 2)
     }
 }
 
 extension AnyTransition {
-    /// Springs a small control into being: from 60% with a touch of blur, never from nothing.
+    /// Springs a small control into being: from 85% with a touch of blur, never from nothing.
     static var pop: AnyTransition { .modifier(active: PopEffect(visible: false), identity: PopEffect(visible: true)) }
 }
 

@@ -117,8 +117,7 @@ private struct AccountCard: View {
                         Task { await refresh() }
                     } label: {
                         Image(systemName: "arrow.clockwise")
-                            .rotationEffect(.degrees(refreshing ? 360 : 0))
-                            .animation(refreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: refreshing)
+                            .symbolEffect(.rotate, options: .repeat(.continuous), isActive: refreshing)
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Refresh key details")
@@ -1011,8 +1010,8 @@ private struct AppearanceSettings: View {
             labelled("Theme") {
                 VStack(alignment: .leading, spacing: 12) {
                     ThemePicker(selection: theme) { picked in
-                        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : Motion.select) { theme = picked }
                         AppearanceChange.apply {
+                            theme = picked
                             ThemeStore.shared.use(picked)
                             app.settings.ui.colorTheme = picked
                         }
@@ -1027,20 +1026,18 @@ private struct AppearanceSettings: View {
                 TypefacePicker(selection: face, geist: geist) { picked in
                     // Replies follow the typeface; they can be set apart again below.
                     let reading: ReadingFace = picked == .geist ? geist.readingFace : (picked == .newYork ? .serif : .sans)
-                    face = picked
-                    replyFace = reading
                     AppearanceChange.apply {
+                        face = picked
+                        replyFace = reading
                         app.settings.ui.typeface = picked
                         app.settings.ui.readingFace = reading
                     }
                 }
                 if face == .geist {
                     GeistCutPicker(selection: geist) { picked in
-                        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : Motion.select) {
+                        AppearanceChange.apply {
                             geist = picked
                             replyFace = picked.readingFace
-                        }
-                        AppearanceChange.apply {
                             app.settings.ui.geistStyle = picked
                             app.settings.ui.readingFace = picked.readingFace
                         }
@@ -1129,8 +1126,10 @@ private struct AppearanceSettings: View {
     /// under a cross-fade.
     private func deferred<Value>(_ local: Binding<Value>, apply: @escaping (Value) -> Void) -> Binding<Value> {
         Binding(get: { local.wrappedValue }, set: { value in
-            local.wrappedValue = value
-            AppearanceChange.apply { apply(value) }
+            AppearanceChange.apply {
+                local.wrappedValue = value
+                apply(value)
+            }
         })
     }
 
@@ -1211,7 +1210,7 @@ private struct ThemePicker: View {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.subheadline)
                             .foregroundStyle(Color.qAccent)
-                            .transition(.scale(scale: 0.4).combined(with: .opacity))
+                            .transition(.scale(scale: 0.8).combined(with: .opacity))
                     }
                 }
                 .padding(.horizontal, 4)
@@ -1297,7 +1296,7 @@ private struct TypefacePicker: View {
                         .font(.footnote)
                         .foregroundStyle(Color.qAccent)
                         .padding(9)
-                        .transition(.scale(scale: 0.4).combined(with: .opacity))
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
                 }
             }
             .contentShape(shape)
