@@ -105,7 +105,7 @@ extension AppTheme {
 /// control you touched included, changes inside that one fade with no animation of its own, so
 /// nothing competes with it: the fade runs on the render server at the display's full rate.
 enum AppearanceChange {
-    static func apply(_ change: () -> Void) {
+    static func apply(_ change: @escaping () -> Void) {
         guard let window = appWindow else {
             change()
             return
