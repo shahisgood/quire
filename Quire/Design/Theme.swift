@@ -423,6 +423,10 @@ extension UISettings {
 
     var replyFaceName: String { replyFace.name }
 
+    /// What you write, in the message box and in your messages: Allo when that's the typeface,
+    /// otherwise SF Pro, as the rest of the interface is.
+    var typedFace: Face { typeface == .allo ? .allo : .sfPro }
+
     /// Code, in code blocks and inline: Geist Mono under Geist, otherwise SF Mono.
     var codeFace: Face { typeface == .geist ? .geistMono : .sfPro }
 }

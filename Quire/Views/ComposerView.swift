@@ -206,9 +206,8 @@ struct ComposerView: View {
         .onChange(of: text) { _, new in session.saveDraft(new) }
     }
 
-    /// What you type is set in Allo when that's the typeface; otherwise in SF Pro, as the rest of
-    /// the interface is.
-    private var typedFace: Face { app.settings.ui.typeface == .allo ? .allo : .sfPro }
+    /// What you type is set in Allo when that's the typeface; otherwise in SF Pro.
+    private var typedFace: Face { app.settings.ui.typedFace }
 
     private var placeholder: String {
         if session.quote != nil { return "Ask about this…" }
@@ -512,7 +511,7 @@ struct ComposerView: View {
                 .fill(Color.qAccent)
                 .frame(width: 3)
             Text(quote)
-                .font(.subheadline)
+                .font(.system(.subheadline, design: typedFace))
                 .foregroundStyle(Color.qInk2)
                 .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)

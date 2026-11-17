@@ -15,7 +15,8 @@ final class ChatSession {
     private(set) var persisted: Bool
     private(set) var generating = false
     /// A passage of the chat being quoted in the next message, shown above the text you type and
-    /// set in front of it as a quote when you send. Kept for as long as the app is open.
+    /// set in front of it as a quote when you send. Kept while the chat is open; leaving the chat
+    /// lets it go with the rest of the session.
     var quote: String? = nil
     /// Set when the chat is deleted, so late callbacks (cost reconciliation, a sheet closing) can't resurrect it.
     @ObservationIgnored private(set) var deleted = false
@@ -299,7 +300,7 @@ final class ChatSession {
         path += [user.id, asst.id]
         chat.updatedAt = now
         chat.activeLeafId = asst.id
-        chat.lastPreview = TextUtil.stripMarkdown(trimmed, max: 100)
+        chat.lastPreview = TextUtil.stripMarkdown(Self.question(trimmed), max: 100)
         draft = ""
         chat.draft = ""
         ensurePersisted()
@@ -801,8 +802,14 @@ final class ChatSession {
     /// What a chat is called before (or instead of) a smart title: its opening message, or the name
     /// of what was attached when there were no words.
     private static func openingTitle(_ user: Message) -> String {
-        let text = user.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = question(user.content.trimmingCharacters(in: .whitespacesAndNewlines))
         return TextUtil.stripMarkdown(text.isEmpty ? (user.attachments?.first?.name ?? "New chat") : text, max: 48)
+    }
+
+    /// What you asked, without the passage you quoted in front of it (when you asked anything).
+    private static func question(_ text: String) -> String {
+        let body = LeadingQuote.split(text).body
+        return body.isEmpty ? text : body
     }
 
     /// The exchange a chat is named from: its opening message and the reply to it, on the branch

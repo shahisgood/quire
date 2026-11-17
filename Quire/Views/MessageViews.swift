@@ -47,12 +47,13 @@ struct UserMessageView: View {
                     }
                     if !message.content.isEmpty {
                         let parts = LeadingQuote.split(message.content)
+                        let face = session.app.settings.ui.typedFace
                         if let quote = parts.quote {
-                            QuotedPassage(text: quote)
+                            QuotedPassage(text: quote, face: face)
                         }
                         if !parts.body.isEmpty {
                             ChunkedText(text: parts.body)
-                                .font(.body)
+                                .font(.system(.body, design: face))
                                 .foregroundStyle(Color.qInk)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -112,6 +113,7 @@ struct UserMessageView: View {
 /// you wrote about it, and cut short past a few lines (the whole of it is in the message's menu).
 private struct QuotedPassage: View {
     let text: String
+    let face: Face
 
     var body: some View {
         HStack(alignment: .top, spacing: Space.m) {
@@ -119,7 +121,7 @@ private struct QuotedPassage: View {
                 .fill(Color.qInk2.opacity(0.5))
                 .frame(width: 3)
             Text(text)
-                .font(.subheadline)
+                .font(.system(.subheadline, design: face))
                 .foregroundStyle(Color.qInk2)
                 .lineLimit(6)
         }

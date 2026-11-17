@@ -130,7 +130,9 @@ struct ChatView: View {
                     if let m = session.messages[id] {
                         MessageView(session: session, message: m, highlighted: flashId == id, actions: actions)
                             .id(id)
-                            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .offset(y: 8)), removal: .opacity))
+                            .transition(reduceMotion ? AnyTransition.opacity
+                                        : m.role == .user ? AnyTransition.sent
+                                        : AnyTransition.asymmetric(insertion: .opacity.combined(with: .offset(y: 8)), removal: .opacity))
                     }
                 }
             }
@@ -547,6 +549,19 @@ private struct EmptyChatView: View {
         }
         .buttonStyle(.pressable)
         .accessibilityHint("Opens chat settings")
+    }
+}
+
+extension AnyTransition {
+    /// Your message, sent: it rises out of the message box and grows from its trailing corner,
+    /// where the send button is, so it reads as the thing you just let go of. Quick, since you'll
+    /// see it every time you send.
+    static var sent: AnyTransition {
+        .asymmetric(insertion: .opacity
+                        .combined(with: .offset(y: 24))
+                        .combined(with: .scale(scale: 0.94, anchor: .bottomTrailing))
+                        .animation(.smooth(duration: 0.24)),
+                    removal: .opacity)
     }
 }
 
