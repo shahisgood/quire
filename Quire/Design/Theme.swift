@@ -64,7 +64,7 @@ extension AppTheme {
         base: Color(light: 0xF7EEE5, dark: 0x151311), raised: Color(light: 0xFFFAF5, dark: 0x211A1B),
         sunken: Color(light: 0xEFE0D2, dark: 0x0E0C0B),
         ink: Color(light: 0x151311, dark: 0xF2E6DA), inkBody: Color(light: 0x3B302D, dark: 0xD8C8BA),
-        inkStrong: Color(light: 0x0A0807, dark: 0xFFF5EA), ink2: Color(light: 0x7A6762, dark: 0x9E8B83),
+        inkStrong: Color(light: 0x0A0807, dark: 0xFFF5EA), ink2: Color(light: 0x73615C, dark: 0x9E8B83),
         rule: Color(light: 0xE6D5C6, dark: 0x2F2627),
         accent: Color(light: 0x4B262F, dark: 0xEED3BA), accentSoft: Color(light: 0xEED3BA, dark: 0x4B262F),
         onAccent: Color(light: 0xF7EEE5, dark: 0x151311),
@@ -79,7 +79,7 @@ extension AppTheme {
         ink: Color(light: 0x141414, dark: 0xECEAF0), inkBody: Color(light: 0x2F2D35, dark: 0xCFCFCF),
         inkStrong: Color(light: 0x0A0A0A, dark: 0xFFFFFF), ink2: Color(light: 0x63606B, dark: 0x918D99),
         rule: Color(light: 0xDCDAE2, dark: 0x2B2930),
-        accent: Color(light: 0x7E49B3, dark: 0xA275D8), accentSoft: Color(light: 0xEEE5F8, dark: 0x2D2140),
+        accent: Color(light: 0x7E49B3, dark: 0xA275D8), accentSoft: Color(light: 0xEEE5F8, dark: 0x291E3B),
         onAccent: Color(light: 0xFFFFFF, dark: 0x141414),
         danger: Color(light: 0xB3261E, dark: 0xF2B8B5), warn: Color(light: 0x8A5A00, dark: 0xE8C27A),
         swatch: [Color(hex: 0x141414), Color(hex: 0x7E49B3), Color(hex: 0xCFCFCF)])
@@ -172,8 +172,8 @@ extension Color {
     // Code highlighting
     static var qCodeKeyword: Color { tone(Color(light: 0x3450C8, dark: 0x9AA8FF), mono: Color(light: 0x000000, dark: 0xFFFFFF)) }
     static var qCodeString: Color { tone(Color(light: 0x8A5A1C, dark: 0xD9BC8C), mono: Color(light: 0x555555, dark: 0xB4B4B4)) }
-    static var qCodeNumber: Color { tone(Color(light: 0x2B7A6E, dark: 0x7FC6B8), mono: Color(light: 0x2E2E2E, dark: 0xD8D8D8)) }
-    static var qCodeComment: Color { tone(Color(light: 0x7A7F87, dark: 0x6E737B), mono: Color(light: 0x8C8C8C, dark: 0x6E6E6E)) }
+    static var qCodeNumber: Color { tone(Color(light: 0x287065, dark: 0x7FC6B8), mono: Color(light: 0x2E2E2E, dark: 0xD8D8D8)) }
+    static var qCodeComment: Color { tone(Color(light: 0x60646B, dark: 0x767B84), mono: Color(light: 0x6C6C6C, dark: 0x808080)) }
 
     /// The colour, or under Pitch the grey that stands in for it.
     static func tone(_ color: Color, mono grey: Color) -> Color { ThemeStore.shared.mono ? grey : color }
@@ -549,8 +549,12 @@ enum Motion {
     /// screen moving rather than a toy; leaving is a touch quicker than arriving.
     static let drawerIn = Animation.smooth(duration: 0.38)
     static let drawerOut = Animation.smooth(duration: 0.3)
-    /// First arrival of a screen's content (the empty chat). Rare, so it can take its time.
+    /// First arrival of a screen's content on a screen seen now and then (About, an empty list).
+    /// Rare, so it can take its time.
     static let entrance = Animation.smooth(duration: 0.42)
+    /// The same on a screen seen many times a day (a new chat): quick enough that the whole group
+    /// has settled in about a third of a second.
+    static let arrival = Animation.smooth(duration: 0.28)
     /// Something opening in place (an explanation, a group of settings): no bounce, so the rows
     /// around it glide rather than wobble.
     static let reveal = Animation.smooth(duration: 0.34)

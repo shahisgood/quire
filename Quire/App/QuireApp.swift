@@ -25,6 +25,9 @@ struct QuireApp: App {
                 .onChange(of: app.settings.ui.siteIcons, initial: true) { _, on in Favicons.shared.enabled = on }
                 .onChange(of: app.settings.ui.colorTheme) { _, theme in ThemeStore.shared.use(theme) }
                 .onChange(of: phase) { _, newPhase in
+                    // A toast's clock waits while you're away, so one with Undo is still there to
+                    // read and reach when you come back.
+                    if newPhase == .active { app.toasts.release() } else { app.toasts.hold() }
                     if newPhase == .inactive { app.noteLeaving() }
                     if newPhase == .background {
                         app.didEnterBackground()

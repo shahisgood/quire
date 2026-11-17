@@ -407,9 +407,14 @@ struct ShareSheet: UIViewControllerRepresentable {
 struct SelectableTextView: UIViewRepresentable {
     let text: String
     var monospaced = false
+    /// When set, the selection's menu leads with Quote in Reply, which hands over the passage.
+    var onQuote: ((String) -> Void)? = nil
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> UITextView {
         let v = UITextView()
+        v.delegate = context.coordinator
         v.isEditable = false
         v.isSelectable = true
         v.backgroundColor = .clear
@@ -421,6 +426,7 @@ struct SelectableTextView: UIViewRepresentable {
     }
 
     func updateUIView(_ v: UITextView, context: Context) {
+        context.coordinator.onQuote = onQuote
         if v.text != text { v.text = text }
         if monospaced {
             let size = UIFont.preferredFont(forTextStyle: .footnote).pointSize
@@ -429,6 +435,18 @@ struct SelectableTextView: UIViewRepresentable {
             v.font = UIFont.preferredFont(forTextStyle: .body)
         }
         v.textColor = UIColor(Color.qInk)
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var onQuote: ((String) -> Void)?
+
+        func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
+            guard let onQuote, range.length > 0, let r = Range(range, in: textView.text) else { return nil }
+            let passage = textView.text[r].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !passage.isEmpty else { return nil }
+            let quote = UIAction(title: "Quote in Reply", image: UIImage(systemName: "text.quote")) { _ in onQuote(passage) }
+            return UIMenu(children: [quote] + suggestedActions)
+        }
     }
 }
 

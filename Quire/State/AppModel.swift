@@ -241,6 +241,14 @@ final class AppModel {
 
     var isAnyGenerating: Bool { sessions.values.contains { $0.generating } }
 
+    /// The screen stays on while any reply is being written, so a long one (or a model thinking
+    /// for minutes) isn't cut off by the phone locking itself; it sleeps as usual again the moment
+    /// none is. Called as a reply starts and from the one place every reply ends.
+    func generationChanged() {
+        let awake = isAnyGenerating
+        if UIApplication.shared.isIdleTimerDisabled != awake { UIApplication.shared.isIdleTimerDisabled = awake }
+    }
+
     // MARK: Chats
 
     /// Insert or replace a chat in the list and persist it.

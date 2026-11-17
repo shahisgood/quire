@@ -92,7 +92,10 @@ enum ChatPDF {
                 body += "<section class=\"turn you\">"
                 body += "<div class=\"who\"><span class=\"name\">You</span>" + stamp + "</div>"
                 if !m.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    body += "<div class=\"said\">\(lines(m.content))</div>"
+                    let parts = LeadingQuote.split(m.content)
+                    let quote = parts.quote.map { "<blockquote>\(lines($0))</blockquote>" } ?? ""
+                    let said = parts.body.isEmpty ? "" : lines(parts.body)
+                    body += "<div class=\"said\">\(quote)\(said)</div>"
                 }
                 body += attachments(m.attachments)
                 body += "</section>\n"
@@ -410,6 +413,7 @@ enum ChatPDF {
         li.task .box { position: absolute; left: -16pt; top: 0.38em; width: 8pt; height: 8pt; border: 1pt solid var(--ink2); border-radius: 2pt; }
         li.task .box.on { background: var(--accent); border-color: var(--accent); }
         blockquote { margin: 0 0 8pt; padding: 0 0 0 12pt; border-left: 2pt solid var(--rule); color: var(--ink2); }
+        .said > blockquote:last-child { margin-bottom: 0; }
         code { font-family: \(mono); font-size: 0.86em; color: var(--ink); background: var(--panel); border-radius: 4pt; padding: 1pt 4pt; }
         figure.code { margin: 4pt 0 12pt; background: var(--panel); border-radius: 10pt; padding: 10pt 12pt; }
         figure.code.keep { break-inside: avoid; page-break-inside: avoid; }

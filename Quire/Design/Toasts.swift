@@ -49,7 +49,7 @@ private struct ToastHost: View {
 
 /// A toast drops in under the Dynamic Island: what happened, and the one thing you can do about it.
 /// A ring around its icon runs down the time left; dragging it holds the clock, and a flick up
-/// sends it away. Undo is a real button, and confirms itself once it's done.
+/// throws it off the way it came. Undo is a real button, and confirms itself once it's done.
 struct ToastOverlay: View {
     let center: ToastCenter
     var onFrame: (CGRect) -> Void = { _ in }
@@ -118,8 +118,8 @@ private struct ToastCard: View {
         .frame(maxWidth: 460)
         .padding(.horizontal, Space.l)
         .padding(.top, Space.xs)
-        // Up moves freely; down gives a little and springs back.
-        .offset(y: drag < 0 ? drag : drag / 5)
+        // Up follows the finger; down resists more the further it goes, and springs back.
+        .offset(y: drag < 0 ? drag : Self.rubberBand(drag, limit: 60))
         .gesture(swipe)
         .onTapGesture {
             if toast.tapRunsAction { center.runAction() } else { center.dismiss() }
@@ -150,6 +150,9 @@ private struct ToastCard: View {
         .accessibilityHidden(true)
     }
 
+    /// While the finger is down the toast is the finger; once it lifts, a far enough drag or a
+    /// quick enough flick up throws it off at the speed it was going, and anything less springs it
+    /// back.
     private var swipe: some Gesture {
         DragGesture(minimumDistance: 6)
             .onChanged { v in
@@ -159,19 +162,45 @@ private struct ToastCard: View {
             .onEnded { v in
                 if v.translation.height < -24 || v.predictedEndTranslation.height < -90 {
                     Haptics.selection()
-                    center.dismiss()
+                    fling(velocity: v.velocity.height)
                 } else {
                     withAnimation(reduceMotion ? .easeOut(duration: 0.15) : Motion.bouncy) { drag = 0 }
                     center.release()
                 }
             }
     }
+
+    /// Off the top, carrying on at the finger's speed with no bounce, then gone. Only this toast:
+    /// if another has arrived in the meantime, it stays.
+    private func fling(velocity: CGFloat) {
+        let id = toast.id
+        guard !reduceMotion else {
+            center.dismiss(id)
+            return
+        }
+        let target: CGFloat = -180
+        let distance = target - drag
+        let relative = distance < -1 ? max(0, min(12, Double(velocity / distance))) : 0
+        withAnimation(.interpolatingSpring(duration: 0.3, bounce: 0, initialVelocity: relative)) {
+            drag = target
+        } completion: {
+            center.dismiss(id)
+        }
+    }
+
+    /// Apple's rubber band: the further past the edge, the less the toast follows, never more
+    /// than `limit` in all.
+    private static func rubberBand(_ overshoot: CGFloat, limit: CGFloat) -> CGFloat {
+        let c: CGFloat = 0.55
+        return overshoot * limit * c / (limit + c * abs(overshoot))
+    }
 }
 
 extension AnyTransition {
-    /// Drops in from the top with a little give; leaves the way it came, a touch quicker.
+    /// Drops in from the top with a little give; leaves the way it came, quicker and without it,
+    /// since by then you're done with it.
     static var toast: AnyTransition {
         .asymmetric(insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.92, anchor: .top)),
-                    removal: .move(edge: .top).combined(with: .opacity))
+                    removal: .move(edge: .top).combined(with: .opacity).animation(.smooth(duration: 0.26)))
     }
 }

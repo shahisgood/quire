@@ -492,7 +492,7 @@ struct ChatListView: View {
                 }
             }
         }
-        .entrance(emptyShown)
+        .entrance(emptyShown, role: .lead)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: Alignment(horizontal: .center, vertical: .opticalCenter))
         .onAppear { emptyShown = true }
         .onDisappear { emptyShown = false }

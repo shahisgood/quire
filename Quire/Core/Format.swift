@@ -156,3 +156,24 @@ nonisolated enum TextUtil {
         return score
     }
 }
+
+/// A message that opens with a quoted passage ("> " lines, as Quote in Reply writes them), split
+/// into the passage and what was said about it, so it can be shown as a quote rather than as
+/// angle brackets.
+nonisolated enum LeadingQuote {
+    static func split(_ content: String) -> (quote: String?, body: String) {
+        let lines = content.split(separator: "\n", omittingEmptySubsequences: false)
+        var quoted: [Substring] = []
+        var i = 0
+        while i < lines.count, lines[i].hasPrefix(">") {
+            var line = lines[i].dropFirst()
+            if line.hasPrefix(" ") { line = line.dropFirst() }
+            quoted.append(line)
+            i += 1
+        }
+        let quote = quoted.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !quote.isEmpty else { return (nil, content) }
+        let body = lines[i...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return (quote, body)
+    }
+}

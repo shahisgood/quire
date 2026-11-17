@@ -125,6 +125,12 @@ final class ToastCenter {
         current = nil
     }
 
+    /// Dismisses that toast only if it's still the one showing, for a finish that lands later
+    /// (the end of a fling), so it can never take a newer toast with it.
+    func dismiss(_ id: UUID) {
+        if current?.id == id { dismiss() }
+    }
+
     private func schedule(_ seconds: Double) {
         dismissTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(seconds))

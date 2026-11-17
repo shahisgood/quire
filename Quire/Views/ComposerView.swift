@@ -60,9 +60,9 @@ struct ComposerView: View {
         return Rest.bottom - homeInset
     }
 
-    /// Folded to one line: nothing typed, nothing attached, nothing to say, and the keyboard away.
+    /// Folded to one line: nothing typed, attached or quoted, nothing to say, and the keyboard away.
     private var collapsed: Bool {
-        !focused && text.isEmpty && attachments.isEmpty && loadingAttachments == 0 && noteText == nil
+        !focused && text.isEmpty && attachments.isEmpty && loadingAttachments == 0 && noteText == nil && session.quote == nil
     }
 
     var body: some View {
@@ -79,6 +79,12 @@ struct ComposerView: View {
             if let note = noteText {
                 noteRow(note)
                     .padding(.bottom, Space.s)
+                    .transition(.opacity)
+            }
+
+            if let quote = session.quote {
+                quoteRow(quote)
+                    .padding(.bottom, Space.m)
                     .transition(.opacity)
             }
 
@@ -127,6 +133,7 @@ struct ComposerView: View {
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : Motion.morph, value: focused)
         .animation(reduceMotion ? nil : Motion.quick, value: attachments)
         .animation(reduceMotion ? nil : Motion.quick, value: noteText)
+        .animation(reduceMotion ? nil : Motion.quick, value: session.quote)
         .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy, value: showsAction)
         .onChange(of: focused) { _, isFocused in
             if isFocused { onFocus() }
@@ -144,6 +151,10 @@ struct ComposerView: View {
         .onAppear {
             text = session.draft
             controlsShown = !collapsed
+        }
+        // A passage quoted from a message: the box opens on it, ready for the question.
+        .onChange(of: session.quote) { _, quote in
+            if quote != nil { focused = true }
         }
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 6, matching: .images)
         .onChange(of: photoItems) { _, items in
@@ -200,6 +211,7 @@ struct ComposerView: View {
     private var typedFace: Face { app.settings.ui.typeface == .allo ? .allo : .sfPro }
 
     private var placeholder: String {
+        if session.quote != nil { return "Ask about this…" }
         if !session.chat.memoryEnabled { return "Incognito message" }
         return session.path.isEmpty ? "Ask anything" : "Reply…"
     }
@@ -274,28 +286,45 @@ struct ComposerView: View {
 
     // MARK: Model and thinking
 
-    /// "DeepSeek V4 Flash · High". For a model that can think, a short menu: the thinking levels and
-    /// a way into the model picker. For one that can't, a tap goes straight to the picker.
+    /// "DeepSeek V4 Flash · High". A short menu: the thinking levels, for a model that can think;
+    /// the last few models you've used, to switch back in a tap; and a way into the full picker.
+    /// With neither levels nor anything recent to offer, a tap goes straight to the picker.
     @ViewBuilder
     private var modelMenu: some View {
-        if model?.supportsReasoning == true {
-            let style = ReasoningStyle.detect(model)
+        let thinks = model?.supportsReasoning == true
+        let recents = recentModels
+        if thinks || !recents.isEmpty {
             Menu {
-                Section("Thinking") {
-                    if style.canDisable {
-                        Button {
-                            session.setThinking(nil)
-                            Haptics.selection()
-                        } label: {
-                            checkLabel("Off", on: currentReasoning?.mode == nil || currentReasoning?.mode == .off)
+                if thinks {
+                    let style = ReasoningStyle.detect(model)
+                    Section("Thinking") {
+                        if style.canDisable {
+                            Button {
+                                session.setThinking(nil)
+                                Haptics.selection()
+                            } label: {
+                                checkLabel("Off", on: currentReasoning?.mode == nil || currentReasoning?.mode == .off)
+                            }
+                        }
+                        ForEach(style.efforts.filter { $0 != ReasoningEffort.none }, id: \.self) { e in
+                            Button {
+                                session.setThinking(e)
+                                Haptics.selection()
+                            } label: {
+                                checkLabel(e.label, on: currentReasoning?.mode == .effort && (currentReasoning?.effort ?? .medium) == e)
+                            }
                         }
                     }
-                    ForEach(style.efforts.filter { $0 != ReasoningEffort.none }, id: \.self) { e in
-                        Button {
-                            session.setThinking(e)
-                            Haptics.selection()
-                        } label: {
-                            checkLabel(e.label, on: currentReasoning?.mode == .effort && (currentReasoning?.effort ?? .medium) == e)
+                }
+                if !recents.isEmpty {
+                    Section("Recent") {
+                        ForEach(recents, id: \.id) { m in
+                            Button {
+                                session.setModel(m.id)
+                                Haptics.selection()
+                            } label: {
+                                Text(app.modelName(m.id))
+                            }
                         }
                     }
                 }
@@ -305,13 +334,22 @@ struct ComposerView: View {
                 modelPill
             }
             .accessibilityLabel(modelAccessibilityLabel)
-            .accessibilityHint("Choose a thinking level or change model")
+            .accessibilityHint(thinks && !recents.isEmpty ? "Choose a thinking level, a recent model, or change model"
+                                : thinks ? "Choose a thinking level or change model" : "Choose a recent model or change model")
         } else {
             Button(action: openModels) { modelPill }
                 .buttonStyle(.pressable)
                 .accessibilityLabel(modelAccessibilityLabel)
                 .accessibilityHint("Change model")
         }
+    }
+
+    /// Up to three models used lately, other than this chat's, that are still in the catalogue.
+    private var recentModels: [ORModel] {
+        Array(app.settings.recentModelIds
+            .filter { $0 != session.chat.modelId }
+            .compactMap { app.model($0) }
+            .prefix(3))
     }
 
     private var modelPill: some View {
@@ -464,6 +502,47 @@ struct ComposerView: View {
         .padding(.horizontal, Space.s)
     }
 
+    // MARK: Quote
+
+    /// The passage being quoted, as it will read in your message: under a rule, a few lines of
+    /// it, with a way to take it back out.
+    private func quoteRow(_ quote: String) -> some View {
+        HStack(alignment: .top, spacing: Space.m) {
+            Capsule()
+                .fill(Color.qAccent)
+                .frame(width: 3)
+            Text(quote)
+                .font(.subheadline)
+                .foregroundStyle(Color.qInk2)
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                session.quote = nil
+                Haptics.tap()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .symbolRenderingMode(.hierarchical)
+                    .font(.system(size: 18))
+                    .foregroundStyle(Color.qInk2)
+                    .frame(width: 28, height: 28)
+                    .contentShape(.circle)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove quote")
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, Space.l - Self.inset)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Quoting: \(quote)")
+    }
+
+    /// Markdown's quote: each line of the passage behind "> ", then a blank line.
+    private static func quoted(_ passage: String) -> String {
+        passage.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.isEmpty ? ">" : "> \($0)" }
+            .joined(separator: "\n") + "\n\n"
+    }
+
     private var allowedFileTypes: [UTType] {
         var t: [UTType] = [.pdf, .plainText, .commaSeparatedText, .json, .sourceCode]
         if let md = UTType(filenameExtension: "md") { t.append(md) }
@@ -578,7 +657,8 @@ struct ComposerView: View {
             return
         }
         Haptics.tap()
-        session.send(text, attachments: attachments)
+        session.send(session.quote.map { Self.quoted($0) + text } ?? text, attachments: attachments)
+        session.quote = nil
         text = ""
         attachments = []
         attachNote = nil

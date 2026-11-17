@@ -1613,13 +1613,15 @@ private struct AboutView: View {
 
     var body: some View {
         SettingsPage(title: "About", inlineTitle: true) {
-            entry.entrance(shown)
-            gathered.entrance(shown, delay: 0.06)
+            // The entry leads; the parts under it follow with shrinking gaps, and everything
+            // from the colophon down (mostly below the fold) arrives with it.
+            entry.entrance(shown, role: .lead)
+            gathered.entrance(shown, delay: 0.07)
             kept.entrance(shown, delay: 0.12)
-            colophon.entrance(shown, delay: 0.18)
-            elsewhere.entrance(shown, delay: 0.24)
-            maker.entrance(shown, delay: 0.28)
-            closing.entrance(shown, delay: 0.32)
+            colophon.entrance(shown, delay: 0.15)
+            elsewhere.entrance(shown, delay: 0.15)
+            maker.entrance(shown, delay: 0.15)
+            closing.entrance(shown, delay: 0.15)
         }
         .onAppear { shown = true }
         .task { await measure() }

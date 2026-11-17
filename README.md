@@ -15,14 +15,16 @@ Requires **iOS 26**. Built on GitHub's macOS runners, so you don't need a Mac.
 - Markdown rendered natively: headings, lists, task lists, tables, quotes, rules, and code blocks with syntax colouring and a copy button. Display math is shown as TeX.
 - Attachments from Photos, the camera, Files or the clipboard. Images are resized to 1600 px, as in the web app.
 - Images the model draws (for models that output images) are kept on the reply. Tap any image in a chat to see it full screen and swipe through all of them, with pinch and double-tap zoom and swipe down to close.
-- A composer after Claude's: attach, the model with its thinking level, a context ring (tap for details and the chat's cost; Settings → Appearance → Context window hides it), and a send button that appears once there's something to send. Offline is detected and your draft waits.
+- A composer after Claude's: at rest a single line that stands in from the sides and sits down by the home indicator; tapped, it widens as it rises with the keyboard and the model and context settle in a beat behind. Attach, the model with its thinking level and your last few models one tap away, a context ring (tap for details and the chat's cost; Settings → Appearance → Context window hides it), and a send button that appears once there's something to send. Offline is detected and your draft waits.
+- Quote in Reply: select a passage of any message (Select text) and choose Quote in Reply; it waits above the message box, goes out as a quote in front of your question, and shows as one in your message and in PDFs.
+- The screen stays on while a reply is being written, so a long one isn't cut off by the phone locking; it sleeps as usual the moment none is.
 - Quire opens on a fresh chat after you close it. Reopen within 30 seconds of leaving a chat and you're back in it. Switching away and back never moves you, and if iOS ends Quire in the background to free memory, you come back exactly where you were.
 - Swipe down anywhere on a chat to put the keyboard away.
 - A greeting on every new chat that follows the time of day, always on one clean line.
 - Chats are named from their opening exchange (Settings → Models → Name new chats), and a chat that missed its name (offline, a failed first reply) gets one when you next open it.
 - Home Screen quick actions: press and hold the icon for New chat, Incognito chat, or one of your two most recent chats.
 - Long-press any message for copy, select text, edit, branch, details (tokens, cost, the exact request sent) and delete.
-- Toasts drop in under the Dynamic Island with a ring that runs down the time left to Undo. Drag one to hold it, flick it up to dismiss; Undo confirms itself.
+- Toasts drop in under the Dynamic Island with a ring that runs down the time left to Undo. Drag one to hold it, flick it up to throw it off at the speed you flicked; the clock waits while Quire is in the background; Undo confirms itself.
 
 **Memory**
 - Facts are extracted from your chats after replies (batched, never on the critical path) and injected into requests within a character budget: pinned first, then the most relevant, then the newest.

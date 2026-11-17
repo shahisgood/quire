@@ -43,6 +43,8 @@ struct ChatView: View {
     @State private var viewingImage: Attachment? = nil
     @State private var share: SharedFile? = nil
     @State private var exportingPDF = false
+    /// A passage chosen to quote, handed to the message box once its sheet has gone.
+    @State private var pendingQuote: String? = nil
 
     /// Roughly how much text the thread lays out at once. Everything in the window is laid out in
     /// full (not lazily), so heights are exact: the scroll bar never jumps, a long chat opens at its
@@ -89,7 +91,9 @@ struct ChatView: View {
         .sheet(item: $regenFor) { m in
             ModelPickerView(title: "Regenerate with", selected: m.modelId ?? session.chat.modelId) { id in session.regenerate(m.id, modelId: id) }
         }
-        .sheet(item: $selecting) { m in SelectTextSheet(text: m.content) }
+        .sheet(item: $selecting, onDismiss: takeQuote) { m in
+            SelectTextSheet(text: m.content, onQuote: { pendingQuote = $0 })
+        }
         .sheet(item: $share) { f in ShareSheet(items: [f.url]).presentationDetents([.medium, .large]) }
         .sheet(isPresented: $exportingPDF) { PDFExportSheet(chatId: session.chat.id) }
         .fullScreenCover(item: $viewingImage) { a in
@@ -303,6 +307,13 @@ struct ChatView: View {
         windowStartId = start < session.path.count ? session.path[start] : nil
     }
 
+    /// Once the select sheet has closed, so the message box can take the keyboard.
+    private func takeQuote() {
+        guard let q = pendingQuote else { return }
+        pendingQuote = nil
+        session.quote = q
+    }
+
     private func shareMarkdown() {
         guard !session.path.isEmpty, let url = try? app.exportMarkdown(session) else {
             app.toasts.show("Nothing to share yet")
@@ -426,7 +437,8 @@ private struct EmptyChatView: View {
                         }
                     }
                     .padding(.bottom, Space.xxl)
-                    .entrance(shown)
+                    // It writes itself out, so its arrival is only a fade.
+                    .entrance(shown, role: .decoration, pace: .everyday)
             }
 
             Text(greeting)
@@ -442,7 +454,7 @@ private struct EmptyChatView: View {
                 .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
                 .contentTransition(.opacity)
                 .accessibilityAddTraits(.isHeader)
-                .entrance(shown, delay: 0.06)
+                .entrance(shown, role: .lead, pace: .everyday)
 
             if let note {
                 Text(note)
@@ -451,13 +463,13 @@ private struct EmptyChatView: View {
                     .multilineTextAlignment(.center)
                     .padding(.top, Space.m)
                     .transition(.opacity)
-                    .entrance(shown, delay: 0.1)
+                    .entrance(shown, delay: 0.04, pace: .everyday)
             }
 
             if !compact, session.project != nil || session.persona != nil {
                 contextChips
                     .padding(.top, Space.xl)
-                    .entrance(shown, delay: 0.14)
+                    .entrance(shown, delay: 0.07, pace: .everyday)
             }
 
         }
@@ -540,15 +552,30 @@ private struct EmptyChatView: View {
 
 // MARK: - Small sheets
 
-/// Range-selectable text for copying part of a message.
+/// Range-selectable text for copying part of a message, or quoting it in your reply.
 struct SelectTextSheet: View {
     let text: String
+    /// Quote in Reply, from the selection's menu: the passage goes to the message box as the
+    /// sheet closes.
+    var onQuote: ((String) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            SelectableTextView(text: text)
+            SelectableTextView(text: text, onQuote: quoting)
                 .background(Color.qBase)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if onQuote != nil {
+                        Text("Select a passage, then choose Quote in Reply to ask about it.")
+                            .font(.footnote)
+                            .foregroundStyle(Color.qInk2)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, Space.xl)
+                            .padding(.vertical, Space.m)
+                            .background(Color.qBase)
+                    }
+                }
                 .navigationTitle("Select text")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -561,6 +588,15 @@ struct SelectTextSheet: View {
                         } label: { Label("Copy all", systemImage: "square.on.square") }
                     }
                 }
+        }
+    }
+
+    private var quoting: ((String) -> Void)? {
+        guard let onQuote else { return nil }
+        return { passage in
+            Haptics.tap()
+            onQuote(passage)
+            dismiss()
         }
     }
 }

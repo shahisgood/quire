@@ -150,24 +150,65 @@ extension AnyTransition {
     static var pop: AnyTransition { .modifier(active: PopEffect(visible: false), identity: PopEffect(visible: true)) }
 }
 
-/// Fades a block up into place, after `delay`, the first time `shown` turns true. Stagger a few of
-/// these for an arrival that reads top to bottom. Reduce Motion keeps only the fade.
+/// What a block is to the arrival it's part of. The lead is the one thing to notice, and travels
+/// furthest; support follows it with less; decoration only fades in place. A group where every
+/// block moved the same way, a beat apart, would read as a queue rather than one motion.
+enum EntranceRole {
+    case lead, support, decoration
+
+    var rise: CGFloat {
+        switch self {
+        case .lead: 12
+        case .support: 6
+        case .decoration: 0
+        }
+    }
+
+    var blur: CGFloat {
+        switch self {
+        case .lead: 4
+        case .support: 2
+        case .decoration: 0
+        }
+    }
+}
+
+/// How often a screen's arrival is seen, which sets its pace.
+enum EntrancePace {
+    /// A screen opened every day, many times (a new chat): over in about a third of a second, so
+    /// it's never waited for.
+    case everyday
+    /// A screen seen now and then (About, an empty list): it can take its time.
+    case occasional
+
+    var animation: Animation { self == .everyday ? Motion.arrival : Motion.entrance }
+}
+
+/// Fades a block up into place, after `delay`, the first time `shown` turns true. Give the blocks
+/// of a group their roles and delays that shrink as the group goes on, so the arrival reads as one
+/// wave down the screen. Reduce Motion drops the delays and the movement and keeps the fade, so the
+/// group appears together.
 private struct Entrance: ViewModifier {
     let shown: Bool
     let delay: Double
+    let role: EntranceRole
+    let pace: EntrancePace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content
             .opacity(shown ? 1 : 0)
-            .offset(y: shown || reduceMotion ? 0 : 10)
-            .blur(radius: shown || reduceMotion ? 0 : 4)
-            .animation(reduceMotion ? .easeOut(duration: 0.2) : Motion.entrance.delay(delay), value: shown)
+            .offset(y: shown || reduceMotion ? 0 : role.rise)
+            .blur(radius: shown || reduceMotion ? 0 : role.blur)
+            .animation(reduceMotion ? .easeOut(duration: 0.2) : pace.animation.delay(delay), value: shown)
     }
 }
 
 extension View {
-    func entrance(_ shown: Bool, delay: Double = 0) -> some View { modifier(Entrance(shown: shown, delay: delay)) }
+    func entrance(_ shown: Bool, delay: Double = 0, role: EntranceRole = .support,
+                  pace: EntrancePace = .occasional) -> some View {
+        modifier(Entrance(shown: shown, delay: delay, role: role, pace: pace))
+    }
 }
 
 // MARK: - Greeting

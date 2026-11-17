@@ -46,10 +46,16 @@ struct UserMessageView: View {
                         AttachmentStrip(attachments: atts, onTap: actions.viewImage)
                     }
                     if !message.content.isEmpty {
-                        ChunkedText(text: message.content)
-                            .font(.body)
-                            .foregroundStyle(Color.qInk)
-                            .fixedSize(horizontal: false, vertical: true)
+                        let parts = LeadingQuote.split(message.content)
+                        if let quote = parts.quote {
+                            QuotedPassage(text: quote)
+                        }
+                        if !parts.body.isEmpty {
+                            ChunkedText(text: parts.body)
+                                .font(.body)
+                                .foregroundStyle(Color.qInk)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
                 .padding(.horizontal, Space.l)
@@ -99,6 +105,27 @@ struct UserMessageView: View {
     private func copy() {
         UIPasteboard.general.string = message.content
         Haptics.tap()
+    }
+}
+
+/// A passage quoted from the chat, at the head of your message: under a rule, quieter than what
+/// you wrote about it, and cut short past a few lines (the whole of it is in the message's menu).
+private struct QuotedPassage: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Space.m) {
+            Capsule()
+                .fill(Color.qInk2.opacity(0.5))
+                .frame(width: 3)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(Color.qInk2)
+                .lineLimit(6)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Quoting: \(text)")
     }
 }
 

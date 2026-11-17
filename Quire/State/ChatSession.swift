@@ -14,6 +14,9 @@ final class ChatSession {
     private(set) var path: [String] = []
     private(set) var persisted: Bool
     private(set) var generating = false
+    /// A passage of the chat being quoted in the next message, shown above the text you type and
+    /// set in front of it as a quote when you send. Kept for as long as the app is open.
+    var quote: String? = nil
     /// Set when the chat is deleted, so late callbacks (cost reconciliation, a sheet closing) can't resurrect it.
     @ObservationIgnored private(set) var deleted = false
     /// A title request is in flight (so the send-time and reply-time attempts don't race).
@@ -439,6 +442,7 @@ final class ChatSession {
 
     private func startGeneration(assistantId: String, modelId: String, continueMode: Bool = false) {
         generating = true
+        app.generationChanged()
         task = Task { [weak self] in
             await self?.generate(assistantId: assistantId, modelId: modelId, continueMode: continueMode)
         }
@@ -523,6 +527,7 @@ final class ChatSession {
         defer {
             generating = false
             task = nil
+            app.generationChanged()
         }
         guard let apiKey = app.apiKey, !apiKey.isEmpty else {
             finishWithError(assistantId, MessageError(code: "401", message: "No API key set. Add one in Settings → Connection."))
