@@ -302,12 +302,12 @@ enum ChatPDF {
         return String(format: "#%02X%02X%02X", byte(r), byte(g), byte(b))
     }
 
-    /// A face as a CSS font stack. Geist's cuts are embedded in the page (see `embedded`).
+    /// A face as a CSS font stack. Geist's cuts and Allo are embedded in the page (see `embedded`).
     private static func family(_ face: Face) -> String {
         switch face {
         case .newYork: "ui-serif, 'New York', Georgia, serif"
         case .sfPro: "-apple-system, system-ui, 'Helvetica Neue', sans-serif"
-        case .sfRounded: "ui-rounded, -apple-system, system-ui, sans-serif"
+        case .allo: "'Quire Allo', -apple-system, system-ui, sans-serif"
         case .geistSans: "'Quire Geist Sans', -apple-system, system-ui, sans-serif"
         case .geistSerif: "'Quire Geist Serif', ui-serif, Georgia, serif"
         case .geistMono: "'Quire Geist Mono', ui-monospace, Menlo, monospace"
@@ -315,22 +315,25 @@ enum ChatPDF {
         }
     }
 
-    /// The bundled Geist files a page needs, as `@font-face` rules carrying the fonts themselves,
-    /// so WebKit sets the PDF in the same cuts as the app. Missing weights are left for WebKit to
-    /// make up from the nearest.
+    /// The bundled files a page needs, as `@font-face` rules carrying the fonts themselves, so
+    /// WebKit sets the PDF in the same cuts as the app. Missing weights are left for WebKit to
+    /// make up from the nearest. Geist ships as TrueType, Allo as OpenType (CFF).
     private static func embedded(_ faces: Set<Face>) -> String {
         let files: [Face: [(file: String, weight: Int, italic: Bool)]] = [
             .geistSans: [("Geist-Regular", 400, false), ("Geist-Italic", 400, true), ("Geist-SemiBold", 600, false), ("Geist-Bold", 700, false)],
             .geistSerif: [("GeistSerif-Regular", 400, false)],
             .geistMono: [("GeistMono-Regular", 400, false), ("GeistMono-SemiBold", 600, false), ("GeistMono-Bold", 700, false)],
             .geistPixel: [("GeistPixel-Square", 400, false)],
+            .allo: [("Allo-Regular", 400, false), ("Allo-Oblique", 400, true), ("Allo-SemiBold", 600, false), ("Allo-Bold", 700, false)],
         ]
         var out = ""
-        for face in [Face.geistSans, .geistSerif, .geistMono, .geistPixel] where faces.contains(face) {
+        for face in [Face.geistSans, .geistSerif, .geistMono, .geistPixel, .allo] where faces.contains(face) {
+            let otf = face == .allo
             for f in files[face] ?? [] {
-                guard let url = Bundle.main.url(forResource: f.file, withExtension: "ttf"),
+                guard let url = Bundle.main.url(forResource: f.file, withExtension: otf ? "otf" : "ttf"),
                       let data = try? Data(contentsOf: url) else { continue }
-                out += "@font-face { font-family: 'Quire \(face.name)'; src: url(data:font/ttf;base64,\(data.base64EncodedString())) format('truetype'); "
+                let (mime, format) = otf ? ("font/otf", "opentype") : ("font/ttf", "truetype")
+                out += "@font-face { font-family: 'Quire \(face.name)'; src: url(data:\(mime);base64,\(data.base64EncodedString())) format('\(format)'); "
                 out += "font-weight: \(f.weight); font-style: \(f.italic ? "italic" : "normal"); }\n"
             }
         }
@@ -341,13 +344,15 @@ enum ChatPDF {
         let p = ThemeStore.shared.palette
         func c(_ color: Color) -> String { hex(color, dark: dark) }
         let geist = ui.typeface == .geist
+        let allo = ui.typeface == .allo
         let titles = family(ui.titleFace)
         let replies = family(ui.replyFace)
         // Labels and the small print: the typeface's own sans.
-        let sans = family(geist ? .geistSans : (ui.typeface == .sfRounded ? .sfRounded : .sfPro))
+        let sans = family(geist ? .geistSans : (allo ? .allo : .sfPro))
         let mono = ui.codeFace == .geistMono ? family(.geistMono) : "ui-monospace, 'SF Mono', Menlo, monospace"
         var faces: Set<Face> = [ui.titleFace, ui.replyFace]
         if geist { faces.formUnion([.geistSans, .geistMono]) }
+        if allo { faces.insert(.allo) }
         // On a dark page your messages sit on a lifted panel; on paper, a sunken one.
         let panel = dark ? c(p.raised) : c(p.sunken)
         // The page's own colour, the same one the pages are filled with, so whichever of the two

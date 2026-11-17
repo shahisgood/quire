@@ -15,9 +15,8 @@ struct QuireApp: App {
         WindowGroup {
             RootView()
                 .environment(app)
-                // The chosen typeface: titles everywhere read it; Rounded carries into all the text.
+                // The chosen typeface: titles everywhere read it.
                 .environment(\.displayFace, app.settings.ui.titleFace)
-                .fontDesign(app.settings.ui.typeface.interfaceDesign)
                 .preferredColorScheme(app.settings.ui.theme.colorScheme)
                 .tint(Color.qTint)
                 .onChange(of: app.settings) { app.persistSettings() }

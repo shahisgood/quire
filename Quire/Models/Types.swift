@@ -378,8 +378,20 @@ nonisolated struct GenerationSettings: Codable, Hashable, Sendable {
 nonisolated enum ThemeChoice: String, Codable, CaseIterable, Hashable, Sendable { case dark, light, system }
 nonisolated enum ReadingFace: String, Codable, CaseIterable, Hashable, Sendable { case serif, sans }
 /// The app's typeface for titles, names and headings (and, by default, replies). iOS only, so
-/// backups from the web app simply leave it at New York.
-nonisolated enum Typeface: String, Codable, CaseIterable, Hashable, Sendable { case geist, newYork, sfPro, sfRounded }
+/// backups from the web app simply leave it at the default.
+nonisolated enum Typeface: String, Codable, CaseIterable, Hashable, Sendable {
+    case geist, allo, newYork, sfPro
+
+    /// Allo took SF Pro Rounded's place in 1.5.2, as the friendly choice, so a stored Rounded
+    /// carries on as Allo rather than falling back to the default.
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        guard let face = raw == "sfRounded" ? .allo : Typeface(rawValue: raw) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown typeface \(raw)"))
+        }
+        self = face
+    }
+}
 /// Which cut of Geist titles are set in, when the typeface is Geist. iOS only.
 nonisolated enum GeistStyle: String, Codable, CaseIterable, Hashable, Sendable { case serif, sans, mono, pixel }
 /// The app's colours. iOS only; backups from the web app leave it at Quire.

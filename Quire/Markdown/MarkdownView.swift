@@ -433,7 +433,6 @@ private enum TableMetrics {
         }
         var d = base.fontDescriptor
         if design.design == .serif, let serif = d.withDesign(.serif) { d = serif }
-        if design.design == .rounded, let rounded = d.withDesign(.rounded) { d = rounded }
         if bold, let b = d.withSymbolicTraits(.traitBold) { d = b }
         return UIFont(descriptor: d, size: base.pointSize)
     }

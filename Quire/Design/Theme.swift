@@ -239,17 +239,16 @@ extension ThemeChoice {
 
 // MARK: - Faces
 
-/// A face that titles or replies are set in: one of the system's designs, or a cut of Geist,
-/// which ships with the app (SIL Open Font License; see Resources/Fonts).
+/// A face that titles or replies are set in: one of the system's designs, a cut of Geist, or
+/// Allo. Geist and Allo ship with the app (SIL Open Font License; see Resources/Fonts).
 nonisolated enum Face: String, Hashable, Sendable {
-    case newYork, sfPro, sfRounded, geistSans, geistSerif, geistMono, geistPixel
+    case newYork, sfPro, allo, geistSans, geistSerif, geistMono, geistPixel
 
-    /// The system design: the face itself, or the nearest thing to a Geist cut.
+    /// The system design: the face itself, or the nearest thing to a bundled one.
     var design: Font.Design {
         switch self {
         case .newYork, .geistSerif: .serif
-        case .sfPro, .geistSans: .default
-        case .sfRounded: .rounded
+        case .sfPro, .geistSans, .allo: .default
         case .geistMono, .geistPixel: .monospaced
         }
     }
@@ -262,6 +261,7 @@ nonisolated enum Face: String, Hashable, Sendable {
         case .geistSerif: "GeistSerif-Regular"
         case .geistMono: "GeistMono-Regular"
         case .geistPixel: "GeistPixel-Square"
+        case .allo: "Allo-Regular"
         default: nil
         }
     }
@@ -270,7 +270,7 @@ nonisolated enum Face: String, Hashable, Sendable {
         switch self {
         case .newYork: "New York"
         case .sfPro: "SF Pro"
-        case .sfRounded: "SF Pro Rounded"
+        case .allo: "Allo"
         case .geistSans: "Geist Sans"
         case .geistSerif: "Geist Serif"
         case .geistMono: "Geist Mono"
@@ -313,7 +313,6 @@ nonisolated enum Face: String, Hashable, Sendable {
         let systemDesign: UIFontDescriptor.SystemDesign
         switch design {
         case .serif: systemDesign = .serif
-        case .rounded: systemDesign = .rounded
         case .monospaced: systemDesign = .monospaced
         default: systemDesign = .default
         }
@@ -346,32 +345,28 @@ extension Typeface {
         switch self {
         case .newYork: .newYork
         case .sfPro: .sfPro
-        case .sfRounded: .sfRounded
+        case .allo: .allo
         case .geist: style.face
         }
     }
-
-    /// Everything else (buttons, rows, the message box) is SF Pro, except that Rounded carries
-    /// through the whole app: a rounded title over square-ended text looks like a mistake.
-    var interfaceDesign: Font.Design? { self == .sfRounded ? .rounded : nil }
 
     var name: String {
         switch self {
         case .newYork: "New York"
         case .sfPro: "SF Pro"
-        case .sfRounded: "SF Pro Rounded"
+        case .allo: "Allo"
         case .geist: "Geist"
         }
     }
 
-    var shortName: String { self == .sfRounded ? "Rounded" : name }
+    var shortName: String { name }
 
     /// One word for its character, on its card.
     var character: String {
         switch self {
         case .newYork: "Bookish"
         case .sfPro: "Crisp"
-        case .sfRounded: "Friendly"
+        case .allo: "Friendly"
         case .geist: "Engineered"
         }
     }
@@ -380,7 +375,7 @@ extension Typeface {
         switch self {
         case .newYork: "Apple's serif, cut for reading on screen. Titles read like a book's, and replies like its pages."
         case .sfPro: "The face iOS itself is set in: crisp, neutral and quietly precise, from titles to replies."
-        case .sfRounded: "SF Pro with its ends softened, all through the app. Warmer, and still just as easy to read."
+        case .allo: "Josh Puckett's sans for screens: warm without being cute, clear without being cold. Titles, replies and what you type."
         case .geist: "Vercel's family for developers and designers, in four cuts. Code is set in Geist Mono throughout."
         }
     }
@@ -421,7 +416,7 @@ extension UISettings {
     static func replyFace(typeface: Typeface, style: GeistStyle, reading: ReadingFace) -> Face {
         switch typeface {
         case .geist: reading == .serif ? .geistSerif : (style == .mono ? .geistMono : .geistSans)
-        case .sfRounded: reading == .serif ? .newYork : .sfRounded
+        case .allo: reading == .serif ? .newYork : .allo
         case .newYork, .sfPro: reading == .serif ? .newYork : .sfPro
         }
     }

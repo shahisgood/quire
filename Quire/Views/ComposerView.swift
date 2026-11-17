@@ -4,10 +4,11 @@ import UIKit
 import UniformTypeIdentifiers
 
 /// The message box, after Claude's. At rest it folds down to one line, attach, the prompt, and
-/// (while a reply is coming) stop. Tap it and it opens out: the text on top; underneath, attach, the
-/// model with its thinking level, how full the context is, and a send button that only arrives once
-/// there's something to send. The same text view serves both, so the tap that opens it is the tap
-/// that brings up the keyboard.
+/// (while a reply is coming) stop, standing in from the sides and sitting down by the home
+/// indicator. Tap it and it opens out to the full width as it rises with the keyboard: the text on
+/// top; underneath, attach, the model with its thinking level, how full the context is, and a send
+/// button that only arrives once there's something to send. The same text view serves both, so
+/// the tap that opens it is the tap that brings up the keyboard.
 struct ComposerView: View {
     let session: ChatSession
     let openModels: () -> Void
@@ -27,6 +28,10 @@ struct ComposerView: View {
     @State private var attachNote: String? = nil
     @State private var loadingAttachments = 0
     @State private var focused = false
+    /// The model and the context, arriving a beat after the box starts to open (see `body`).
+    @State private var controlsShown = false
+    /// The home indicator's inset, which the box sits down into while the keyboard is away.
+    @State private var homeInset = HomeIndicator.inset
     @Namespace private var bar
 
     private var trimmedEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -34,8 +39,26 @@ struct ComposerView: View {
     private var model: ORModel? { session.model }
     /// The round button exists only while it has a job: sending what's typed, or stopping a reply.
     private var showsAction: Bool { session.generating || !trimmedEmpty || !attachments.isEmpty }
-    /// The open box's inner margin: its corner radius less a round button's.
+    /// The open box's inner margin: its corner radius less a round button's. Open, it's also the
+    /// space either side of the box, so the box runs nearly edge to edge.
     private static let inset = Radius.composer - Size.control / 2
+
+    /// Where the box rests while you're not in it. Two numbers to tune by eye on a phone.
+    private enum Rest {
+        /// Folded, the box stands this far in from each side of the screen.
+        static let side: CGFloat = Space.xl
+        /// With the keyboard away, its bottom edge sits this far above the bottom of the screen,
+        /// down beside the home indicator rather than a whole safe area above it.
+        static let bottom: CGFloat = Space.xl
+    }
+
+    /// The space under the box. Typing, it sits just above the keyboard. Otherwise, on a phone
+    /// with a home indicator, it reaches down into that inset to `Rest.bottom` from the screen's
+    /// edge; on one without (or in a window with nothing below), it keeps a small margin.
+    private var bottomSpace: CGFloat {
+        guard !focused, homeInset > Rest.bottom - Space.s else { return Space.s }
+        return Rest.bottom - homeInset
+    }
 
     /// Folded to one line: nothing typed, nothing attached, nothing to say, and the keyboard away.
     private var collapsed: Bool {
@@ -72,8 +95,12 @@ struct ComposerView: View {
                             .transition(reduceMotion ? .opacity : .pop)
                     }
                 } else {
+                    // The row itself arrives as it is, so the attach and send buttons it carries
+                    // travel down into it without dipping; the model and the context inside it
+                    // make their own entrance. Folding, it all goes at once, and quickly.
                     controls
-                        .transition(.opacity.combined(with: .offset(y: 6)))
+                        .transition(.asymmetric(insertion: .identity,
+                                                removal: .opacity.animation(reduceMotion ? .easeOut(duration: 0.15) : Motion.quick)))
                 }
             }
         }
@@ -82,7 +109,8 @@ struct ComposerView: View {
         .padding(.horizontal, collapsed ? Space.s : Self.inset)
         .padding(.top, collapsed ? Space.s : Self.inset + Space.xs)
         .padding(.bottom, collapsed ? Space.s : Self.inset)
-        .glassEffect(.regular, in: .rect(cornerRadius: Radius.composer, style: .continuous))
+        // Folded, the glass answers a touch the moment it lands, as a native bar does.
+        .glassEffect(.regular.interactive(collapsed), in: .rect(cornerRadius: Radius.composer, style: .continuous))
         .overlay {
             // A hairline that firms up while you're typing.
             RoundedRectangle(cornerRadius: Radius.composer, style: .continuous)
@@ -92,9 +120,11 @@ struct ComposerView: View {
         // Folded, the whole bar is the place to tap, not just the line of text in it.
         .contentShape(.rect(cornerRadius: Radius.composer, style: .continuous))
         .gesture(TapGesture().onEnded { focused = true }, including: collapsed ? .all : .subviews)
-        .padding(.horizontal, Self.inset)
-        .padding(.bottom, Space.s)
+        .padding(.horizontal, collapsed ? Rest.side : Self.inset)
+        .padding(.bottom, bottomSpace)
+        .background { HomeIndicator.Probe(inset: $homeInset) }
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : Motion.morph, value: collapsed)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : Motion.morph, value: focused)
         .animation(reduceMotion ? nil : Motion.quick, value: attachments)
         .animation(reduceMotion ? nil : Motion.quick, value: noteText)
         .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.bouncy, value: showsAction)
@@ -102,7 +132,19 @@ struct ComposerView: View {
             if isFocused { onFocus() }
             onFocusChange(isFocused)
         }
-        .onAppear { text = session.draft }
+        .onChange(of: collapsed) { _, folded in
+            // The box leads; the model and the context follow it in a beat behind, once there's
+            // room for them. Folding, they're already on their way out with their row.
+            if folded {
+                controlsShown = false
+            } else {
+                withAnimation(reduceMotion ? .easeOut(duration: 0.2) : Motion.morph.delay(0.06)) { controlsShown = true }
+            }
+        }
+        .onAppear {
+            text = session.draft
+            controlsShown = !collapsed
+        }
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 6, matching: .images)
         .onChange(of: photoItems) { _, items in
             guard !items.isEmpty else { return }
@@ -128,7 +170,7 @@ struct ComposerView: View {
         ZStack(alignment: .topLeading) {
             if text.isEmpty {
                 Text(placeholder)
-                    .font(.body)
+                    .font(.system(.body, design: typedFace))
                     .foregroundStyle(Color.qInk2.opacity(0.85))
                     .lineLimit(1)
                     .allowsHitTesting(false)
@@ -139,7 +181,7 @@ struct ComposerView: View {
             ComposerTextView(text: $text, focused: $focused,
                              sendOnHardwareReturn: app.settings.ui.sendOnEnter,
                              hint: placeholder,
-                             rounded: app.settings.ui.typeface == .sfRounded,
+                             face: typedFace,
                              theme: app.settings.ui.colorTheme,
                              onSend: send,
                              onPasteImage: { img in
@@ -153,6 +195,10 @@ struct ComposerView: View {
         .onChange(of: text) { _, new in session.saveDraft(new) }
     }
 
+    /// What you type is set in Allo when that's the typeface; otherwise in SF Pro, as the rest of
+    /// the interface is.
+    private var typedFace: Face { app.settings.ui.typeface == .allo ? .allo : .sfPro }
+
     private var placeholder: String {
         if !session.chat.memoryEnabled { return "Incognito message" }
         return session.path.isEmpty ? "Ask anything" : "Reply…"
@@ -165,9 +211,11 @@ struct ComposerView: View {
             attachMenu
                 .matchedGeometryEffect(id: "attach", in: bar)
             modelMenu
+                .modifier(Arrival(shown: controlsShown, reduceMotion: reduceMotion))
             Spacer(minLength: 4)
             if app.settings.ui.showContext {
                 contextButton
+                    .modifier(Arrival(shown: controlsShown, reduceMotion: reduceMotion))
                     .transition(.opacity)
             }
             if showsAction {
@@ -534,5 +582,67 @@ struct ComposerView: View {
         text = ""
         attachments = []
         attachNote = nil
+    }
+}
+
+/// How the model and the context come into the opening box: up a few points out of a slight blur,
+/// so they read as settling into place rather than switching on. Reduce Motion keeps the fade.
+private struct Arrival: ViewModifier {
+    let shown: Bool
+    let reduceMotion: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown || reduceMotion ? 0 : 6)
+            .blur(radius: shown || reduceMotion ? 0 : 2)
+    }
+}
+
+/// The window's bottom safe-area inset: the home indicator's strip, or nothing on a phone with a
+/// Home button. Read from the window, which the keyboard never changes, and kept current through
+/// rotation by a probe view.
+enum HomeIndicator {
+    static var inset: CGFloat {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let window = scenes.flatMap(\.windows).first { $0.isKeyWindow } ?? scenes.first?.windows.first
+        return window?.safeAreaInsets.bottom ?? 0
+    }
+
+    struct Probe: UIViewRepresentable {
+        @Binding var inset: CGFloat
+
+        func makeUIView(context: Context) -> ProbeView {
+            let v = ProbeView()
+            v.isUserInteractionEnabled = false
+            v.report = { new in if inset != new { inset = new } }
+            return v
+        }
+
+        func updateUIView(_ v: ProbeView, context: Context) {
+            v.report = { new in if inset != new { inset = new } }
+        }
+    }
+
+    final class ProbeView: UIView {
+        var report: (CGFloat) -> Void = { _ in }
+        private var last: CGFloat = -1
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            send()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            send()
+        }
+
+        /// Outside the view update that laid this out, since it writes SwiftUI state.
+        private func send() {
+            guard let value = window?.safeAreaInsets.bottom, value != last else { return }
+            last = value
+            DispatchQueue.main.async { [weak self] in self?.report(value) }
+        }
     }
 }

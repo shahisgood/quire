@@ -13,8 +13,9 @@ struct ComposerTextView: UIViewRepresentable {
     var maxLines = 8
     var sendOnHardwareReturn = false
     var hint: String = ""
-    /// Set in SF Pro Rounded, to match the rest of the app when that's the typeface.
-    var rounded = false
+    /// The face typed text is set in: SF Pro, or Allo when that's the typeface, so what you write
+    /// matches the replies it's answered in.
+    var face: Face = .sfPro
     /// The colour theme, so the text and caret re-colour when it changes.
     var theme: AppTheme = .quire
     var onSend: () -> Void = {}
@@ -25,8 +26,8 @@ struct ComposerTextView: UIViewRepresentable {
     func makeUIView(context: Context) -> ComposerUITextView {
         let tv = ComposerUITextView()
         tv.delegate = context.coordinator
-        tv.font = Self.font(rounded: rounded)
-        context.coordinator.rounded = rounded
+        tv.font = Self.font(face)
+        context.coordinator.face = face
         tv.adjustsFontForContentSizeCategory = true
         tv.textColor = UIColor(Color.qInk)
         tv.tintColor = UIColor(Color.qAccent)
@@ -54,9 +55,9 @@ struct ComposerTextView: UIViewRepresentable {
             tv.textColor = UIColor(Color.qInk)
             tv.tintColor = UIColor(Color.qAccent)
         }
-        if context.coordinator.rounded != rounded {
-            context.coordinator.rounded = rounded
-            tv.font = Self.font(rounded: rounded)
+        if context.coordinator.face != face {
+            context.coordinator.face = face
+            tv.font = Self.font(face)
             tv.invalidateIntrinsicContentSize()
         }
         // Text set from outside (sending, a restored draft). Never while the keyboard is
@@ -85,16 +86,17 @@ struct ComposerTextView: UIViewRepresentable {
         return CGSize(width: width, height: min(max(fitted, ceil(line)), limit))
     }
 
-    /// Body text that follows Dynamic Type, rounded or not.
-    static func font(rounded: Bool) -> UIFont {
-        let body = UIFont.preferredFont(forTextStyle: .body)
-        guard rounded, let descriptor = body.fontDescriptor.withDesign(.rounded) else { return body }
-        return UIFontMetrics(forTextStyle: .body).scaledFont(for: UIFont(descriptor: descriptor, size: body.pointSize))
+    /// Body text that follows Dynamic Type, in the system face or a bundled one.
+    static func font(_ face: Face) -> UIFont {
+        guard let name = face.postScript, let custom = UIFont(name: name, size: Face.size(of: .body)) else {
+            return UIFont.preferredFont(forTextStyle: .body)
+        }
+        return UIFontMetrics(forTextStyle: .body).scaledFont(for: custom)
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: ComposerTextView
-        var rounded = false
+        var face: Face = .sfPro
         var theme: AppTheme = .quire
 
         init(_ parent: ComposerTextView) { self.parent = parent }

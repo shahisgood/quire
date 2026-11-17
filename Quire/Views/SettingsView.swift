@@ -1864,6 +1864,7 @@ private struct AboutView: View {
             line("Running on", "iOS \(UIDevice.current.systemVersion)")
             line("Made with", "SwiftUI, for iOS 26")
             line("Geist", "By Vercel, under the SIL Open Font License")
+            line("Allo", "By Josh Puckett, under the SIL Open Font License")
         }
     }
 
