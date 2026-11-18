@@ -472,6 +472,47 @@ struct KeyboardSwipe: UIGestureRecognizerRepresentable {
     }
 }
 
+/// A tap on the conversation puts the keyboard away too, as in Messages: the box folds back down
+/// and the chat is yours to read again. Like the swipe, it only watches, so the same tap still
+/// opens a link, presses a button or stops a scroll. A press held long enough to become a menu,
+/// or a finger that moves, isn't a tap.
+struct KeyboardTap: UIGestureRecognizerRepresentable {
+    func makeUIGestureRecognizer(context: Context) -> TapAwayRecognizer {
+        let tap = TapAwayRecognizer()
+        tap.cancelsTouchesInView = false
+        tap.delaysTouchesBegan = false
+        tap.delaysTouchesEnded = false
+        return tap
+    }
+
+    func handleUIGestureRecognizerAction(_ tap: TapAwayRecognizer, context: Context) {
+        guard tap.state == .ended else { return }
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+
+/// A quick tap that never stands in anything else's way.
+final class TapAwayRecognizer: UITapGestureRecognizer {
+    private var began: TimeInterval = 0
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesBegan(touches, with: event)
+        began = event.timestamp
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        // Held past a tap's length: that was a press (a message's menu), not a tap.
+        if event.timestamp - began > 0.35 {
+            state = .failed
+            return
+        }
+        super.touchesEnded(touches, with: event)
+    }
+
+    override func canPrevent(_ other: UIGestureRecognizer) -> Bool { false }
+    override func canBePrevented(by other: UIGestureRecognizer) -> Bool { false }
+}
+
 /// Recognises only a finger that sets off downward, and never stands in anything else's way.
 final class DownSwipeRecognizer: UIPanGestureRecognizer {
     var fired = false

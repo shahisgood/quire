@@ -1089,7 +1089,7 @@ private struct AppearanceSettings: View {
             SettingsGroup(label: "Behaviour",
                           footer: Text("Reasoning traces stay open while the model is still thinking either way. With a hardware keyboard, Shift-Return adds a line.")) {
                 toggleRow("Context window", isOn: $app.settings.ui.showContext,
-                          help: "A ring in the message box shows how much of the model's context this chat fills. Tap it for the exact count and what the chat has cost.")
+                          help: "Once a chat has begun, a ring in the top corner shows how much of the model's context it fills. Tap it to see what fills it, square by square: instructions, memory, your messages, replies, images and files.")
                 toggleRow("Site icons", isOn: $app.settings.ui.siteIcons,
                           help: "Each source a reply cites shows its site's icon beside its name. Icons come from DuckDuckGo's icon service, which is told the site's address and nothing else. Off, none are fetched.")
                 toggleRow("Show reasoning by default", isOn: $app.settings.ui.showReasoningByDefault)

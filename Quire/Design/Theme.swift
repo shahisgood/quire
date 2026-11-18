@@ -562,9 +562,10 @@ enum Motion {
     /// Something opening in place (an explanation, a group of settings): no bounce, so the rows
     /// around it glide rather than wobble.
     static let reveal = Animation.smooth(duration: 0.34)
-    /// A surface changing shape, like the message box opening out: a little faster than the
-    /// keyboard, so it leads it rather than trailing behind.
-    static let morph = Animation.spring(duration: 0.38, bounce: 0.12)
+    /// A surface changing shape, like the message box opening out: unhurried enough to read as
+    /// one piece of glass stretching, in step with the keyboard's own rise, with only a breath of
+    /// overshoot at the end.
+    static let morph = Animation.spring(duration: 0.46, bounce: 0.1)
     /// A selection sliding to its new place, with a touch of life at the end.
     static let select = Animation.spring(response: 0.34, dampingFraction: 0.86)
 }
@@ -602,6 +603,8 @@ nonisolated enum Radius {
     static let m: CGFloat = 14
     /// Cards on the page.
     static let l: CGFloat = 20
+    /// Quire's own windows: attach, the model, the context.
+    static let panel: CGFloat = 26
     /// The message box.
     static let composer: CGFloat = 28
 }

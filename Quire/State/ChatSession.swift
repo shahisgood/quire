@@ -43,6 +43,8 @@ final class ChatSession {
     @ObservationIgnored private var task: Task<Void, Never>? = nil
     @ObservationIgnored private var draftSaveTask: Task<Void, Never>? = nil
     @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    /// The reply was stopped from its card on the Lock Screen or in the Dynamic Island.
+    @ObservationIgnored private var stoppedFromCard = false
 
     init(app: AppModel, chat: Chat, persisted: Bool) {
         self.app = app
@@ -152,6 +154,60 @@ final class ChatSession {
 
     /// Context use including whatever is streaming right now, for the meter.
     var liveContextTokens: Int { contextTokens + (streamingId == nil ? 0 : streamCompletionTokens + streamReasoningTokens) }
+
+    /// What the next request would carry, by kind, estimated from the text. The ring in the bar and
+    /// the context window read the same figures, so they always agree. A reply being written counts
+    /// as it stands on screen, its thinking included while it thinks.
+    var contextUse: ContextUse {
+        var u = ContextUse()
+        u.instructions = Tokens.estimate(effectiveSystemPrompt) + Tokens.estimate(projectInstructions ?? "")
+        for m in thread {
+            for a in m.attachments ?? [] { u.attachments += Tokens.estimate(a) }
+            if m.id == streamingId {
+                u.replies += Tokens.estimate(streamContent) + streamReasoningTokens + 4
+            } else if m.role == .user {
+                u.yours += textTokens(m) + 4
+            } else {
+                u.replies += textTokens(m) + 4
+            }
+        }
+        u.memory = memoryTokens
+        u.draft = Tokens.estimate(draft) + Tokens.estimate(quote ?? "")
+        return u
+    }
+
+    /// Per-message text estimates, kept until a message's text changes.
+    @ObservationIgnored private var textCounts: [String: (length: Int, tokens: Int)] = [:]
+
+    private func textTokens(_ m: Message) -> Int {
+        let length = m.content.utf8.count
+        if let c = textCounts[m.id], c.length == length { return c.tokens }
+        let t = Tokens.estimate(m.content)
+        textCounts[m.id] = (length, t)
+        return t
+    }
+
+    /// The memory the next request would carry: chosen as a request chooses it, by relevance to
+    /// what you're writing (or last wrote), and kept until any of that changes.
+    @ObservationIgnored private var memoryCount: (key: String, tokens: Int)? = nil
+
+    private var memoryTokens: Int {
+        guard chat.memoryEnabled, app.settings.memory.enabled, !app.memory.isEmpty else { return 0 }
+        let lastUser = thread.last(where: { $0.role == .user })?.content ?? ""
+        let basis = draft.isEmpty ? lastUser : draft
+        let key = "\(app.memory.count)·\(app.memory.map(\.updatedAt).max() ?? 0)·\(app.settings.memory.maxInjectedChars)·\(basis.count)·\(basis.prefix(64))"
+        if let m = memoryCount, m.key == key { return m.tokens }
+        let plan = MemoryLogic.plan(app.memory, userText: basis, budget: app.settings.memory.maxInjectedChars)
+        let tokens = Tokens.estimate(MemoryLogic.block(plan.entries))
+        memoryCount = (key, tokens)
+        return tokens
+    }
+
+    /// The provider's own count of the last reply's prompt, when it gave one: the real figure the
+    /// estimate sits beside.
+    var lastPromptTokens: Int? {
+        thread.last(where: { $0.role == .assistant && $0.usage != nil && $0.id != streamingId })?.usage?.promptTokens
+    }
 
     // MARK: Persistence
 
@@ -589,13 +645,23 @@ final class ChatSession {
         retryAt = nil
         retryReason = nil
 
-        // A reply in flight gets the ~30 seconds iOS allows after backgrounding, instead of the PWA's
-        // immediate abort. If time runs out, the stream is cancelled and the partial reply kept.
-        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "quire.reply") { [weak self] in
+        // Leaving Quire mid-reply: a continued-processing task, when the system gives one, lets the
+        // reply carry on in the background, with a card you can stop it from (see
+        // `BackgroundReplies`). Without one, a reply still gets the ~30 seconds iOS allows after
+        // backgrounding; if those run out, the stream is cancelled and the partial reply kept.
+        stoppedFromCard = false
+        let run = BackgroundReplies.shared.begin(chat: chat.title, model: app.modelName(modelId)) { [weak self] in
+            self?.stoppedFromCard = true
             self?.task?.cancel()
+        }
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "quire.reply") { [weak self] in
+            if !BackgroundReplies.shared.isRunning(run) { self?.task?.cancel() }
             self?.endBackgroundTask()
         }
-        defer { endBackgroundTask() }
+        defer {
+            endBackgroundTask()
+            BackgroundReplies.shared.end(run, success: false)
+        }
 
         var lastPublish = Date.distantPast
         var lastPersist = Date()
@@ -610,6 +676,8 @@ final class ChatSession {
                 streamCompletionTokens = ct
                 streamReasoningTokens = rt
                 streamEstCost = Double(promptEst) * pPrompt + Double(ct) * pComp + Double(rt) * pReason
+                BackgroundReplies.shared.progress(run, written: content.utf8.count + reasoning.utf8.count,
+                                                  words: ct * 3 / 4, thinking: ct == 0)
             }
             if now.timeIntervalSince(lastPersist) > 1.5 {
                 lastPersist = now
@@ -675,6 +743,7 @@ final class ChatSession {
             }
         }
         publish(force: true)
+        BackgroundReplies.shared.end(run, success: finalError == nil && !aborted)
 
         // Final accounting: usage from the stream when present, otherwise an estimate. The
         // authoritative /generation figure replaces it a few seconds later.
@@ -697,7 +766,8 @@ final class ChatSession {
         } else if aborted {
             status = content.isEmpty && reasoning.isEmpty ? .error : .interrupted
             let bg = UIApplication.shared.applicationState == .background
-            err = MessageError(code: "interrupted", message: bg ? "Interrupted when the app was in the background too long" : "Stopped")
+            err = MessageError(code: "interrupted", message: stoppedFromCard ? "Stopped from the Lock Screen"
+                                                    : bg ? "Interrupted when the app was in the background too long" : "Stopped")
         } else {
             status = .complete
             if finish == "length" { err = MessageError(code: "length", message: "Reply hit the max output token limit") }
@@ -971,5 +1041,38 @@ struct ErrorInfo {
             return
         }
         message = error.localizedDescription
+    }
+}
+
+/// A chat's context by kind, in estimated tokens. See `ChatSession.contextUse`.
+nonisolated struct ContextUse: Equatable, Sendable {
+    nonisolated enum Kind: CaseIterable, Sendable {
+        case instructions, memory, yours, replies, attachments, draft
+
+        var name: String {
+            switch self {
+            case .instructions: "Instructions"
+            case .memory: "Memory"
+            case .yours: "Your messages"
+            case .replies: "Replies"
+            case .attachments: "Images and files"
+            case .draft: "Not sent yet"
+            }
+        }
+    }
+
+    var instructions = 0, memory = 0, yours = 0, replies = 0, attachments = 0, draft = 0
+
+    var total: Int { instructions + memory + yours + replies + attachments + draft }
+
+    subscript(kind: Kind) -> Int {
+        switch kind {
+        case .instructions: instructions
+        case .memory: memory
+        case .yours: yours
+        case .replies: replies
+        case .attachments: attachments
+        case .draft: draft
+        }
     }
 }

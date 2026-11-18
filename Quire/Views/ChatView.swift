@@ -45,6 +45,8 @@ struct ChatView: View {
     @State private var exportingPDF = false
     /// A passage chosen to quote, handed to the message box once its sheet has gone.
     @State private var pendingQuote: String? = nil
+    /// Quire's own windows over the chat: attach, the model, the context.
+    @State private var panels = ChatPanels()
 
     /// Roughly how much text the thread lays out at once. Everything in the window is laid out in
     /// full (not lazily), so heights are exact: the scroll bar never jumps, a long chat opens at its
@@ -75,10 +77,17 @@ struct ChatView: View {
             }
         }
         .animation(reduceMotion ? nil : Motion.standard, value: session.path.isEmpty)
-        // A swipe down over the chat (not the message box) puts the keyboard away.
+        // A swipe down or a tap over the chat (not the message box) puts the keyboard away.
         .gesture(KeyboardSwipe())
+        .simultaneousGesture(KeyboardTap())
         // Sources and links open in Safari inside Quire.
         .opensLinksInApp()
+        // Outside the keyboard's tap and swipe, so working a window never puts the keyboard away.
+        .overlay {
+            PanelLayer(panel: panels.open, close: panels.close) { panel in
+                panelContent(panel)
+            }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
@@ -279,9 +288,34 @@ struct ChatView: View {
                 IncognitoToggle(session: session)
             }
         } else {
+            // How full the context is, in a circle of its own beside the new-chat button.
+            if app.settings.ui.showContext {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ContextRingButton(session: session) { panels.toggle(.context) }
+                }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 NewChatButton(projectId: session.chat.folderId)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func panelContent(_ panel: ChatPanel) -> some View {
+        switch panel {
+        case .context:
+            ContextPanel(session: session,
+                         openSettings: {
+                             panels.close()
+                             showSettings = true
+                         },
+                         startFresh: {
+                             panels.close()
+                             app.startNewChat(persona: session.persona, projectId: session.chat.folderId)
+                         })
+        case .attach, .model:
+            EmptyView()
         }
     }
 

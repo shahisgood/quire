@@ -6,8 +6,8 @@ import UniformTypeIdentifiers
 /// The message box, after Claude's. At rest it folds down to one line, attach, the prompt, and
 /// (while a reply is coming) stop, standing in from the sides and sitting down by the home
 /// indicator. Tap it and it opens out to the full width as it rises with the keyboard: the text on
-/// top; underneath, attach, the model with its thinking level, how full the context is, and a send
-/// button that only arrives once there's something to send. The same text view serves both, so
+/// top; underneath, attach, the model with its thinking level, and a send button that only arrives
+/// once there's something to send. The same text view serves both, so
 /// the tap that opens it is the tap that brings up the keyboard.
 struct ComposerView: View {
     let session: ChatSession
@@ -24,11 +24,10 @@ struct ComposerView: View {
     @State private var showPhotos = false
     @State private var showFiles = false
     @State private var showCamera = false
-    @State private var showContext = false
     @State private var attachNote: String? = nil
     @State private var loadingAttachments = 0
     @State private var focused = false
-    /// The model and the context, arriving a beat after the box starts to open (see `body`).
+    /// The model, arriving a beat after the box starts to open (see `body`).
     @State private var controlsShown = false
     /// The home indicator's inset, which the box sits down into while the keyboard is away.
     @State private var homeInset = HomeIndicator.inset
@@ -102,8 +101,8 @@ struct ComposerView: View {
                     }
                 } else {
                     // The row itself arrives as it is, so the attach and send buttons it carries
-                    // travel down into it without dipping; the model and the context inside it
-                    // make their own entrance. Folding, it all goes at once, and quickly.
+                    // travel down into it without dipping; the model inside it makes its own
+                    // entrance. Folding, it all goes at once, and quickly.
                     controls
                         .transition(.asymmetric(insertion: .identity,
                                                 removal: .opacity.animation(reduceMotion ? .easeOut(duration: 0.15) : Motion.quick)))
@@ -140,12 +139,12 @@ struct ComposerView: View {
             onFocusChange(isFocused)
         }
         .onChange(of: collapsed) { _, folded in
-            // The box leads; the model and the context follow it in a beat behind, once there's
-            // room for them. Folding, they're already on their way out with their row.
+            // The box leads; the model follows it in a beat behind, once there's room for it.
+            // Folding, it's already on its way out with its row.
             if folded {
                 controlsShown = false
             } else {
-                withAnimation(reduceMotion ? .easeOut(duration: 0.2) : Motion.morph.delay(0.06)) { controlsShown = true }
+                withAnimation(reduceMotion ? .easeOut(duration: 0.2) : Motion.morph.delay(0.09)) { controlsShown = true }
             }
         }
         .onAppear {
@@ -224,11 +223,6 @@ struct ComposerView: View {
             modelMenu
                 .modifier(Arrival(shown: controlsShown, reduceMotion: reduceMotion))
             Spacer(minLength: 4)
-            if app.settings.ui.showContext {
-                contextButton
-                    .modifier(Arrival(shown: controlsShown, reduceMotion: reduceMotion))
-                    .transition(.opacity)
-            }
             if showsAction {
                 actionButton
                     .matchedGeometryEffect(id: "action", in: bar)
@@ -387,82 +381,6 @@ struct ComposerView: View {
     @ViewBuilder
     private func checkLabel(_ title: String, on: Bool) -> some View {
         if on { Label(title, systemImage: "checkmark") } else { Text(title) }
-    }
-
-    // MARK: Context
-
-    private var used: Int { session.liveContextTokens + Tokens.estimate(text) }
-    private var contextLimit: Int { model?.contextLength ?? 0 }
-    private var fraction: Double { contextLimit > 0 ? Double(used) / Double(contextLimit) : 0 }
-    private var contextText: String {
-        contextLimit > 0 ? "\(Fmt.tokens(used))/\(Fmt.context(contextLimit))" : Fmt.tokens(used)
-    }
-
-    private var contextButton: some View {
-        Button { showContext = true } label: {
-            HStack(spacing: Space.s) {
-                ContextRing(fraction: fraction, warn: fraction > 0.85)
-                    .frame(width: 15, height: 15)
-                Text(contextText)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(Color.qInk2)
-                    .contentTransition(.numericText())
-            }
-            .padding(.horizontal, Space.xs)
-            .frame(height: Size.control)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .fixedSize()
-        .popover(isPresented: $showContext, arrowEdge: .bottom) {
-            contextDetails
-                .presentationCompactAdaptation(.popover)
-        }
-        .accessibilityLabel(contextLimit > 0 ? "Context \(Fmt.tokens(used)) of \(Fmt.tokens(contextLimit)) tokens" : "Context \(Fmt.tokens(used)) tokens")
-        .accessibilityHint("Shows context details")
-    }
-
-    private var contextDetails: some View {
-        VStack(alignment: .leading, spacing: Space.m) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Context")
-                    .displayFont { .system(.headline, design: $0) }
-                    .foregroundStyle(Color.qInk)
-                Spacer()
-                if contextLimit > 0 {
-                    Text(fraction < 0.01 ? "<1%" : "\(Int((fraction * 100).rounded()))%")
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(Color.qInk2)
-                }
-            }
-            if contextLimit > 0 {
-                MeterBar(fraction: fraction, warn: fraction > 0.85, height: 6)
-            }
-            Text(contextLimit > 0 ? "\(used.formatted()) of \(contextLimit.formatted()) tokens" : "\(used.formatted()) tokens so far")
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(Color.qInk2)
-            if app.settings.ui.showCosts && session.chat.totalCostUsd > 0 {
-                Text("Spent in this chat: \(Fmt.usd(session.chat.totalCostUsd))")
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(Color.qInk2)
-            }
-            Divider()
-            Button {
-                showContext = false
-                // Let the popover finish leaving before the sheet comes up.
-                Task {
-                    try? await Task.sleep(for: .milliseconds(350))
-                    openSettings()
-                }
-            } label: {
-                Label("Chat settings", systemImage: "slider.horizontal.3")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color.qAccent)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(Space.l)
-        .frame(width: 270)
     }
 
     // MARK: Notes
@@ -664,7 +582,7 @@ struct ComposerView: View {
     }
 }
 
-/// How the model and the context come into the opening box: up a few points out of a slight blur,
+/// How the model comes into the opening box: up a few points out of a slight blur,
 /// so they read as settling into place rather than switching on. Reduce Motion keeps the fade.
 private struct Arrival: ViewModifier {
     let shown: Bool

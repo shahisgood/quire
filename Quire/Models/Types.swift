@@ -442,7 +442,7 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
         theme = .dark; fontScale = 1; density = "comfortable"; readingFace = .serif; typeface = .geist; colorTheme = .quire
         showReasoningByDefault = false; showCosts = true; sendOnEnter = true; hapticsEnabled = true
         textStrength = Self.defaultTextStrength
-        showContext = true
+        showContext = false
         geistStyle = .serif
         siteIcons = true
     }
@@ -460,7 +460,7 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
         sendOnEnter = c.lenient(.sendOnEnter, true)
         hapticsEnabled = c.lenient(.hapticsEnabled, true)
         textStrength = min(1, max(0.6, c.lenient(.textStrength, Self.defaultTextStrength)))
-        showContext = c.lenient(.showContext, true)
+        showContext = c.lenient(.showContext, false)
         geistStyle = c.lenient(.geistStyle, .serif)
         siteIcons = c.lenient(.siteIcons, true)
     }
