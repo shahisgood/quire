@@ -31,6 +31,7 @@ nonisolated enum ProviderStyle {
 struct ProviderBadge: View {
     let provider: String
     var size: CGFloat = 32
+    @Environment(\.colorScheme) private var scheme
 
     private static var hues: [Color] { [.qTileBlue, .qTileTeal, .qTileViolet, .qTileAmber, .qTileRose, .qTileSlate] }
 
@@ -38,9 +39,12 @@ struct ProviderBadge: View {
         let name = ProviderStyle.displayName(provider)
         let seed = provider.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF }
         let hue = ThemeStore.shared.mono ? Color.qInk : Self.hues[seed % Self.hues.count]
+        // The tile colours were made as fills under white; as a letter on their own tint they're
+        // lifted in the dark and deepened in the light, to stay well clear of 3:1.
+        let letter = ThemeStore.shared.mono ? hue : hue.mix(with: scheme == .dark ? .white : .black, by: scheme == .dark ? 0.35 : 0.2)
         Text(String(name.prefix(1)).uppercased())
             .displayFont { .system(size: size * 0.44, weight: .semibold, design: $0) }
-            .foregroundStyle(hue)
+            .foregroundStyle(letter)
             .frame(width: size, height: size)
             .background(hue.opacity(ThemeStore.shared.mono ? 0.08 : 0.14), in: .rect(cornerRadius: size * 0.3, style: .continuous))
             .accessibilityHidden(true)

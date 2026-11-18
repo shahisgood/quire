@@ -34,12 +34,18 @@ enum ReplyNotices {
 final class ReplyNoticeDelegate: NSObject, UNUserNotificationCenterDelegate {
     static let shared = ReplyNoticeDelegate()
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        guard let id = response.notification.request.content.userInfo["chat"] as? String else { return }
-        await MainActor.run { QuickActions.shared.pending = .open(chatId: id) }
+    /// Answered on the main queue, as UIKit expects of the completion handler.
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                            withCompletionHandler completionHandler: @escaping () -> Void) {
+        let id = response.notification.request.content.userInfo["chat"] as? String
+        DispatchQueue.main.async {
+            if let id { QuickActions.shared.pending = .open(chatId: id) }
+            completionHandler()
+        }
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        []
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                            withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        DispatchQueue.main.async { completionHandler([]) }
     }
 }

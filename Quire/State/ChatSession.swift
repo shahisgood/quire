@@ -43,7 +43,7 @@ final class ChatSession {
     @ObservationIgnored private var task: Task<Void, Never>? = nil
     @ObservationIgnored private var draftSaveTask: Task<Void, Never>? = nil
     @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
-    /// The reply was stopped from its card on the Lock Screen or in the Dynamic Island.
+    /// The background run ended before the reply did: stopped from its card, or by the system.
     @ObservationIgnored private var stoppedFromCard = false
 
     init(app: AppModel, chat: Chat, persisted: Bool) {
@@ -650,7 +650,7 @@ final class ChatSession {
         // `BackgroundReplies`). Without one, a reply still gets the ~30 seconds iOS allows after
         // backgrounding; if those run out, the stream is cancelled and the partial reply kept.
         stoppedFromCard = false
-        let run = BackgroundReplies.shared.begin(chat: chat.title, model: app.modelName(modelId)) { [weak self] in
+        let run = BackgroundReplies.shared.begin(chat: chat.memoryEnabled ? chat.title : nil, model: app.modelName(modelId)) { [weak self] in
             self?.stoppedFromCard = true
             self?.task?.cancel()
         }
@@ -766,7 +766,7 @@ final class ChatSession {
         } else if aborted {
             status = content.isEmpty && reasoning.isEmpty ? .error : .interrupted
             let bg = UIApplication.shared.applicationState == .background
-            err = MessageError(code: "interrupted", message: stoppedFromCard ? "Stopped from the Lock Screen"
+            err = MessageError(code: "interrupted", message: stoppedFromCard ? "Stopped while Quire was in the background"
                                                     : bg ? "Interrupted when the app was in the background too long" : "Stopped")
         } else {
             status = .complete

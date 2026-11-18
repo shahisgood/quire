@@ -133,7 +133,6 @@ struct PanelCard<Content: View>: View {
             shape.strokeBorder(Color.qInk.opacity(0.08), lineWidth: 1)
                 .allowsHitTesting(false)
         }
-        .shadow(color: .black.opacity(0.14), radius: 28, y: panel.fromTop ? 14 : 10)
         .offset(y: offset)
         .gesture(swipe)
         .accessibilityElement(children: .contain)

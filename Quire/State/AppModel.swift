@@ -196,7 +196,11 @@ final class AppModel {
         if !onTop { patchChat(chatId) { $0.unread = true } }
         // Away from Quire: a notification, if you asked for one, whichever chat it was.
         guard UIApplication.shared.applicationState == .active else {
-            if settings.ui.notifyReplies { ReplyNotices.post(chatId: chatId, title: title, body: preview) }
+            if settings.ui.notifyReplies {
+                // An incognito chat says only that a reply is ready, never what it's about.
+                let open = chat(chatId)?.memoryEnabled != false
+                ReplyNotices.post(chatId: chatId, title: open ? title : "", body: open ? preview : "")
+            }
             return
         }
         if onTop && !settingsOpen { return }

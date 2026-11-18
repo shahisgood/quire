@@ -1576,11 +1576,6 @@ private struct DataSettings: View {
                            help: "Puts your OpenRouter key in the file, so a restore on another iPhone connects at once. Anyone with the file can then use the key: keep it somewhere private.") {
                     Toggle("Include the API key", isOn: $includeKey).labelsHidden()
                 }
-                Button(action: export) {
-                    ActionRow(title: "Export everything", detail: "Chats, memory, personas, projects and settings", symbol: "square.and.arrow.up", busy: busy)
-                }
-                .buttonStyle(.row)
-                .disabled(busy)
                 Button { importing = true } label: {
                     ActionRow(title: "Import a backup", detail: "Merge it with what's here, or replace it", symbol: "square.and.arrow.down")
                 }
@@ -1646,7 +1641,7 @@ private struct DataSettings: View {
     }
 
     private var backupFooter: String {
-        "A JSON file in the Quire web app's format, so backups move between the two in either direction."
+        "Export everything (above) makes one JSON file of chats, memory, personas, projects and settings, in the Quire web app's format, so backups move between the two in either direction."
     }
 
     // MARK: Headline

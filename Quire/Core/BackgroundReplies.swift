@@ -36,13 +36,19 @@ final class BackgroundReplies {
 
     private var runs: [String: Run] = [:]
 
-    /// Matches `BGTaskSchedulerPermittedIdentifiers` in the Info.plist: the bundle's identifier,
-    /// then `.reply.` and a run's own suffix.
-    private static var prefix: String? { Bundle.main.bundleIdentifier.map { "\($0).reply." } }
+    /// Read from `BGTaskSchedulerPermittedIdentifiers` in the Info.plist itself (its `….reply.*`
+    /// entry, without the star), so a run's identifier always matches what shipped, even when an
+    /// installer has changed the bundle identifier since.
+    private static let prefix: String? = {
+        let permitted = Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String] ?? []
+        guard let pattern = permitted.first(where: { $0.hasSuffix(".reply.*") }) else { return nil }
+        return String(pattern.dropLast())
+    }()
 
     /// Asks for a run for a reply that's starting. Returns its id to report progress against, or nil
     /// when there's none to be had (Quire isn't in front, the system said no).
-    func begin(chat: String, model: String, onStop: @escaping () -> Void) -> String? {
+    /// `chat` is the title the card shows; nil keeps it private (an incognito chat).
+    func begin(chat: String?, model: String, onStop: @escaping () -> Void) -> String? {
         guard UIApplication.shared.applicationState == .active, let prefix = Self.prefix else { return nil }
         let id = UUID().uuidString.lowercased()
         let identifier = prefix + id
@@ -50,7 +56,7 @@ final class BackgroundReplies {
             BackgroundReplies.shared.arrived(task, id: id)
         }
         guard registered else { return nil }
-        let title = chat.isEmpty || chat == "New chat" ? "Writing a reply" : chat
+        let title = chat.flatMap { $0.isEmpty || $0 == "New chat" ? nil : $0 } ?? "Writing a reply"
         let request = BGContinuedProcessingTaskRequest(identifier: identifier, title: title, subtitle: "\(model) · starting")
         request.strategy = .fail
         do {
