@@ -44,6 +44,7 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         UIFileSharingEnabled: false
         NSCameraUsageDescription: Take a photo to attach to a message.
+        NSPhotoLibraryUsageDescription: Show your latest photos in the attach window, so one is a tap from a message.
         # A reply being written carries on after you leave Quire (BackgroundReplies.swift).
         BGTaskSchedulerPermittedIdentifiers:
           - $(PRODUCT_BUNDLE_IDENTIFIER).reply.*

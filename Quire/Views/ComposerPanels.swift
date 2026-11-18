@@ -1,3 +1,4 @@
+import Photos
 import SwiftUI
 
 // The message box's two windows, in place of system menus: attach (camera, photos, files, and the
@@ -39,6 +40,7 @@ struct AttachPanel: View {
                     .foregroundStyle(Color.qInk2)
                     .padding(.horizontal, Space.xs)
             }
+            RecentPhotos { id in panels.ask(.asset(id)) }
             HStack(spacing: Space.s) {
                 if CameraPicker.isAvailable {
                     PanelTile(title: "Camera", symbol: "camera") { panels.ask(.camera) }
@@ -256,6 +258,115 @@ struct ModelPanel: View {
         case .medium: "Medium"
         case .high: "High"
         case .xhigh: "Max"
+        }
+    }
+}
+
+// MARK: - Recent photos
+
+/// Your latest photos along the top of the attach window, each a tap from the message. Only once
+/// you've let Quire see them: until then, a line offering to, and iOS asks only when that's
+/// tapped, never because the window opened. Photos you've said no to, or a library Quire can't
+/// see, leave nothing behind.
+struct RecentPhotos: View {
+    let pick: (String) -> Void
+    @State private var status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    @State private var assets: [PHAsset] = []
+
+    var body: some View {
+        Group {
+            switch status {
+            case .authorized, .limited:
+                if !assets.isEmpty { strip }
+            case .notDetermined:
+                PanelRow("Show recent photos here", symbol: "photo.stack", detail: "Pick one in a tap, without opening Photos") {
+                    Task {
+                        status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+                        load()
+                    }
+                }
+            default:
+                EmptyView()
+            }
+        }
+        .onAppear(perform: load)
+    }
+
+    private var strip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Space.s) {
+                ForEach(assets, id: \.localIdentifier) { a in
+                    Button { pick(a.localIdentifier) } label: {
+                        AssetThumb(asset: a)
+                    }
+                    .buttonStyle(PressableStyle(scale: 0.95))
+                    .accessibilityLabel(a.creationDate.map { "Photo from \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "Photo")
+                    .accessibilityHint("Attaches it")
+                }
+            }
+        }
+        .scrollClipDisabled()
+    }
+
+    private func load() {
+        guard status == .authorized || status == .limited else { return }
+        let options = PHFetchOptions()
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        options.fetchLimit = 12
+        let result = PHAsset.fetchAssets(with: .image, options: options)
+        assets = result.count > 0 ? result.objects(at: IndexSet(integersIn: 0..<result.count)) : []
+    }
+
+    /// The photo itself, from the library (or iCloud, if it lives there), ready to attach. Off the
+    /// main actor, since Photos calls back on a queue of its own.
+    nonisolated static func data(for id: String) async throws -> Attachment {
+        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else {
+            throw AttachmentMaker.Failure.unreadable("That photo")
+        }
+        let data: Data? = await withCheckedContinuation { c in
+            let options = PHImageRequestOptions()
+            options.isNetworkAccessAllowed = true
+            options.deliveryMode = .highQualityFormat
+            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, _, _, _ in
+                c.resume(returning: data)
+            }
+        }
+        guard let data else { throw AttachmentMaker.Failure.unreadable("That photo") }
+        return try await AttachmentMaker.image(data, name: "photo.jpg")
+    }
+}
+
+/// A square of one photo, filled in once its thumbnail has been made.
+private struct AssetThumb: View {
+    let asset: PHAsset
+    @State private var image: UIImage? = nil
+
+    var body: some View {
+        Color.qInk.opacity(0.06)
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .transition(.opacity)
+                }
+            }
+            .frame(width: 72, height: 72)
+            .clipShape(.rect(cornerRadius: Radius.s, style: .continuous))
+            .animation(.easeOut(duration: 0.2), value: image != nil)
+            .task(id: asset.localIdentifier) { image = await Self.thumbnail(asset) }
+    }
+
+    nonisolated private static func thumbnail(_ asset: PHAsset) async -> UIImage? {
+        await withCheckedContinuation { c in
+            let options = PHImageRequestOptions()
+            options.deliveryMode = .highQualityFormat
+            options.resizeMode = .fast
+            options.isNetworkAccessAllowed = true
+            PHImageManager.default().requestImage(for: asset, targetSize: CGSize(width: 216, height: 216),
+                                                  contentMode: .aspectFill, options: options) { image, _ in
+                c.resume(returning: image)
+            }
         }
     }
 }

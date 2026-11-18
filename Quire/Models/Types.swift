@@ -429,12 +429,14 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
     var hapticsEnabled: Bool
     /// How strongly a reply's running text is inked, from 0.6 (soft) to 1 (as strong as bold).
     var textStrength: Double
-    /// iOS only: the context ring in the message box.
+    /// iOS only: the context ring in the chat's bar.
     var showContext: Bool
     /// iOS only: the cut of Geist, when the typeface is Geist.
     var geistStyle: GeistStyle
     /// iOS only: each source's icon beside its name, in links and the sources list.
     var siteIcons: Bool
+    /// iOS only: a notification when a reply finishes while Quire is in the background.
+    var notifyReplies: Bool
 
     static let defaultTextStrength = 0.86
 
@@ -445,6 +447,7 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
         showContext = false
         geistStyle = .serif
         siteIcons = true
+        notifyReplies = false
     }
 
     init(from decoder: Decoder) throws {
@@ -463,6 +466,7 @@ nonisolated struct UISettings: Codable, Hashable, Sendable {
         showContext = c.lenient(.showContext, false)
         geistStyle = c.lenient(.geistStyle, .serif)
         siteIcons = c.lenient(.siteIcons, true)
+        notifyReplies = c.lenient(.notifyReplies, false)
     }
 }
 

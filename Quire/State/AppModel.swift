@@ -188,14 +188,18 @@ final class AppModel {
 
     /// A reply finished in a chat that isn't the one on screen (replies keep streaming while you
     /// browse): say so, with a way straight back to it.
-    func replyFinished(chatId: String, title: String) {
+    func replyFinished(chatId: String, title: String, preview: String = "") {
         // Unless you're looking at the chat (or will be, the moment settings closes), its row in the
         // list shows a dot until you open it.
         let onTop: Bool
         if case .chat(let open)? = path.last { onTop = open == chatId } else { onTop = false }
         if !onTop { patchChat(chatId) { $0.unread = true } }
+        // Away from Quire: a notification, if you asked for one, whichever chat it was.
+        guard UIApplication.shared.applicationState == .active else {
+            if settings.ui.notifyReplies { ReplyNotices.post(chatId: chatId, title: title, body: preview) }
+            return
+        }
         if onTop && !settingsOpen { return }
-        guard UIApplication.shared.applicationState == .active else { return }
         let name = title.count > 32 ? String(title.prefix(31)) + "…" : title
         Haptics.success()
         toasts.show("Reply ready in “\(name)”", symbol: "text.bubble",

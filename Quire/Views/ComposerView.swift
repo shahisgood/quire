@@ -168,6 +168,8 @@ struct ComposerView: View {
             case .camera: showCamera = true
             case .files: showFiles = true
             case .paste: pasteImage()
+            case .asset(let id):
+                Task { await add { try await RecentPhotos.data(for: id) } }
             }
         }
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 6, matching: .images)

@@ -1,6 +1,7 @@
 import Observation
 import SwiftUI
 import UIKit
+import UserNotifications
 
 /// Home Screen quick actions (press and hold the icon). New chat and Incognito chat are fixed in
 /// Info.plist; up to two recent chats are offered as well, refreshed each time Quire goes to the
@@ -52,6 +53,13 @@ final class QuickActions {
 /// Picks up a quick action used to launch Quire, and installs the scene delegate that receives the
 /// ones used while it's already running.
 final class QuireAppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        // So a tapped "reply ready" notification opens its chat, even from a cold launch.
+        UNUserNotificationCenter.current().delegate = ReplyNoticeDelegate.shared
+        return true
+    }
+
     func application(_ application: UIApplication,
                      configurationForConnecting connectingSceneSession: UISceneSession,
                      options: UIScene.ConnectionOptions) -> UISceneConfiguration {

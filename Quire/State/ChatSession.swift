@@ -799,7 +799,7 @@ final class ChatSession {
         saveChat()
         saveMessages()
         app.applyCostDelta(chatId: chat.id, delta: cost - prevCost, countMessage: true)
-        if status == .complete && !deleted { app.replyFinished(chatId: chat.id, title: chat.title) }
+        if status == .complete && !deleted { app.replyFinished(chatId: chat.id, title: chat.title, preview: chat.lastPreview ?? "") }
         app.settings.messagesSinceExport = (app.settings.messagesSinceExport ?? 0) + 2
 
         if status == .complete {

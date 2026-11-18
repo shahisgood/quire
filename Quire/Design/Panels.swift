@@ -30,6 +30,8 @@ nonisolated enum ChatPanel: Equatable, Sendable {
 /// What the attach window asks the message box to do, once it has closed.
 nonisolated enum AttachRequest: Equatable, Sendable {
     case photos, camera, files, paste
+    /// One of the recent photos, by its library identifier.
+    case asset(String)
 }
 
 /// Shared by the chat screen, which draws the windows, and the message box, which opens them and

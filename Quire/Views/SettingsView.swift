@@ -1186,6 +1186,23 @@ private struct AppearanceSettings: View {
                           help: "Once a chat has begun, a ring in the top corner shows how much of the model's context it fills. Tap it to see what fills it, square by square: instructions, memory, your messages, replies, images and files.")
                 toggleRow("Site icons", isOn: $app.settings.ui.siteIcons,
                           help: "Each source a reply cites shows its site's icon beside its name. Icons come from DuckDuckGo's icon service, which is told the site's address and nothing else. Off, none are fetched.")
+                SettingRow("Tell me when a reply is done",
+                           help: "When a reply finishes while you're away from Quire, a notification says so, with its first lines; tap it to open the chat. Never while you're in Quire. iOS asks first.") {
+                    Toggle("Tell me when a reply is done", isOn: Binding(get: { app.settings.ui.notifyReplies }, set: { on in
+                        guard on else {
+                            app.settings.ui.notifyReplies = false
+                            return
+                        }
+                        Task {
+                            if await ReplyNotices.authorize() {
+                                app.settings.ui.notifyReplies = true
+                            } else {
+                                app.toasts.show("Notifications are off for Quire in iOS Settings", symbol: "bell.slash")
+                            }
+                        }
+                    }))
+                    .labelsHidden()
+                }
                 toggleRow("Show reasoning by default", isOn: $app.settings.ui.showReasoningByDefault)
                 toggleRow("Show costs", isOn: $app.settings.ui.showCosts)
                 toggleRow("Haptics", isOn: $app.settings.ui.hapticsEnabled)
