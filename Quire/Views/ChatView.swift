@@ -79,7 +79,7 @@ struct ChatView: View {
         .animation(reduceMotion ? nil : Motion.standard, value: session.path.isEmpty)
         // A swipe down or a tap over the chat (not the message box) puts the keyboard away.
         .gesture(KeyboardSwipe())
-        .simultaneousGesture(KeyboardTap())
+        .gesture(KeyboardTap())
         // Sources and links open in Safari inside Quire.
         .opensLinksInApp()
         // Outside the keyboard's tap and swipe, so working a window never puts the keyboard away.
@@ -212,7 +212,8 @@ struct ChatView: View {
                                  withAnimation(Motion.quick) { position.scrollTo(edge: .bottom) }
                              }
                          }
-                     })
+                     },
+                     panels: panels)
     }
 
     /// Every image in the conversation, yours and the model's, in order, for the gallery to swipe
@@ -314,8 +315,19 @@ struct ChatView: View {
                              panels.close()
                              app.startNewChat(persona: session.persona, projectId: session.chat.folderId)
                          })
-        case .attach, .model:
-            EmptyView()
+        case .attach:
+            AttachPanel(session: session, panels: panels)
+        case .model:
+            ModelPanel(session: session,
+                       openModels: {
+                           panels.close()
+                           showModels = true
+                       },
+                       openSettings: {
+                           panels.close()
+                           showSettings = true
+                       },
+                       close: panels.close)
         }
     }
 

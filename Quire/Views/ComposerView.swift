@@ -14,6 +14,9 @@ struct ComposerView: View {
     let openModels: () -> Void
     let openSettings: () -> Void
     let onFocus: () -> Void
+    /// Quire's own windows, which the attach and model buttons open, shared with the chat screen
+    /// that draws them.
+    let panels: ChatPanels
     var onFocusChange: (Bool) -> Void = { _ in }
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -62,6 +65,7 @@ struct ComposerView: View {
     /// Folded to one line: nothing typed, attached or quoted, nothing to say, and the keyboard away.
     private var collapsed: Bool {
         !focused && text.isEmpty && attachments.isEmpty && loadingAttachments == 0 && noteText == nil && session.quote == nil
+            && panels.open != .model
     }
 
     var body: some View {
@@ -155,6 +159,17 @@ struct ComposerView: View {
         .onChange(of: session.quote) { _, quote in
             if quote != nil { focused = true }
         }
+        // What the attach window asked for, once it has closed.
+        .onChange(of: panels.request) { _, request in
+            guard let request else { return }
+            panels.request = nil
+            switch request {
+            case .photos: showPhotos = true
+            case .camera: showCamera = true
+            case .files: showFiles = true
+            case .paste: pasteImage()
+            }
+        }
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 6, matching: .images)
         .onChange(of: photoItems) { _, items in
             guard !items.isEmpty else { return }
@@ -233,33 +248,27 @@ struct ComposerView: View {
 
     // MARK: Attach
 
-    /// Always here. A model that doesn't list image input still gets the choice, with a note saying
-    /// so (and a way to switch) rather than a button that silently disappears.
+    /// Always here, and opens Quire's attach window. A model that doesn't list image input still
+    /// gets the choice, with a note there saying so, rather than a button that silently disappears.
+    /// The plus turns to a cross while the window is open, so the same button closes it.
     private var attachMenu: some View {
-        Menu {
-            Section {
-                Button { showPhotos = true } label: { Label("Photos", systemImage: "photo.on.rectangle") }
-                if CameraPicker.isAvailable {
-                    Button { showCamera = true } label: { Label("Camera", systemImage: "camera") }
-                }
-                if UIPasteboard.general.hasImages {
-                    Button(action: pasteImage) { Label("Paste image", systemImage: "doc.on.clipboard") }
-                }
-            } header: {
-                if let m = model, !m.acceptsImages { Text("\(m.shortName) doesn't list image input") }
-            }
-            Section {
-                Button { showFiles = true } label: { Label("Files", systemImage: "folder") }
-            }
+        let open = panels.open == .attach
+        return Button {
+            Haptics.selection()
+            panels.toggle(.attach)
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(Color.qInk)
+                .rotationEffect(.degrees(open ? 45 : 0))
                 .frame(width: Size.control, height: Size.control)
-                .background(Color.qInk.opacity(0.08), in: .circle)
+                .background(Color.qInk.opacity(open ? 0.14 : 0.08), in: .circle)
                 .contentShape(.circle)
+                .animation(reduceMotion ? nil : .spring(duration: 0.28, bounce: 0), value: open)
         }
-        .accessibilityLabel("Attach")
+        .buttonStyle(PressableStyle(scale: 0.92))
+        .accessibilityLabel(open ? "Close attach" : "Attach")
+        .accessibilityHint(open ? "" : "Photos, camera, files and projects")
     }
 
     private var attachmentStrip: some View {
@@ -279,70 +288,18 @@ struct ComposerView: View {
 
     // MARK: Model and thinking
 
-    /// "DeepSeek V4 Flash · High". A short menu: the thinking levels, for a model that can think;
-    /// the last few models you've used, to switch back in a tap; and a way into the full picker.
-    /// With neither levels nor anything recent to offer, a tap goes straight to the picker.
-    @ViewBuilder
+    /// "DeepSeek V4 Flash · High". Opens the model window: the thinking levels, the last few
+    /// models you've used, and the way into the full picker.
     private var modelMenu: some View {
-        let thinks = model?.supportsReasoning == true
-        let recents = recentModels
-        if thinks || !recents.isEmpty {
-            Menu {
-                if thinks {
-                    let style = ReasoningStyle.detect(model)
-                    Section("Thinking") {
-                        if style.canDisable {
-                            Button {
-                                session.setThinking(nil)
-                                Haptics.selection()
-                            } label: {
-                                checkLabel("Off", on: currentReasoning?.mode == nil || currentReasoning?.mode == .off)
-                            }
-                        }
-                        ForEach(style.efforts.filter { $0 != ReasoningEffort.none }, id: \.self) { e in
-                            Button {
-                                session.setThinking(e)
-                                Haptics.selection()
-                            } label: {
-                                checkLabel(e.label, on: currentReasoning?.mode == .effort && (currentReasoning?.effort ?? .medium) == e)
-                            }
-                        }
-                    }
-                }
-                if !recents.isEmpty {
-                    Section("Recent") {
-                        ForEach(recents, id: \.id) { m in
-                            Button {
-                                session.setModel(m.id)
-                                Haptics.selection()
-                            } label: {
-                                Text(app.modelName(m.id))
-                            }
-                        }
-                    }
-                }
-                Button(action: openModels) { Label("Change model…", systemImage: "square.grid.2x2") }
-                Button(action: openSettings) { Label("Chat settings…", systemImage: "slider.horizontal.3") }
-            } label: {
-                modelPill
-            }
-            .accessibilityLabel(modelAccessibilityLabel)
-            .accessibilityHint(thinks && !recents.isEmpty ? "Choose a thinking level, a recent model, or change model"
-                                : thinks ? "Choose a thinking level or change model" : "Choose a recent model or change model")
-        } else {
-            Button(action: openModels) { modelPill }
-                .buttonStyle(.pressable)
-                .accessibilityLabel(modelAccessibilityLabel)
-                .accessibilityHint("Change model")
+        Button {
+            Haptics.selection()
+            panels.toggle(.model)
+        } label: {
+            modelPill
         }
-    }
-
-    /// Up to three models used lately, other than this chat's, that are still in the catalogue.
-    private var recentModels: [ORModel] {
-        Array(app.settings.recentModelIds
-            .filter { $0 != session.chat.modelId }
-            .compactMap { app.model($0) }
-            .prefix(3))
+        .buttonStyle(.pressable)
+        .accessibilityLabel(modelAccessibilityLabel)
+        .accessibilityHint("Thinking level, recent models, or another model")
     }
 
     private var modelPill: some View {
@@ -359,14 +316,16 @@ struct ComposerView: View {
                     .contentTransition(.opacity)
                     .transition(.opacity)
             }
-            Image(systemName: "chevron.up.chevron.down")
-                .font(.caption2.weight(.semibold))
+            Image(systemName: "chevron.up")
+                .font(.caption2.weight(.bold))
                 .foregroundStyle(Color.qInk2)
+                .rotationEffect(.degrees(panels.open == .model ? 180 : 0))
         }
         .font(.subheadline.weight(.medium))
         .padding(.horizontal, Space.m)
         .frame(height: Size.control)
-        .background(Color.qInk.opacity(0.08), in: .capsule)
+        .background(Color.qInk.opacity(panels.open == .model ? 0.14 : 0.08), in: .capsule)
+        .animation(reduceMotion ? nil : .spring(duration: 0.28, bounce: 0), value: panels.open)
         .contentShape(.capsule)
         .animation(Motion.quick, value: session.chat.modelId)
         .animation(Motion.quick, value: session.thinkingLabel)
@@ -374,13 +333,6 @@ struct ComposerView: View {
 
     private var modelAccessibilityLabel: String {
         "Model: \(app.modelName(session.chat.modelId))\(session.thinkingLabel.map { ", thinking \($0)" } ?? "")"
-    }
-
-    private var currentReasoning: ReasoningSettings? { session.effectiveSettings.reasoning }
-
-    @ViewBuilder
-    private func checkLabel(_ title: String, on: Bool) -> some View {
-        if on { Label(title, systemImage: "checkmark") } else { Text(title) }
     }
 
     // MARK: Notes

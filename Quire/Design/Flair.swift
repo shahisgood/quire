@@ -26,6 +26,27 @@ nonisolated enum ProviderStyle {
     }
 }
 
+/// A provider's mark: the first letter of its name in the display face, on a tile tinted the
+/// colour it always gets, so the same maker reads the same everywhere. Under Pitch, ink on grey.
+struct ProviderBadge: View {
+    let provider: String
+    var size: CGFloat = 32
+
+    private static var hues: [Color] { [.qTileBlue, .qTileTeal, .qTileViolet, .qTileAmber, .qTileRose, .qTileSlate] }
+
+    var body: some View {
+        let name = ProviderStyle.displayName(provider)
+        let seed = provider.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF }
+        let hue = ThemeStore.shared.mono ? Color.qInk : Self.hues[seed % Self.hues.count]
+        Text(String(name.prefix(1)).uppercased())
+            .displayFont { .system(size: size * 0.44, weight: .semibold, design: $0) }
+            .foregroundStyle(hue)
+            .frame(width: size, height: size)
+            .background(hue.opacity(ThemeStore.shared.mono ? 0.08 : 0.14), in: .rect(cornerRadius: size * 0.3, style: .continuous))
+            .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Controls
 
 /// A compact segmented control whose selection pill slides between options.
@@ -57,6 +78,8 @@ struct SlidingSegments<Value: Hashable>: View {
                 .font(.footnote.weight(on ? .semibold : .medium))
                 .foregroundStyle(on ? Color.qOnAccent : Color.qInk2)
                 .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .padding(.horizontal, Space.xxs)
                 .frame(maxWidth: .infinity)
                 .frame(height: 30)
                 .background {
