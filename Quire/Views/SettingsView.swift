@@ -171,113 +171,12 @@ private struct ConnectionSettings: View {
     @State private var baseURL = ""
 
     var body: some View {
-        Form {
-            Group {
-            if let key = app.apiKey {
-                Section {
-                    LabeledContent("Key") {
-                        Text(showKey ? key : masked(key))
-                            .font(.footnote.monospaced())
-                            .foregroundStyle(Color.qInk)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .textSelection(.enabled)
-                    }
-                    if let meta = app.settings.keyMeta {
-                        LabeledContent("Label", value: meta.label + (meta.isFreeTier ? " · free tier" : ""))
-                        LabeledContent("Used") { Text(Fmt.usd(meta.usage)).monospacedDigit() }
-                        LabeledContent("Limit") {
-                            Text(meta.limit.map { "\(Fmt.usd(meta.limitRemaining)) left of \(Fmt.usd($0))" } ?? "No limit").monospacedDigit()
-                        }
-                        if let rl = meta.rateLimit, rl.requests > 0 {
-                            LabeledContent("Rate limit", value: "\(rl.requests) per \(rl.interval)")
-                        }
-                    }
-                    if let keyError {
-                        Label(keyError, systemImage: "exclamationmark.triangle")
-                            .font(.footnote)
-                            .foregroundStyle(Color.qDanger)
-                    }
-                    HStack {
-                        Button(showKey ? "Hide key" : "Show key") { showKey.toggle() }
-                        Spacer()
-                        Button { Task { await check() } } label: {
-                            if checking { ProgressView() } else { Text("Check") }
-                        }
-                    }
-                    .buttonStyle(.borderless)
-                    Button("Remove key", role: .danger) {
-                        app.setAPIKey(nil)
-                        app.toasts.show("Key removed", symbol: "key")
-                    }
-                } header: {
-                    SectionLabel(text: "Your key")
-                } footer: {
-                    Text("Stored in the iPhone Keychain, on this device only, and sent only to OpenRouter.")
-                }
-            }
-
-            Section {
-                HStack {
-                    Group {
-                        if reveal { TextField("sk-or-v1-…", text: $draftKey) } else { SecureField("sk-or-v1-…", text: $draftKey) }
-                    }
-                    .font(.body.monospaced())
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.done)
-                    .onSubmit(saveKey)
-                    Button { reveal.toggle() } label: { Image(systemName: reveal ? "eye.slash" : "eye") }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel(reveal ? "Hide" : "Show")
-                }
-                Button("Save key", action: saveKey)
-                    .disabled(draftKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Link(destination: URL(string: "https://openrouter.ai/keys")!) {
-                    Label("Get a key at openrouter.ai/keys", systemImage: "arrow.up.right.square")
-                }
-            } header: {
-                SectionLabel(text: app.apiKey == nil ? "Paste a key" : "Replace key")
-            } footer: {
-                Text("Use a key with a spending limit.")
-            }
-
-            Section {
-                if pkce == nil {
-                    Button {
-                        let p = PKCE()
-                        pkce = p
-                        if let url = OpenRouterClient.authURL(challenge: p.challenge) { openURL(url) }
-                    } label: {
-                        Label("Sign in with OpenRouter", systemImage: "person.badge.key")
-                    }
-                } else {
-                    TextField("Paste the code from openrouter.ai", text: $code)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .font(.body.monospaced())
-                    Button { Task { await exchange() } } label: {
-                        HStack {
-                            Text("Finish sign-in")
-                            if exchanging { Spacer(); ProgressView() }
-                        }
-                    }
-                    .disabled(code.trimmingCharacters(in: .whitespaces).isEmpty || exchanging)
-                    Button("Start over") {
-                        pkce = nil
-                        code = ""
-                    }
-                    .foregroundStyle(Color.qInk2)
-                }
-            } header: {
-                SectionLabel(text: "Or sign in")
-            } footer: {
-                Text(pkce == nil
-                     ? "Opens openrouter.ai in Safari. After you approve, OpenRouter shows a code: copy it and come back here."
-                     : "Codes expire after 10 minutes.")
-            }
-
-            Section {
+        SettingsPage(title: "Connection") {
+            headline
+            keyEntry
+            signIn
+            SettingsGroup(label: "API base URL",
+                          footer: Text("Leave empty for OpenRouter. Change it only if you route through your own pass-through proxy.")) {
                 TextField("https://openrouter.ai/api/v1", text: $baseURL)
                     .font(.footnote.monospaced())
                     .textInputAutocapitalization(.never)
@@ -285,32 +184,29 @@ private struct ConnectionSettings: View {
                     .keyboardType(.URL)
                     .submitLabel(.done)
                     .onSubmit(saveBaseURL)
-            } header: {
-                SectionLabel(text: "API base URL")
-            } footer: {
-                Text("Leave empty for OpenRouter. Change it only if you route through your own pass-through proxy.")
+                    .padding(.vertical, Space.m)
             }
-
-            Section {
+            SettingsGroup(label: "On OpenRouter",
+                          footer: Text("OpenRouter can route through keys you hold with OpenAI, Anthropic, Google and others. That's set up in your OpenRouter account; Quire works with whatever routing it uses.")) {
                 Link(destination: URL(string: "https://openrouter.ai/settings/integrations")!) {
-                    Label("Your own provider keys", systemImage: "arrow.up.right.square")
+                    ActionRow(title: "Your own provider keys", symbol: "key.horizontal", external: true)
                 }
                 Link(destination: URL(string: "https://openrouter.ai/settings/credits")!) {
-                    Label("Credits", systemImage: "creditcard")
+                    ActionRow(title: "Credits", symbol: "creditcard", external: true)
                 }
                 Link(destination: URL(string: "https://openrouter.ai/activity")!) {
-                    Label("Activity", systemImage: "chart.bar")
+                    ActionRow(title: "Activity", symbol: "chart.bar", external: true)
                 }
-            } footer: {
-                Text("OpenRouter can route through keys you hold with OpenAI, Anthropic, Google and others. That's set up in your OpenRouter account; Quire works with whatever routing it uses.")
             }
+            if let key = app.apiKey {
+                SettingsGroup(footer: Text("You can paste it back, or sign in again, at any time.")) {
+                    Button { remove(key) } label: {
+                        ActionRow(title: "Remove key", detail: "Quire stops working until there's a key again", symbol: "trash", danger: true)
+                    }
+                    .buttonStyle(.row)
+                }
             }
-            .listRowBackground(Color.qRaised)
         }
-        .scrollContentBackground(.hidden)
-        .background(Color.qBase)
-        .navigationTitle("Connection")
-        .navigationBarTitleDisplayMode(.inline)
         .onAppear { baseURL = app.settings.proxyBaseUrl ?? "" }
         .onDisappear(perform: saveBaseURL)
         .task {
@@ -318,6 +214,204 @@ private struct ConnectionSettings: View {
             if let meta = app.settings.keyMeta, nowMs() - meta.fetchedAt < 60_000 { return }
             await check()
         }
+    }
+
+    // MARK: Headline
+
+    /// How things stand, set out like the other pages' headlines: connected or not, the key's name
+    /// and the key itself (hidden until asked), what's left of its credit, and a check.
+    private var headline: some View {
+        VStack(alignment: .leading, spacing: Space.l) {
+            VStack(alignment: .leading, spacing: Space.xs) {
+                Text(app.apiKey == nil ? "Not connected" : "Connected")
+                    .font(.caption.weight(.semibold))
+                    .tracking(1.1)
+                    .textCase(.uppercase)
+                    .foregroundStyle(app.apiKey == nil ? Color.qInk2 : Color.qAccent)
+                Text(app.apiKey == nil ? "OpenRouter" : (app.settings.keyMeta?.label ?? "OpenRouter key"))
+                    .displayFont { .system(.title, design: $0).weight(.semibold) }
+                    .foregroundStyle(Color.qInk)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+                if let key = app.apiKey {
+                    HStack(spacing: Space.s) {
+                        Text(showKey ? key : masked(key))
+                            .font(.caption.monospaced())
+                            .foregroundStyle(Color.qInk2)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                            .contentTransition(.opacity)
+                        Button {
+                            withAnimation(Motion.quick) { showKey.toggle() }
+                        } label: {
+                            Image(systemName: showKey ? "eye.slash" : "eye")
+                                .font(.caption)
+                                .foregroundStyle(Color.qInk2)
+                                .frame(width: 28, height: 28)
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(showKey ? "Hide key" : "Show key")
+                    }
+                } else {
+                    Text("Paste a key or sign in below. It stays in this iPhone's Keychain and only ever goes to OpenRouter.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.qInk2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if let meta = app.settings.keyMeta, app.apiKey != nil {
+                if let limit = meta.limit, limit > 0 {
+                    let remaining = meta.limitRemaining ?? max(0, limit - meta.usage)
+                    VStack(alignment: .leading, spacing: Space.s) {
+                        MeterBar(fraction: 1 - remaining / limit, warn: remaining / limit < 0.15, height: 6)
+                        Text("\(Fmt.usd(remaining)) left of \(Fmt.usd(limit))")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(Color.qInk2)
+                    }
+                }
+                HStack(alignment: .top, spacing: 0) {
+                    figure(Fmt.usd(meta.usage), "Used")
+                    Spacer(minLength: 8)
+                    figure(meta.limit.map { _ in Fmt.usd(meta.limitRemaining) } ?? "No limit", "Left")
+                    Spacer(minLength: 8)
+                    figure(meta.rateLimit.map { $0.requests > 0 ? "\($0.requests)/\($0.interval)" : "—" } ?? "—", "Rate limit")
+                }
+                if meta.isFreeTier {
+                    Text("Free tier: free models only, with OpenRouter's daily limits.")
+                        .font(.footnote)
+                        .foregroundStyle(Color.qInk2)
+                }
+            }
+            if let keyError {
+                Label(keyError, systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(Color.qDanger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if app.apiKey != nil {
+                Button { Task { await check() } } label: {
+                    HStack(spacing: Space.s) {
+                        if checking { ProgressView().controlSize(.small) } else { Image(systemName: "checkmark.shield") }
+                        Text(checking ? "Checking…" : "Check the key")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.qInk)
+                    .padding(.horizontal, Space.l)
+                    .frame(minHeight: 38)
+                    .background(Color.qInk.opacity(0.07), in: .capsule)
+                    .contentShape(.capsule)
+                }
+                .buttonStyle(.pressable)
+                .disabled(checking)
+            }
+        }
+        .padding(Space.xl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card(radius: Radius.l)
+        .animation(Motion.quick, value: checking)
+        .animation(Motion.quick, value: keyError)
+    }
+
+    private func figure(_ value: String, _ caption: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.xxs) {
+            Text(value)
+                .displayFont { .system(.body, design: $0).weight(.semibold).monospacedDigit() }
+                .foregroundStyle(Color.qInk)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(Color.qInk2)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Key
+
+    private var keyEntry: some View {
+        SettingsGroup(label: app.apiKey == nil ? "Paste a key" : "Replace the key",
+                      footer: Text("Use a key with a spending limit. Stored in the iPhone Keychain, on this device only.")) {
+            HStack(spacing: Space.s) {
+                Group {
+                    if reveal { TextField("sk-or-v1-…", text: $draftKey) } else { SecureField("sk-or-v1-…", text: $draftKey) }
+                }
+                .font(.body.monospaced())
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.done)
+                .onSubmit(saveKey)
+                Button { reveal.toggle() } label: {
+                    Image(systemName: reveal ? "eye.slash" : "eye")
+                        .foregroundStyle(Color.qInk2)
+                        .frame(width: 32, height: 32)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(reveal ? "Hide" : "Show")
+            }
+            .padding(.vertical, Space.s)
+            Button(action: saveKey) {
+                ActionRow(title: "Save key", symbol: "square.and.arrow.down")
+            }
+            .buttonStyle(.row)
+            .disabled(draftKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .opacity(draftKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
+            Link(destination: URL(string: "https://openrouter.ai/keys")!) {
+                ActionRow(title: "Get a key", detail: "openrouter.ai/keys", symbol: "key", external: true)
+            }
+        }
+    }
+
+    // MARK: Sign in
+
+    private var signIn: some View {
+        SettingsGroup(label: "Or sign in",
+                      footer: Text(pkce == nil
+                                   ? "Opens openrouter.ai in Safari. After you approve, OpenRouter shows a code: copy it and come back here."
+                                   : "Codes expire after 10 minutes.")) {
+            if pkce == nil {
+                Button {
+                    let p = PKCE()
+                    pkce = p
+                    if let url = OpenRouterClient.authURL(challenge: p.challenge) { openURL(url) }
+                } label: {
+                    ActionRow(title: "Sign in with OpenRouter", detail: "No key to copy: OpenRouter makes one for Quire", symbol: "person.badge.key", external: true)
+                }
+                .buttonStyle(.row)
+            } else {
+                TextField("Paste the code from openrouter.ai", text: $code)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.body.monospaced())
+                    .padding(.vertical, Space.m)
+                Button { Task { await exchange() } } label: {
+                    ActionRow(title: "Finish sign-in", symbol: "checkmark.circle", busy: exchanging)
+                }
+                .buttonStyle(.row)
+                .disabled(code.trimmingCharacters(in: .whitespaces).isEmpty || exchanging)
+                .opacity(code.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
+                Button {
+                    pkce = nil
+                    code = ""
+                } label: {
+                    ActionRow(title: "Start over", symbol: "arrow.counterclockwise")
+                }
+                .buttonStyle(.row)
+            }
+        }
+    }
+
+    /// Takes the key off this iPhone, with a moment to change your mind.
+    private func remove(_ key: String) {
+        app.setAPIKey(nil)
+        Haptics.tap()
+        app.toasts.show("Key removed", symbol: "key", action: (label: "Undo", run: { [app] in
+            app.setAPIKey(key)
+            Task { try? await app.refreshKeyMeta() }
+        }))
     }
 
     private func masked(_ k: String) -> String {
@@ -1458,66 +1552,40 @@ private struct DataSettings: View {
     @State private var bytes = 0
 
     var body: some View {
-        Form {
-            Group {
-            Section {
-                LabeledContent("Chats") { Text("\(app.chats.count)").monospacedDigit() }
-                LabeledContent("Messages") { Text(messageCount.formatted()).monospacedDigit() }
-                LabeledContent("Memory facts") { Text("\(app.memory.count)").monospacedDigit() }
-                LabeledContent("Personas") { Text("\(app.presets.count)").monospacedDigit() }
-                LabeledContent("On this iPhone") { Text(Fmt.bytes(bytes)).monospacedDigit() }
-            } header: {
-                SectionLabel(text: "Storage")
-            } footer: {
-                Text("Kept in Quire's private storage, which iOS includes in your iPhone backups.")
-            }
-
-            Section {
-                Toggle("Include API key", isOn: $includeKey)
-                Button {
-                    Task {
-                        busy = true
-                        defer { busy = false }
-                        do {
-                            share = SharedFile(url: try await app.exportBackup(includeKey: includeKey))
-                            Haptics.success()
-                        } catch {
-                            app.toasts.show(error.localizedDescription, symbol: "exclamationmark.triangle")
-                        }
-                    }
-                } label: {
-                    HStack {
-                        Label("Export everything", systemImage: "square.and.arrow.up")
-                        if busy { Spacer(); ProgressView() }
-                    }
+        SettingsPage(title: "Data & backup") {
+            headline
+            SettingsGroup(label: "Backup", footer: Text(backupFooter)) {
+                SettingRow("Include the API key",
+                           help: "Puts your OpenRouter key in the file, so a restore on another iPhone connects at once. Anyone with the file can then use the key: keep it somewhere private.") {
+                    Toggle("Include the API key", isOn: $includeKey).labelsHidden()
                 }
-                Button { importing = true } label: { Label("Import a backup", systemImage: "square.and.arrow.down") }
-            } header: {
-                SectionLabel(text: "Backup")
-            } footer: {
-                Text(backupFooter)
+                Button(action: export) {
+                    ActionRow(title: "Export everything", detail: "Chats, memory, personas, projects and settings", symbol: "square.and.arrow.up", busy: busy)
+                }
+                .buttonStyle(.row)
+                .disabled(busy)
+                Button { importing = true } label: {
+                    ActionRow(title: "Import a backup", detail: "Merge it with what's here, or replace it", symbol: "square.and.arrow.down")
+                }
+                .buttonStyle(.row)
             }
-
-            Section {
+            SettingsGroup(label: "Maintenance",
+                          footer: Text("Erasing removes every chat, persona, memory fact, setting and the key from this iPhone.")) {
                 Button {
                     Task {
                         await app.clearModelCache()
                         app.toasts.show("Model list refreshed", symbol: "arrow.clockwise")
                     }
-                } label: { Label("Refresh the model catalogue", systemImage: "arrow.clockwise") }
-                Button(role: .danger) { confirmWipe = true } label: { Label("Erase everything", systemImage: "trash") }
-            } header: {
-                SectionLabel(text: "Maintenance")
-            } footer: {
-                Text("Erasing removes every chat, persona, memory fact, setting and the key from this iPhone.")
+                } label: {
+                    ActionRow(title: "Refresh the model catalogue", detail: "Fetches OpenRouter's list afresh", symbol: "arrow.clockwise")
+                }
+                .buttonStyle(.row)
+                Button { confirmWipe = true } label: {
+                    ActionRow(title: "Erase everything", symbol: "trash", danger: true)
+                }
+                .buttonStyle(.row)
             }
-            }
-            .listRowBackground(Color.qRaised)
         }
-        .scrollContentBackground(.hidden)
-        .background(Color.qBase)
-        .navigationTitle("Data & backup")
-        .navigationBarTitleDisplayMode(.inline)
         .task { await measure() }
         .sheet(item: $share) { f in ShareSheet(items: [f.url]).presentationDetents([.medium, .large]) }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
@@ -1561,13 +1629,96 @@ private struct DataSettings: View {
     }
 
     private var backupFooter: String {
-        var s = "A JSON file in the Quire web app's format, so backups move between the two in either direction."
-        if let last = app.settings.lastExportAt, last > 0 {
-            s += " Last export: \(Date(timeIntervalSince1970: last / 1000).formatted(date: .abbreviated, time: .omitted))."
-        } else {
-            s += " Never exported."
+        "A JSON file in the Quire web app's format, so backups move between the two in either direction."
+    }
+
+    // MARK: Headline
+
+    /// What's on this iPhone, set out like the other pages' headlines: how much room it takes, what
+    /// it's made of, and when it was last backed up, with the export a tap away.
+    private var headline: some View {
+        let last = app.settings.lastExportAt ?? 0
+        let stale = last <= 0 || (nowMs() - last) > 30 * 86_400_000
+        return VStack(alignment: .leading, spacing: Space.l) {
+            VStack(alignment: .leading, spacing: Space.xs) {
+                Text("On this iPhone")
+                    .font(.caption.weight(.semibold))
+                    .tracking(1.1)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Color.qAccent)
+                Text(Fmt.bytes(bytes))
+                    .displayFont { .system(size: 46, weight: .semibold, design: $0).monospacedDigit() }
+                    .tracking(-0.8)
+                    .foregroundStyle(Color.qInk)
+                    .contentTransition(.numericText(value: Double(bytes)))
+                Text("In Quire's private storage, which iOS includes in your iPhone backups")
+                    .font(.footnote)
+                    .foregroundStyle(Color.qInk2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(alignment: .top, spacing: 0) {
+                figure(app.chats.count, "Chats")
+                Spacer(minLength: 8)
+                figure(messageCount, "Messages")
+                Spacer(minLength: 8)
+                figure(app.memory.count, "Facts")
+                Spacer(minLength: 8)
+                figure(app.presets.count, "Personas")
+            }
+            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                Image(systemName: stale ? "exclamationmark.circle" : "checkmark.circle")
+                    .foregroundStyle(stale ? Color.qWarn : Color.qAccent)
+                    .accessibilityHidden(true)
+                Text(last > 0 ? "Last exported \(Fmt.relative(last))" : "Never exported")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.qInk)
+            }
+            .accessibilityElement(children: .combine)
+            Button(action: export) {
+                HStack(spacing: Space.s) {
+                    if busy { ProgressView().controlSize(.small).tint(Color.qOnAccent) } else { Image(systemName: "square.and.arrow.up") }
+                    Text(busy ? "Exporting…" : "Export everything")
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.qOnAccent)
+                .padding(.horizontal, Space.l)
+                .frame(minHeight: 38)
+                .background(Color.qAccent, in: .capsule)
+                .contentShape(.capsule)
+            }
+            .buttonStyle(.pressable)
+            .disabled(busy)
         }
-        return s
+        .padding(Space.xl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card(radius: Radius.l)
+    }
+
+    private func figure(_ value: Int, _ caption: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.xxs) {
+            Text(value.formatted())
+                .displayFont { .system(.body, design: $0).weight(.semibold).monospacedDigit() }
+                .foregroundStyle(Color.qInk)
+                .contentTransition(.numericText(value: Double(value)))
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(Color.qInk2)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func export() {
+        Task {
+            busy = true
+            defer { busy = false }
+            do {
+                share = SharedFile(url: try await app.exportBackup(includeKey: includeKey))
+                Haptics.success()
+            } catch {
+                app.toasts.show(error.localizedDescription, symbol: "exclamationmark.triangle")
+            }
+        }
     }
 
     private func measure() async {

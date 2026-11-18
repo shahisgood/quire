@@ -479,3 +479,50 @@ struct ChoiceStrip<Value: Hashable>: View {
         .accessibilityLabel(label)
     }
 }
+
+// MARK: - Action row
+
+/// A row that does something, or goes somewhere outside: a symbol, its name and an optional line
+/// under it, and at the end a spinner while it works or an arrow out of the app. Danger rows are in
+/// the danger ink (under Pitch, plain ink: the words carry it).
+struct ActionRow: View {
+    let title: String
+    var detail: String? = nil
+    let symbol: String
+    var danger = false
+    var busy = false
+    var external = false
+
+    var body: some View {
+        HStack(spacing: Space.m) {
+            Image(systemName: symbol)
+                .font(.body)
+                .foregroundStyle(danger ? Color.qDanger : Color.qAccent)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: Space.xxs) {
+                Text(title)
+                    .foregroundStyle(danger ? Color.qDanger : Color.qInk)
+                if let detail {
+                    Text(detail)
+                        .font(.footnote)
+                        .foregroundStyle(Color.qInk2)
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 8)
+            if busy {
+                ProgressView()
+            } else if external {
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.qInk2)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.vertical, Space.m)
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(external ? .isLink : .isButton)
+    }
+}
