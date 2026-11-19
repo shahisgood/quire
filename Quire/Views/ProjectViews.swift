@@ -128,9 +128,9 @@ struct ProjectTile: View {
     }
 }
 
-/// A project on the chat list's shelf: its tile over its name, with how many chats it holds and
-/// when one was last touched. The card takes a wash of the project's colour; a dot in the corner
-/// means a reply in it you haven't read, and the live dot means one is being written.
+/// A project in the chat list's strip: its tile, its name, and how many chats it holds and when one
+/// was last touched, on a card washed with its colour. A dot by the name means a reply in it you
+/// haven't read; the live dot, one being written.
 struct ProjectCard: View {
     let project: Project
     @Environment(AppModel.self) private var app
@@ -139,37 +139,34 @@ struct ProjectCard: View {
         let chats = app.chats(inProject: project.id)
         let writing = chats.contains { app.sessions[$0.id]?.generating == true }
         let unread = chats.contains { $0.unread == true }
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top) {
-                ProjectTile(project: project, size: 34)
-                Spacer(minLength: 4)
-                Group {
+        HStack(spacing: Space.m) {
+            ProjectTile(project: project, size: 36)
+            VStack(alignment: .leading, spacing: Space.xxs) {
+                HStack(spacing: Space.xs) {
+                    Text(project.name)
+                        .displayFont { .system(.subheadline, design: $0).weight(.semibold) }
+                        .foregroundStyle(Color.qInk)
+                        .lineLimit(1)
                     if writing {
-                        LiveDot(size: 7)
+                        LiveDot(size: 6)
+                            .transition(.pop)
                     } else if unread {
-                        Circle().fill(Color.qAccent).frame(width: 8, height: 8)
-                    } else if project.hasInstructions {
-                        Image(systemName: "text.quote")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(project.tintColor)
+                        Circle()
+                            .fill(Color.qAccent)
+                            .frame(width: 7, height: 7)
+                            .transition(.pop)
                     }
                 }
-                .padding(.top, Space.xs)
-                .transition(.pop)
+                Text(writing ? "Writing…" : Self.summary(chats))
+                    .font(.caption)
+                    .foregroundStyle(writing ? Color.qAccent : Color.qInk2)
+                    .lineLimit(1)
             }
-            Spacer(minLength: 14)
-            Text(project.name)
-                .displayFont { .system(.subheadline, design: $0).weight(.semibold) }
-                .foregroundStyle(Color.qInk)
-                .lineLimit(1)
-            Text(writing ? "Writing…" : Self.summary(chats))
-                .font(.caption)
-                .foregroundStyle(writing ? Color.qAccent : Color.qInk2)
-                .lineLimit(1)
-                .padding(.top, Space.xxs)
         }
-        .padding(Space.m)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.leading, Space.m)
+        .padding(.trailing, Space.l)
+        .padding(.vertical, Space.m)
+        .frame(minWidth: 150, maxWidth: 230, maxHeight: .infinity, alignment: .leading)
         .background(CardSurface(radius: Radius.l, tint: project.tintColor))
         .animation(Motion.bouncy, value: unread)
         .animation(Motion.quick, value: writing)
@@ -219,9 +216,9 @@ nonisolated struct ProjectEditorRequest: Identifiable {
     var openAfterCreate = false
 }
 
-/// Create or edit a project: a live tile that takes on each choice as you make it, the name,
-/// symbol and colour, optional instructions, and the model new chats start with. Every part sits in
-/// an ordinary form row, so nothing draws past the rounded edges of its section.
+/// Create or edit a project, laid out like a settings page: a card washed in its colour with the
+/// tile taking on each choice as you make it and the name typed straight into it, then the icon,
+/// the colour, optional instructions, and the model new chats start with.
 struct ProjectEditor: View {
     private let isNew: Bool
     private let original: Project
@@ -268,87 +265,53 @@ struct ProjectEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Group {
-                Section {
-                    TextField("Project name", text: $draft.name)
-                        .displayFont { .system(.body, design: $0).weight(.semibold) }
-                        .foregroundStyle(Color.qInk)
-                        .focused($nameFocused)
-                        .submitLabel(.done)
-                } header: {
-                    preview
-                }
+            SettingsPage(title: isNew ? "New project" : "Edit project", inlineTitle: true) {
+                preview
 
-                Section { symbolGrid } header: { Text("Icon") }
-                Section { swatches } header: { Text("Colour") }
+                SettingsGroup(label: "Icon") { symbolGrid }
+                SettingsGroup(label: "Colour") { swatches }
 
-                Section {
+                SettingsGroup(label: "Instructions",
+                              footer: Text("Optional. With instructions, every chat in this project follows them, after the system prompt. Without, chats here behave like any other chat.")) {
                     NavigationLink {
                         PromptEditorView(title: "Instructions", text: $instructions,
                                          placeholder: ProjectInstructions.placeholder,
                                          footer: ProjectInstructions.footer(draft.name))
                     } label: {
-                        HStack(spacing: Space.l) {
-                            IconTile(symbol: "text.quote", color: draft.tintColor)
-                            VStack(alignment: .leading, spacing: Space.xxs) {
-                                Text("Instructions")
-                                    .foregroundStyle(Color.qInk)
-                                Text(trimmedInstructions.isEmpty ? "None" : trimmedInstructions)
-                                    .font(.footnote)
-                                    .foregroundStyle(Color.qInk2)
-                                    .lineLimit(1)
-                            }
-                        }
+                        LinkRow(title: trimmedInstructions.isEmpty ? "Add instructions" : "Instructions",
+                                detail: trimmedInstructions.isEmpty ? "Background, tone, rules" : trimmedInstructions)
                     }
-                } footer: {
-                    Text("Optional. With instructions, every chat in this project follows them. Without, chats here behave like any other chat.")
+                    .buttonStyle(.row)
                 }
 
-                Section {
+                SettingsGroup(label: "New chats",
+                              footer: Text("Chats you start in this project begin with this model. You can still switch in any chat.")) {
                     Button { showModels = true } label: {
-                        HStack(spacing: Space.l) {
-                            IconTile(symbol: "cpu", color: draft.tintColor)
-                            VStack(alignment: .leading, spacing: Space.xxs) {
-                                Text(draft.modelId.map { app.modelName($0) } ?? "App default")
-                                    .foregroundStyle(Color.qInk)
-                                Text(draft.modelId == nil ? app.modelName(app.settings.defaultModelId) : "Chosen for this project")
-                                    .font(.footnote)
-                                    .foregroundStyle(Color.qInk2)
-                                    .lineLimit(1)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(Color.qInk2)
-                        }
+                        LinkRow(title: "Model",
+                                detail: draft.modelId == nil ? "The app default" : "Chosen for this project",
+                                value: app.model(draft.modelId ?? app.settings.defaultModelId)?.shortName ?? app.modelName(draft.modelId ?? app.settings.defaultModelId))
                     }
+                    .buttonStyle(.row)
                     if draft.modelId != nil {
-                        Button("Use the app default") {
+                        Button {
                             Haptics.selection()
                             withAnimation(Motion.standard) { draft.modelId = nil }
+                        } label: {
+                            ActionRow(title: "Use the app default", symbol: "arrow.uturn.backward")
                         }
+                        .buttonStyle(.row)
                     }
-                } header: {
-                    Text("New chats")
-                } footer: {
-                    Text("Chats you start in this project begin with this model. You can still switch in any chat.")
                 }
 
                 if !isNew, let onDelete {
-                    Section {
-                        Button(role: .danger) { onDelete(original) } label: {
-                            Label("Delete project…", systemImage: "trash")
+                    SettingsGroup {
+                        Button { onDelete(original) } label: {
+                            ActionRow(title: "Delete project…", detail: "Asks first, and whether its chats go too", symbol: "trash", danger: true)
                         }
+                        .buttonStyle(.row)
                     }
                 }
-                }
-                .listRowBackground(Color.qRaised)
             }
-            .scrollContentBackground(.hidden)
-            .background(Color.qBase)
-            .navigationTitle(isNew ? "New project" : "Edit project")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -376,18 +339,26 @@ struct ProjectEditor: View {
 
     // MARK: Pieces
 
-    /// The tile as it will look, above the name. A section header rather than a row, so its shadow
-    /// isn't clipped by a cell.
+    /// The project as it will look: its tile, taking each choice as you make it, over its name,
+    /// which you type straight into, on a card washed with its colour.
     private var preview: some View {
-        ProjectTile(symbol: draft.symbolName, color: draft.tintColor, size: 72)
-            .symbolEffect(.bounce, value: draft.symbolName)
-            .shadow(color: draft.tintColor.opacity(0.3), radius: 10, y: 5)
-            .animation(choiceAnimation, value: draft.tint)
-            .frame(maxWidth: .infinity)
-            .padding(.top, Space.s)
-            .padding(.bottom, Space.l)
-            .textCase(nil)
-            .accessibilityHidden(true)
+        VStack(spacing: Space.l) {
+            ProjectTile(symbol: draft.symbolName, color: draft.tintColor, size: 72)
+                .symbolEffect(.bounce, value: draft.symbolName)
+                .shadow(color: draft.tintColor.opacity(0.3), radius: 10, y: 5)
+                .accessibilityHidden(true)
+            TextField("Project name", text: $draft.name)
+                .displayFont { .system(.title2, design: $0).weight(.semibold) }
+                .multilineTextAlignment(.center)
+                .foregroundStyle(Color.qInk)
+                .focused($nameFocused)
+                .submitLabel(.done)
+        }
+        .padding(.vertical, Space.xl)
+        .padding(.horizontal, Space.l)
+        .frame(maxWidth: .infinity)
+        .background(CardSurface(radius: Radius.l, tint: draft.tintColor))
+        .animation(choiceAnimation, value: draft.tint)
     }
 
     private var symbolGrid: some View {
@@ -524,8 +495,8 @@ struct ProjectInstructionsSheet: View {
 
 // MARK: - Project screen
 
-/// One project: its tile, name and a button for a new chat in it, its instructions (or a way to add
-/// some), and its chats.
+/// One project: a headline card washed in its colour (tile and name, its figures, its instructions
+/// set like a pull quote or a way to add some, and a new chat in it), then its chats.
 struct ProjectView: View {
     let projectId: String
     @Environment(AppModel.self) private var app
@@ -553,22 +524,26 @@ struct ProjectView: View {
         let chats = app.chats(inProject: p.id)
         let archived = app.chats(inProject: p.id, archived: true)
         return List {
-            Group {
+            // Outside the group below, so its clear cell isn't given the raised one.
             Section {
-                instructionsRow(p)
-            } header: {
-                hero(p, count: chats.count)
-            } footer: {
-                if p.hasInstructions {
-                    Text("Every chat here follows these, after the system prompt.")
-                }
+                headline(p, chats: chats)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
             }
+            Group {
 
             Section {
                 if chats.isEmpty { emptyRow(p) }
                 ForEach(chats) { ChatListRow(chat: $0, sheets: sheets) }
             } header: {
-                SectionLabel(text: "Chats")
+                HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                    SectionLabel(text: "Chats")
+                    if !chats.isEmpty {
+                        Text(chats.count.formatted())
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(Color.qInk2.opacity(0.65))
+                    }
+                }
             }
 
             if !archived.isEmpty {
@@ -617,92 +592,133 @@ struct ProjectView: View {
         .listSheets(sheets)
     }
 
-    /// Sits in the first section's header, outside any cell, so nothing about it gets clipped.
-    private func hero(_ p: Project, count: Int) -> some View {
-        VStack(spacing: Space.s) {
-            ProjectTile(project: p, size: 64)
-                .shadow(color: p.tintColor.opacity(0.3), radius: 10, y: 5)
-                .padding(.bottom, Space.xs)
-            Text(p.name)
-                .displayFont { .system(.title2, design: $0).weight(.bold) }
-                .foregroundStyle(Color.qInk)
-                .multilineTextAlignment(.center)
-            Text(subtitle(p, count: count))
-                .font(.subheadline)
-                .foregroundStyle(Color.qInk2)
-                .multilineTextAlignment(.center)
-            Button {
-                Haptics.tap()
-                app.startNewChat(projectId: p.id)
-            } label: {
-                Label("New chat", systemImage: "square.and.pencil")
-                    .font(.body.weight(.semibold))
-                    .padding(.horizontal, Space.s)
+    /// The first row, on a clear cell, set out like the settings pages' headlines in the project's
+    /// own colour.
+    private func headline(_ p: Project, chats: [Chat]) -> some View {
+        VStack(alignment: .leading, spacing: Space.l) {
+            HStack(alignment: .center, spacing: Space.m) {
+                ProjectTile(project: p, size: 52)
+                    .shadow(color: p.tintColor.opacity(0.3), radius: 8, y: 4)
+                VStack(alignment: .leading, spacing: Space.xxs) {
+                    Text("Project")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.1)
+                        .textCase(.uppercase)
+                        .foregroundStyle(p.tintColor)
+                    Text(p.name)
+                        .displayFont { .system(.title2, design: $0).weight(.bold) }
+                        .foregroundStyle(Color.qInk)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                }
             }
-            .buttonStyle(.glassProminent)
-            .tint(p.tintColor)
-            .padding(.top, Space.s)
+            HStack(alignment: .top, spacing: 0) {
+                figure(chats.count.formatted(), chats.count == 1 ? "Chat" : "Chats")
+                Spacer(minLength: 8)
+                figure(chats.map(\.updatedAt).max().map { Fmt.relative($0) } ?? "—", "Last active")
+                Spacer(minLength: 8)
+                figure(p.modelId.map { app.model($0)?.shortName ?? app.modelName($0) } ?? "Default", "Model")
+            }
+            instructions(p)
+            HStack(spacing: Space.s) {
+                Button {
+                    Haptics.tap()
+                    app.startNewChat(projectId: p.id)
+                } label: {
+                    Label("New chat", systemImage: "square.and.pencil")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.white)
+                        .padding(.horizontal, Space.l)
+                        .frame(minHeight: 40)
+                        .background(p.tintColor.gradient, in: .capsule)
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(.pressable)
+                Button {
+                    Haptics.tap()
+                    app.startNewChat(incognito: true, projectId: p.id)
+                } label: {
+                    Label("Incognito", systemImage: "eye.slash")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.qInk)
+                        .padding(.horizontal, Space.l)
+                        .frame(minHeight: 40)
+                        .background(Color.qInk.opacity(0.07), in: .capsule)
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(.pressable)
+            }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, Space.xs)
-        .padding(.bottom, Space.l)
-        .textCase(nil)
+        .padding(Space.xl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(CardSurface(radius: Radius.l, tint: p.tintColor))
     }
 
-    private func subtitle(_ p: Project, count: Int) -> String {
-        var parts = [count == 0 ? "No chats yet" : "\(count) \(count == 1 ? "chat" : "chats")"]
-        if let m = p.modelId { parts.append(app.modelName(m)) }
-        return parts.joined(separator: " · ")
+    private func figure(_ value: String, _ caption: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.xxs) {
+            Text(value)
+                .displayFont { .system(.body, design: $0).weight(.semibold).monospacedDigit() }
+                .foregroundStyle(Color.qInk)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(Color.qInk2)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
     }
 
-    /// An ordinary row: the instructions (tap to edit them), or an invitation to add some.
-    private func instructionsRow(_ p: Project) -> some View {
+    /// The instructions set like a pull quote under a bar of the project's colour (tap to edit), or
+    /// a quiet way to add some.
+    private func instructions(_ p: Project) -> some View {
         Button {
             Haptics.tap()
             sheets.instructionsFor = p
         } label: {
             if p.hasInstructions {
-                VStack(alignment: .leading, spacing: Space.s) {
-                    HStack(spacing: Space.s) {
-                        Image(systemName: "text.quote")
-                            .foregroundStyle(p.tintColor)
-                        Text("Instructions")
-                            .font(.subheadline.weight(.semibold))
+                HStack(alignment: .top, spacing: Space.m) {
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(p.tintColor.opacity(0.6))
+                        .frame(width: 3)
+                    VStack(alignment: .leading, spacing: Space.xs) {
+                        Text(p.trimmedInstructions)
+                            .displayFont { .system(.subheadline, design: $0).italic() }
                             .foregroundStyle(Color.qInk)
-                        Spacer()
-                        Text("Edit")
-                            .font(.subheadline)
-                            .foregroundStyle(p.tintColor)
-                    }
-                    Text(p.trimmedInstructions)
-                        .font(.subheadline)
-                        .foregroundStyle(Color.qInk2)
-                        .lineLimit(4)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.vertical, Space.xs)
-            } else {
-                HStack(spacing: Space.m) {
-                    Image(systemName: "text.badge.plus")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(p.tintColor)
-                        .frame(width: 28)
-                    VStack(alignment: .leading, spacing: Space.xxs) {
-                        Text("Add instructions")
-                            .foregroundStyle(Color.qInk)
-                        Text("Optional. Every chat here would follow them.")
-                            .font(.footnote)
+                            .lineLimit(4)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text("Every chat here follows these · Edit")
+                            .font(.caption)
                             .foregroundStyle(Color.qInk2)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .contentShape(.rect)
+            } else {
+                HStack(spacing: Space.s) {
+                    Image(systemName: "text.badge.plus")
+                        .foregroundStyle(p.tintColor)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Add instructions")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(Color.qInk)
+                        Text("Optional: background, tone, rules every chat here follows")
+                            .font(.caption)
+                            .foregroundStyle(Color.qInk2)
+                            .lineLimit(2)
                     }
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Color.qInk2)
                 }
+                .padding(Space.m)
+                .background(Color.qInk.opacity(0.05), in: .rect(cornerRadius: Radius.m, style: .continuous))
+                .contentShape(.rect)
             }
         }
-        .listRowBackground(Color.qRaised)
+        .buttonStyle(.row)
         .accessibilityHint(p.hasInstructions ? "Edit the instructions" : "Write instructions for this project")
     }
 
