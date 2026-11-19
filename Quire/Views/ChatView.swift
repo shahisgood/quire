@@ -88,6 +88,7 @@ struct ChatView: View {
                 panelContent(panel)
             }
         }
+        .background { BarTapCatcher(active: panels.open != nil, onTap: panels.close) }
         .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }

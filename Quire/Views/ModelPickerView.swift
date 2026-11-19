@@ -224,7 +224,6 @@ struct ModelPickerView: View {
         } label: {
             VStack(alignment: .leading, spacing: Space.l) {
                 HStack(alignment: .center, spacing: Space.m) {
-                    ProviderBadge(provider: m?.provider ?? id.split(separator: "/").first.map(String.init) ?? "", size: 44)
                     VStack(alignment: .leading, spacing: Space.xxs) {
                         Text("Chosen")
                             .font(.caption.weight(.semibold))
@@ -501,7 +500,7 @@ struct ModelPickerView: View {
                         Rectangle()
                             .fill(Color.qRule)
                             .frame(height: 0.5)
-                            .padding(.leading, Space.l + 36 + Space.m)
+                            .padding(.leading, Space.l)
                     }
                     row(m)
                 }
@@ -517,7 +516,6 @@ struct ModelPickerView: View {
         return HStack(spacing: 0) {
             Button { pick(m.id) } label: {
                 HStack(alignment: .center, spacing: Space.m) {
-                    ProviderBadge(provider: m.provider, size: 36)
                     VStack(alignment: .leading, spacing: Space.xxs) {
                         HStack(spacing: Space.xs) {
                             Text(m.shortName)
@@ -683,7 +681,6 @@ struct ModelCardView: View {
     private var headline: some View {
         VStack(alignment: .leading, spacing: Space.l) {
             HStack(alignment: .center, spacing: Space.m) {
-                ProviderBadge(provider: model.provider, size: 44)
                 VStack(alignment: .leading, spacing: Space.xxs) {
                     Text(ProviderStyle.displayName(model.provider))
                         .font(.caption.weight(.semibold))

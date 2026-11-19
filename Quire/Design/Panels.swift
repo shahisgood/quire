@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // Quire's own small windows: the ones a chat opens from its controls (attach and the model from the
 // message box, the context from the ring in the bar), drawn in the app's glass rather than as a
@@ -78,7 +79,8 @@ struct PanelLayer<Content: View>: View {
                         .accessibilityHidden(true)
                 }
                 if let panel {
-                    PanelCard(panel: panel, maxHeight: max(160, geo.size.height - Space.xl), onClose: close) {
+                    // Always leaves a band of veil to tap, even with the keyboard up.
+                    PanelCard(panel: panel, maxHeight: max(160, geo.size.height - 56), onClose: close) {
                         content(panel)
                     }
                     .padding(.horizontal, Space.m)
@@ -105,6 +107,8 @@ struct PanelCard<Content: View>: View {
     @ViewBuilder var content: Content
     @State private var height: CGFloat = 0
     @State private var drag: CGFloat = 0
+    /// Decided by a drag's first move: up or down, or sideways.
+    @State private var vertical: Bool? = nil
     @AccessibilityFocusState private var focused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -115,6 +119,8 @@ struct PanelCard<Content: View>: View {
     var body: some View {
         ScrollView {
             content
+                // Scrolling inside (the recent photos, sideways) stays on whatever this does.
+                .environment(\.isScrollEnabled, true)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { new in
                     // The first measure sets it; later ones (a page sliding in) ease to it.
                     if height == 0 || reduceMotion { height = new }
@@ -151,10 +157,17 @@ struct PanelCard<Content: View>: View {
         return direction * -(abs(toward) * limit * c / (limit + c * abs(toward)))
     }
 
+    /// Only a mostly-vertical drag moves the window, so a sideways one is left to what's inside.
     private var swipe: some Gesture {
         DragGesture(minimumDistance: 10)
-            .onChanged { drag = $0.translation.height }
+            .onChanged { v in
+                if vertical == nil { vertical = abs(v.translation.height) >= abs(v.translation.width) }
+                guard vertical == true else { return }
+                drag = v.translation.height
+            }
             .onEnded { v in
+                defer { vertical = nil }
+                guard vertical == true else { return }
                 let toward = v.translation.height * direction
                 let fling = v.predictedEndTranslation.height * direction
                 if toward > 64 || fling > 170 {
@@ -261,8 +274,10 @@ struct PanelRow<Leading: View, Trailing: View>: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: Space.m) {
-                leading
-                    .frame(width: 28)
+                if Leading.self != EmptyView.self {
+                    leading
+                        .frame(width: 28)
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
                         .font(.body.weight(selected ? .semibold : .regular))
@@ -312,5 +327,70 @@ struct PanelRowStyle: ButtonStyle {
         configuration.label
             .background(Color.qInk.opacity(configuration.isPressed ? 0.08 : 0), in: .rect(cornerRadius: Radius.s, style: .continuous))
             .animation(configuration.isPressed ? nil : .easeOut(duration: 0.2), value: configuration.isPressed)
+    }
+}
+
+// MARK: - The bar
+
+/// While one of the chat's windows is open, a tap up in the bar closes it: with the keyboard up
+/// there's little veil left to tap, and the bar is where a thumb goes next. The recogniser sits on
+/// the navigation controller's view, answers only touches above the bar's bottom edge, and is
+/// switched on only while a window is open, so the bar behaves as ever the rest of the time.
+struct BarTapCatcher: UIViewRepresentable {
+    var active: Bool
+    var onTap: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> StackSwipes.Probe {
+        let probe = StackSwipes.Probe()
+        let coordinator = context.coordinator
+        probe.onAttach = { [weak coordinator] nav in coordinator?.attach(to: nav) }
+        return probe
+    }
+
+    func updateUIView(_ probe: StackSwipes.Probe, context: Context) {
+        context.coordinator.onTap = onTap
+        context.coordinator.tap.isEnabled = active
+    }
+
+    static func dismantleUIView(_ probe: StackSwipes.Probe, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        let tap = UITapGestureRecognizer()
+        var onTap: () -> Void = {}
+        private weak var nav: UINavigationController?
+
+        override init() {
+            super.init()
+            tap.addTarget(self, action: #selector(tapped))
+            tap.delegate = self
+            tap.isEnabled = false
+        }
+
+        func attach(to nav: UINavigationController) {
+            guard self.nav !== nav else { return }
+            detach()
+            self.nav = nav
+            nav.view.addGestureRecognizer(tap)
+        }
+
+        func detach() {
+            tap.view?.removeGestureRecognizer(tap)
+            nav = nil
+        }
+
+        @objc private func tapped() { onTap() }
+
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let bar = nav?.navigationBar else { return false }
+            return touch.location(in: bar).y <= bar.bounds.maxY
+        }
+
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            true
+        }
     }
 }

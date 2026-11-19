@@ -163,7 +163,7 @@ struct ModelPanel: View {
                     VStack(spacing: 0) {
                         ForEach(recents, id: \.id) { m in
                             PanelRow(title: m.shortName, detail: Self.line(m), action: { use(m.id) }) {
-                                ProviderBadge(provider: m.provider, size: 28)
+                                EmptyView()
                             } trailing: {
                                 EmptyView()
                             }
@@ -183,7 +183,6 @@ struct ModelPanel: View {
     /// What's answering in this chat, set out like a heading, with what it is underneath.
     private var current: some View {
         HStack(alignment: .center, spacing: Space.m) {
-            ProviderBadge(provider: model?.provider ?? session.chat.modelId.split(separator: "/").first.map(String.init) ?? "", size: 40)
             VStack(alignment: .leading, spacing: Space.xxs) {
                 Text(app.modelName(session.chat.modelId))
                     .displayFont { .system(.title3, design: $0).weight(.semibold) }
@@ -271,7 +270,9 @@ struct ModelPanel: View {
 struct RecentPhotos: View {
     let pick: (String) -> Void
     @State private var status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-    @State private var assets: [PHAsset] = []
+    /// Fetched as the view is made, not on appear: with access given and nothing fetched yet the
+    /// strip is empty, and an empty view never appears to fetch.
+    @State private var assets: [PHAsset] = RecentPhotos.latest()
 
     var body: some View {
         Group {
@@ -282,14 +283,13 @@ struct RecentPhotos: View {
                 PanelRow("Show recent photos here", symbol: "photo.stack", detail: "Pick one in a tap, without opening Photos") {
                     Task {
                         status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-                        load()
+                        assets = Self.latest()
                     }
                 }
             default:
                 EmptyView()
             }
         }
-        .onAppear(perform: load)
     }
 
     private var strip: some View {
@@ -308,13 +308,15 @@ struct RecentPhotos: View {
         .scrollClipDisabled()
     }
 
-    private func load() {
-        guard status == .authorized || status == .limited else { return }
+    /// The newest dozen photos Quire may see, or none.
+    static func latest() -> [PHAsset] {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard status == .authorized || status == .limited else { return [] }
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         options.fetchLimit = 12
         let result = PHAsset.fetchAssets(with: .image, options: options)
-        assets = result.count > 0 ? result.objects(at: IndexSet(integersIn: 0..<result.count)) : []
+        return result.count > 0 ? result.objects(at: IndexSet(integersIn: 0..<result.count)) : []
     }
 
     /// The photo itself, from the library (or iCloud, if it lives there), ready to attach. Off the
