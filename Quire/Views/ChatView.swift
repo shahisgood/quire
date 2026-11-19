@@ -84,7 +84,7 @@ struct ChatView: View {
         .opensLinksInApp()
         // Outside the keyboard's tap and swipe, so working a window never puts the keyboard away.
         .overlay {
-            PanelLayer(panel: panels.open, close: panels.close) { panel in
+            PanelLayer(panels: panels) { panel in
                 panelContent(panel)
             }
         }
@@ -294,6 +294,7 @@ struct ChatView: View {
             if app.settings.ui.showContext {
                 ToolbarItem(placement: .topBarTrailing) {
                     ContextRingButton(session: session) { panels.toggle(.context) }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { panels.origins[.context] = $0 }
                 }
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
             }

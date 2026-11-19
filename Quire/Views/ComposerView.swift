@@ -266,9 +266,11 @@ struct ComposerView: View {
                 .frame(width: Size.control, height: Size.control)
                 .background(Color.qInk.opacity(open ? 0.14 : 0.08), in: .circle)
                 .contentShape(.circle)
-                .animation(reduceMotion ? nil : .spring(duration: 0.28, bounce: 0), value: open)
+                .animation(reduceMotion ? nil : (open ? .spring(duration: 0.42, bounce: 0.14) : .spring(duration: 0.26, bounce: 0)), value: open)
         }
         .buttonStyle(PressableStyle(scale: 0.92))
+        // Where the attach window grows out of.
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { panels.origins[.attach] = $0 }
         .accessibilityLabel(open ? "Close attach" : "Attach")
         .accessibilityHint(open ? "" : "Photos, camera, files and projects")
     }
@@ -300,6 +302,8 @@ struct ComposerView: View {
             modelPill
         }
         .buttonStyle(.pressable)
+        // Where the model window grows out of.
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { panels.origins[.model] = $0 }
         .accessibilityLabel(modelAccessibilityLabel)
         .accessibilityHint("Thinking level, recent models, or another model")
     }
@@ -327,7 +331,7 @@ struct ComposerView: View {
         .padding(.horizontal, Space.m)
         .frame(height: Size.control)
         .background(Color.qInk.opacity(panels.open == .model ? 0.14 : 0.08), in: .capsule)
-        .animation(reduceMotion ? nil : .spring(duration: 0.28, bounce: 0), value: panels.open)
+        .animation(reduceMotion ? nil : (panels.open == .model ? .spring(duration: 0.42, bounce: 0.14) : .spring(duration: 0.26, bounce: 0)), value: panels.open)
         .contentShape(.capsule)
         .animation(Motion.quick, value: session.chat.modelId)
         .animation(Motion.quick, value: session.thinkingLabel)

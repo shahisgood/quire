@@ -10,7 +10,7 @@ import UIKit
 // MARK: - State
 
 /// The windows a chat can open.
-nonisolated enum ChatPanel: Equatable, Sendable {
+nonisolated enum ChatPanel: Hashable, Sendable {
     case attach, model, context
 
     /// Where it opens from: the message box's corner, or the bar's.
@@ -40,6 +40,9 @@ nonisolated enum AttachRequest: Equatable, Sendable {
 @Observable
 final class ChatPanels {
     var open: ChatPanel? = nil
+    /// Where each window's button is on screen, in global coordinates, for the window to grow out
+    /// of. Kept out of observation: it changes as the message box moves, and nothing redraws for it.
+    @ObservationIgnored var origins: [ChatPanel: CGRect] = [:]
     /// Set by the attach window; the message box takes it and clears it.
     var request: AttachRequest? = nil
 
@@ -61,49 +64,117 @@ final class ChatPanels {
 /// The chat-wide layer the windows live in: a light veil over the conversation (tap it to close),
 /// and the window itself, in the corner its control is in. Sits inside the chat's safe area, so a
 /// window from the message box rests just above it and one from the bar just below that.
+///
+/// A window doesn't fade in over the chat: it grows out of the button that opened it. The glass
+/// starts the button's own size, where the button is, and unfurls to the window on a spring with a
+/// breath of give at the end, its contents rising out of that corner as it goes, so the button
+/// reads as having opened into it. Closing, it folds straight back into the button, quicker and
+/// without the give. One value, `progress`, drives the glass, the contents and the veil, so they
+/// can never drift apart, and a close caught mid-open turns round from wherever it is.
 struct PanelLayer<Content: View>: View {
-    let panel: ChatPanel?
-    let close: () -> Void
+    let panels: ChatPanels
     @ViewBuilder let content: (ChatPanel) -> Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The window on screen: kept through its closing, after `panels.open` has let it go.
+    @State private var shown: ChatPanel? = nil
+    /// 0 folded into its button, 1 open.
+    @State private var progress: CGFloat = 0
+    /// Counts openings and closings, so a close that finishes late can't remove a newer window.
+    @State private var turn = 0
+
+    private var opening: Animation { reduceMotion ? .easeOut(duration: 0.18) : .spring(duration: 0.42, bounce: 0.14) }
+    private var closing: Animation { reduceMotion ? .easeOut(duration: 0.15) : .spring(duration: 0.26, bounce: 0) }
 
     var body: some View {
         GeometryReader { geo in
-            ZStack(alignment: panel?.fromTop == true ? .topTrailing : .bottomLeading) {
-                if panel != nil {
-                    Color.black.opacity(0.16)
-                        .ignoresSafeArea()
-                        .contentShape(.rect)
-                        .onTapGesture(perform: close)
-                        .transition(.opacity.animation(.easeOut(duration: 0.18)))
-                        .accessibilityHidden(true)
-                }
-                if let panel {
+            let alignment: Alignment = shown?.fromTop == true ? .topTrailing : .bottomLeading
+            ZStack(alignment: alignment) {
+                Color.black.opacity(0.16 * min(1, max(0, progress)))
+                    .ignoresSafeArea()
+                    .contentShape(.rect)
+                    .onTapGesture { panels.close() }
+                    .allowsHitTesting(panels.open != nil)
+                    .accessibilityHidden(true)
+                if let shown {
                     // Always leaves a band of veil to tap, even with the keyboard up.
-                    PanelCard(panel: panel, maxHeight: max(160, geo.size.height - 56), onClose: close) {
-                        content(panel)
+                    PanelCard(panel: shown,
+                              width: min(440, geo.size.width - 2 * Space.m),
+                              maxHeight: max(160, geo.size.height - 56),
+                              progress: progress,
+                              seed: seed(for: shown, in: geo.frame(in: .global)),
+                              onClose: panels.close,
+                              onAppear: { withAnimation(opening) { progress = 1 } }) {
+                        content(shown)
                     }
                     .padding(.horizontal, Space.m)
-                    .padding(panel.fromTop ? .top : .bottom, Space.s)
-                    .transition(.panel(from: panel.anchor, reduceMotion: reduceMotion))
-                    .id(panel)
+                    .padding(shown.fromTop ? .top : .bottom, Space.s)
+                    .id(shown)
                 }
             }
-            .frame(width: geo.size.width, height: geo.size.height, alignment: panel?.fromTop == true ? .topTrailing : .bottomLeading)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: alignment)
         }
-        .allowsHitTesting(panel != nil)
+        .allowsHitTesting(shown != nil)
+        .onChange(of: panels.open) { _, open in present(open) }
     }
+
+    private func present(_ open: ChatPanel?) {
+        turn += 1
+        let mine = turn
+        if let open {
+            guard open != shown else {
+                withAnimation(opening) { progress = 1 }
+                return
+            }
+            // A new window (or one in place of another) starts folded; it unfurls once it's laid
+            // out (see `PanelCard.onAppear`).
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) {
+                progress = 0
+                shown = open
+            }
+        } else {
+            withAnimation(closing) { progress = 0 } completion: {
+                if turn == mine { shown = nil }
+            }
+        }
+    }
+
+    /// Where the window's button is, relative to the corner the window grows from: the bottom-left
+    /// corner of the message box's buttons, the top-right corner of the bar's ring, each as an
+    /// offset from that corner of the window, with the button's size.
+    private func seed(for panel: ChatPanel, in layer: CGRect) -> PanelSeed? {
+        guard let button = panels.origins[panel], !button.isEmpty, !reduceMotion else { return nil }
+        if panel.fromTop {
+            let corner = CGPoint(x: layer.maxX - Space.m, y: layer.minY + Space.s)
+            return PanelSeed(size: button.size, dx: button.maxX - corner.x, dy: button.minY - corner.y)
+        }
+        let corner = CGPoint(x: layer.minX + Space.m, y: layer.maxY - Space.s)
+        return PanelSeed(size: button.size, dx: button.minX - corner.x, dy: button.maxY - corner.y)
+    }
+}
+
+/// The button a window grows out of: its size, and how far its corner sits from the window's.
+struct PanelSeed: Equatable {
+    var size: CGSize
+    var dx: CGFloat
+    var dy: CGFloat
 }
 
 // MARK: - Card
 
 /// The window: glass with a hairline, as tall as what's in it up to the room there is, scrolling
-/// past that. While a finger drags it back toward where it came from, it follows; let go far or
-/// fast enough and it closes, otherwise it springs home.
+/// past that. Its contents are laid out at their full size from the start and the glass opens
+/// over them, so nothing reflows as it grows. While a finger drags it back toward where it came
+/// from, it follows; let go far or fast enough and it closes, otherwise it springs home.
 struct PanelCard<Content: View>: View {
     let panel: ChatPanel
+    let width: CGFloat
     let maxHeight: CGFloat
+    let progress: CGFloat
+    let seed: PanelSeed?
     let onClose: () -> Void
+    let onAppear: () -> Void
     @ViewBuilder var content: Content
     @State private var height: CGFloat = 0
     @State private var drag: CGFloat = 0
@@ -112,11 +183,18 @@ struct PanelCard<Content: View>: View {
     @AccessibilityFocusState private var focused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Radius.panel, style: .continuous) }
     /// Positive is back toward where it came from.
     private var direction: CGFloat { panel.fromTop ? -1 : 1 }
+    private var corner: Alignment { panel.fromTop ? .topTrailing : .bottomLeading }
+    private var fullHeight: CGFloat { min(max(height, 1), maxHeight) }
 
     var body: some View {
+        let p = progress
+        let start = seed?.size ?? CGSize(width: width, height: fullHeight)
+        let w = start.width + (width - start.width) * p
+        let h = start.height + (fullHeight - start.height) * p
+        let radius = min(start.width, start.height) / 2 + (Radius.panel - min(start.width, start.height) / 2) * p
+        let shape = RoundedRectangle(cornerRadius: max(0, radius), style: .continuous)
         ScrollView {
             content
                 // Scrolling inside (the recent photos, sideways) stays on whatever this does.
@@ -131,26 +209,35 @@ struct PanelCard<Content: View>: View {
         .scrollIndicators(.hidden)
         // Only scrolls when there's more than fits, so a swipe on a short window moves the window.
         .scrollDisabled(height <= maxHeight)
-        .frame(height: min(max(height, 1), maxHeight))
-        .frame(maxWidth: 440)
+        .frame(width: width, height: fullHeight)
+        // The contents rise out of the button's corner as the glass opens over them.
+        .scaleEffect(0.9 + 0.1 * p, anchor: panel.anchor)
+        .opacity(seed == nil ? 1 : p)
+        .frame(width: max(1, w), height: max(1, h), alignment: corner)
         .clipShape(shape)
         .glassEffect(.regular, in: shape)
         .overlay {
-            shape.strokeBorder(Color.qInk.opacity(0.08), lineWidth: 1)
+            shape.strokeBorder(Color.qInk.opacity(0.08 * p), lineWidth: 1)
                 .allowsHitTesting(false)
         }
-        .offset(y: offset)
+        // Without a button to grow from (or with Reduce Motion), it simply fades.
+        .opacity(seed == nil ? p : 1)
+        .offset(x: (seed?.dx ?? 0) * (1 - p), y: (seed?.dy ?? 0) * (1 - p) + dragOffset)
+        .frame(width: width, height: fullHeight, alignment: corner)
         .gesture(swipe)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
         .accessibilityLabel(panel.title)
         .accessibilityFocused($focused)
         .accessibilityAction(.escape, onClose)
-        .onAppear { focused = true }
+        .onAppear {
+            focused = true
+            onAppear()
+        }
     }
 
     /// Toward home it follows the finger; the other way it gives a little and resists.
-    private var offset: CGFloat {
+    private var dragOffset: CGFloat {
         let toward = drag * direction
         if toward >= 0 { return drag }
         let c: CGFloat = 0.55, limit: CGFloat = 24
@@ -176,35 +263,6 @@ struct PanelCard<Content: View>: View {
                     withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(duration: 0.3, bounce: 0.15)) { drag = 0 }
                 }
             }
-    }
-}
-
-// MARK: - Motion
-
-/// Grows from the corner of the control that opened it, from a little smaller and clear, so it
-/// reads as coming out of that control; leaves the same way, quicker and with less travel.
-private struct PanelEmergence: ViewModifier {
-    let shown: Bool
-    let anchor: UnitPoint
-    let leaving: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .scaleEffect(shown ? 1 : (leaving ? 0.97 : 0.92), anchor: anchor)
-            .opacity(shown ? 1 : 0)
-    }
-}
-
-extension AnyTransition {
-    static func panel(from anchor: UnitPoint, reduceMotion: Bool) -> AnyTransition {
-        if reduceMotion { return .opacity.animation(.easeOut(duration: 0.15)) }
-        return .asymmetric(
-            insertion: .modifier(active: PanelEmergence(shown: false, anchor: anchor, leaving: false),
-                                 identity: PanelEmergence(shown: true, anchor: anchor, leaving: false))
-                .animation(.spring(duration: 0.28, bounce: 0)),
-            removal: .modifier(active: PanelEmergence(shown: false, anchor: anchor, leaving: true),
-                               identity: PanelEmergence(shown: true, anchor: anchor, leaving: true))
-                .animation(.smooth(duration: 0.17)))
     }
 }
 
