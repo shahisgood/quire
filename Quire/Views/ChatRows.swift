@@ -280,8 +280,6 @@ struct ListLabel: View {
     }
 }
 
-}
-
 /// "Move to project": every project (a check on the one the chats are already in), out of any
 /// project, or a new one made for them. Takes the app model directly rather than from the
 /// environment, since it's built inside context menus.
