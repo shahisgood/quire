@@ -80,12 +80,14 @@ struct ChatListRow: View {
     var plain = false
     var dayShown = false
     var showsPin = true
+    /// In the chat list, where the row sits in its day's card; nil for a card of its own.
+    var position: RowPosition? = nil
     @Environment(AppModel.self) private var app
     @Environment(\.editMode) private var editMode
 
     var body: some View {
         Group {
-            if plain { card } else { groupedRow }
+            if plain, let position { segment(position) } else if plain { card } else { groupedRow }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button { ChatOps.archive(app, [chat.id], to: !chat.archived) } label: {
@@ -121,6 +123,28 @@ struct ChatListRow: View {
         .contextMenu { menu }
         .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
         .listRowBackground(Color.qBase)
+        .listRowSeparator(.hidden)
+    }
+
+    /// A row in one of the chat list's cards: the card is drawn behind the row by its position,
+    /// rounded at the ends and divided by hairlines, so a day's chats read as one piece; a row
+    /// lights up under the finger like a settings row.
+    private func segment(_ position: RowPosition) -> some View {
+        Button {
+            app.path.append(.chat(chat.id))
+        } label: {
+            ChatRow(chat: chat, showsProject: showsProject, dayShown: dayShown, showsPin: showsPin)
+                .padding(.horizontal, Space.l)
+                .padding(.vertical, Space.m)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(position.shape)
+        }
+        .buttonStyle(SegmentPressStyle(position: position))
+        .allowsHitTesting(editMode?.wrappedValue.isEditing != true)
+        .contentShape(.contextMenuPreview, position.shape)
+        .contextMenu { menu }
+        .listRowInsets(EdgeInsets(top: 0, leading: Space.l, bottom: 0, trailing: Space.l))
+        .listRowBackground(SegmentBackground(position: position))
         .listRowSeparator(.hidden)
     }
 
@@ -166,6 +190,93 @@ extension View {
         listRowInsets(EdgeInsets(top: vertical, leading: 16, bottom: vertical, trailing: 16))
             .listRowBackground(Color.qBase)
             .listRowSeparator(.hidden)
+    }
+}
+
+// MARK: - Cards of rows
+
+/// Where a row sits in its card, which decides which of its corners are rounded.
+enum RowPosition {
+    case only, first, middle, last
+
+    static func of(_ index: Int, in count: Int) -> RowPosition {
+        if count == 1 { return .only }
+        if index == 0 { return .first }
+        return index == count - 1 ? .last : .middle
+    }
+
+    var roundsTop: Bool { self == .only || self == .first }
+    var roundsBottom: Bool { self == .only || self == .last }
+
+    var shape: UnevenRoundedRectangle {
+        let top: CGFloat = roundsTop ? Radius.l : 0
+        let bottom: CGFloat = roundsBottom ? Radius.l : 0
+        return UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: bottom,
+                                      bottomTrailingRadius: bottom, topTrailingRadius: top, style: .continuous)
+    }
+}
+
+/// A row's share of its card: the raised surface, inset from the screen's edges, with a hairline
+/// above every row but the first.
+struct SegmentBackground: View {
+    let position: RowPosition
+    @Environment(\.displayScale) private var displayScale
+
+    var body: some View {
+        position.shape
+            .fill(Color.qRaised)
+            .overlay(alignment: .top) {
+                if !position.roundsTop {
+                    Rectangle()
+                        .fill(Color.qRule)
+                        .frame(height: 1 / displayScale)
+                        .padding(.leading, Space.l)
+                }
+            }
+            .padding(.horizontal, Space.l)
+    }
+}
+
+/// The finger's mark on a row in a card: the row lights up, in the card's own shape, the moment it
+/// lands, and lets go gently.
+struct SegmentPressStyle: ButtonStyle {
+    let position: RowPosition
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(Color.qInk.opacity(configuration.isPressed ? 0.06 : 0), in: position.shape)
+            .animation(configuration.isPressed ? nil : .easeOut(duration: 0.25), value: configuration.isPressed)
+    }
+}
+
+/// A label over a card in the chat list: the day in small capitals and how many chats it holds,
+/// with an optional action at its end. Stays pinned while its card scrolls under it.
+struct ListLabel: View {
+    let text: String
+    var count: Int? = nil
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+            Text(text.uppercased())
+                .font(.caption.weight(.semibold))
+                .tracking(1.1)
+                .foregroundStyle(Color.qInk2)
+            if let count {
+                Text(count.formatted())
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(Color.qInk2.opacity(0.65))
+            }
+            Spacer(minLength: 0)
+        }
+        .textCase(nil)
+        .padding(.horizontal, Space.xl)
+        .padding(.top, Space.l)
+        .padding(.bottom, Space.s)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.qBase)
+        .listRowInsets(EdgeInsets())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
