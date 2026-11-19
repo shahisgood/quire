@@ -89,6 +89,8 @@ struct ChatView: View {
             }
         }
         .background { BarTapCatcher(active: panels.open != nil, onTap: panels.close) }
+        // A window left open doesn't wait for you to come back to the chat.
+        .onDisappear { panels.close() }
         .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }

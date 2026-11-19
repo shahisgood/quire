@@ -714,18 +714,20 @@ struct ChatRow: View {
     /// shown, takes its own colour.
     private func details(_ tags: [ChatTag]) -> some View {
         var line = Text("")
+        let dot = Text("  ·  ").foregroundStyle(Color.qInk2.opacity(0.6))
         for (i, tag) in tags.enumerated() {
-            var piece = Text("")
-            if let symbol = tag.symbol { piece = piece + Text(Image(systemName: symbol)) + Text(" ") }
-            if let lead = tag.lead { piece = piece + Text(lead + " ") }
-            piece = piece + Text(tag.label)
+            let mark = tag.symbol.map { Text("\(Image(systemName: $0)) ") } ?? Text("")
+            let lead = tag.lead.map { Text("\($0) ") } ?? Text("")
+            var piece = Text("\(mark)\(lead)\(tag.label)")
             if let tint = tag.tint { piece = piece.foregroundStyle(tint) }
-            line = i == 0 ? piece : line + Text("  ·  ").foregroundStyle(Color.qInk2.opacity(0.6)) + piece
+            line = i == 0 ? piece : Text("\(line)\(dot)\(piece)")
         }
         return line
             .font(.caption.weight(.medium))
             .foregroundStyle(Color.qInk2)
             .lineLimit(1)
+            // Read as the words alone, not the names of the marks between them.
+            .accessibilityLabel(tags.map(\.label).joined(separator: ", "))
     }
 
     private func stamp(unread: Bool) -> some View {

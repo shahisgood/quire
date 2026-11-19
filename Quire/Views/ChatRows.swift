@@ -280,38 +280,6 @@ struct ListLabel: View {
     }
 }
 
-/// A heading in the chat list, set in the serif like a chapter title, with an optional action at
-/// its end ("Show all"). Stays pinned at the top while its chats scroll under it, so it covers
-/// them edge to edge.
-struct ListHeading: View {
-    let text: String
-    var actionLabel: String? = nil
-    var action: () -> Void = {}
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-            Text(text)
-                .displayFont { .system(.title3, design: $0).weight(.semibold) }
-                .foregroundStyle(Color.qInk)
-                .textCase(nil)
-                .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 0)
-            if let actionLabel {
-                Button(actionLabel, action: action)
-                    .font(.subheadline.weight(.medium))
-                    .tint(Color.qAccent)
-                    .buttonStyle(.borderless)
-                    .textCase(nil)
-                    .contentTransition(.opacity)
-            }
-        }
-        .padding(.horizontal, Space.l)
-        .padding(.top, Space.xl)
-        .padding(.bottom, Space.s)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.qBase)
-        .listRowInsets(EdgeInsets())
-    }
 }
 
 /// "Move to project": every project (a check on the one the chats are already in), out of any

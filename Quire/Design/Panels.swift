@@ -103,7 +103,7 @@ struct PanelLayer<Content: View>: View {
                               progress: progress,
                               seed: seed(for: shown, in: geo.frame(in: .global)),
                               onClose: panels.close,
-                              onAppear: { withAnimation(opening) { progress = 1 } }) {
+                              onReady: { withAnimation(opening) { progress = 1 } }) {
                         content(shown)
                     }
                     .padding(.horizontal, Space.m)
@@ -125,8 +125,8 @@ struct PanelLayer<Content: View>: View {
                 withAnimation(opening) { progress = 1 }
                 return
             }
-            // A new window (or one in place of another) starts folded; it unfurls once it's laid
-            // out (see `PanelCard.onAppear`).
+            // A new window (or one in place of another) starts folded; it unfurls once its
+            // contents have been measured (see `PanelCard.onReady`).
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) {
@@ -174,7 +174,8 @@ struct PanelCard<Content: View>: View {
     let progress: CGFloat
     let seed: PanelSeed?
     let onClose: () -> Void
-    let onAppear: () -> Void
+    /// Called once the contents have been measured, which is when the window can unfurl to them.
+    let onReady: () -> Void
     @ViewBuilder var content: Content
     @State private var height: CGFloat = 0
     @State private var drag: CGFloat = 0
@@ -193,16 +194,26 @@ struct PanelCard<Content: View>: View {
         let start = seed?.size ?? CGSize(width: width, height: fullHeight)
         let w = start.width + (width - start.width) * p
         let h = start.height + (fullHeight - start.height) * p
-        let radius = min(start.width, start.height) / 2 + (Radius.panel - min(start.width, start.height) / 2) * p
+        // From the button's round ends to the window's corners; without a button, the corners
+        // stay as they are and only the fade plays.
+        let radius = seed == nil ? Radius.panel
+            : min(start.width, start.height) / 2 + (Radius.panel - min(start.width, start.height) / 2) * p
         let shape = RoundedRectangle(cornerRadius: max(0, radius), style: .continuous)
         ScrollView {
             content
                 // Scrolling inside (the recent photos, sideways) stays on whatever this does.
                 .environment(\.isScrollEnabled, true)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { new in
-                    // The first measure sets it; later ones (a page sliding in) ease to it.
-                    if height == 0 || reduceMotion { height = new }
-                    else { withAnimation(.spring(duration: 0.3, bounce: 0)) { height = new } }
+                    // The first measure sets it, and only then does the window unfurl, so the spring
+                    // knows how tall it's going; later ones (a page sliding in) ease to it.
+                    if height == 0 {
+                        height = new
+                        if new > 0 { onReady() }
+                    } else if reduceMotion {
+                        height = new
+                    } else {
+                        withAnimation(.spring(duration: 0.3, bounce: 0)) { height = new }
+                    }
                 }
         }
         .scrollBounceBehavior(.basedOnSize)
@@ -211,7 +222,7 @@ struct PanelCard<Content: View>: View {
         .scrollDisabled(height <= maxHeight)
         .frame(width: width, height: fullHeight)
         // The contents rise out of the button's corner as the glass opens over them.
-        .scaleEffect(0.9 + 0.1 * p, anchor: panel.anchor)
+        .scaleEffect(seed == nil ? 1 : 0.9 + 0.1 * p, anchor: panel.anchor)
         .opacity(seed == nil ? 1 : p)
         .frame(width: max(1, w), height: max(1, h), alignment: corner)
         .clipShape(shape)
@@ -230,10 +241,7 @@ struct PanelCard<Content: View>: View {
         .accessibilityLabel(panel.title)
         .accessibilityFocused($focused)
         .accessibilityAction(.escape, onClose)
-        .onAppear {
-            focused = true
-            onAppear()
-        }
+        .onAppear { focused = true }
     }
 
     /// Toward home it follows the finger; the other way it gives a little and resists.
